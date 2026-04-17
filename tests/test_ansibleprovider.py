@@ -124,6 +124,7 @@ class TestAnsibleProvider:
                     package,
                     postinstall_scripts=False,
                     min_release_age=1,
+                    no_cache=True,
                 )
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text
@@ -137,7 +138,7 @@ class TestAnsibleProvider:
                 min_release_age=1,
             )
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
-                installed = binary.install()
+                installed = binary.install(no_cache=True)
             test_machine.assert_shallow_binary_loaded(installed)
             assert "ignoring unsupported min_release_age=1" in caplog.text
             assert "ignoring unsupported postinstall_scripts=False" in caplog.text
