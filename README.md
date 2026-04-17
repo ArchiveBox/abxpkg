@@ -952,7 +952,7 @@ PATH = ""                            # prepends cargo_root/bin and cargo_home/bi
 cargo_root = None                    # set this for hermetic installs
 ```
 
-- Install root: set `install_root=Path(...)` or `install_root=Path(...)` for isolated installs under `<cargo_root>/bin`; otherwise installs go through `cargo_home`.
+- Install root: set `install_root=Path(...)` (or the alias `cargo_root=Path(...)`) for isolated installs under `<install_root>/bin`; otherwise installs go through `cargo_home`.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
@@ -1116,8 +1116,8 @@ Source: [`abxpkg/binprovider_pyinfra.py`](./abxpkg/binprovider_pyinfra.py) • T
 ```python
 INSTALLER_BIN = "pyinfra"
 PATH = os.environ.get("PATH", DEFAULT_PATH)
-pyinfra_installer_module = "auto"
-pyinfra_installer_kwargs = {}
+# installer_module defaults to "auto" (operations.brew.packages on macOS, operations.server.packages on Linux)
+# installer_kwargs defaults to {}
 ```
 
 - Install root: **no hermetic prefix support**. It delegates to host package managers through pyinfra operations.
@@ -1137,8 +1137,8 @@ Source: [`abxpkg/binprovider_ansible.py`](./abxpkg/binprovider_ansible.py) • T
 ```python
 INSTALLER_BIN = "ansible"
 PATH = os.environ.get("PATH", DEFAULT_PATH)
-ansible_installer_module = "auto"
-ansible_playbook_template = ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
+# installer_module defaults to "auto" (community.general.homebrew on macOS, ansible.builtin.package on Linux)
+# playbook_template defaults to ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
 ```
 
 - Install root: **no hermetic prefix support**. It delegates to the host via `ansible-runner`.

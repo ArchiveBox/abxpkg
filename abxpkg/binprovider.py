@@ -2126,8 +2126,6 @@ class BinProvider(BaseModel):
             ACTIVE_EXEC_LOG_PREFIX.reset(exec_log_prefix_token)
 
         if self.dry_run:
-            # return fake ShallowBinary if we're just doing a dry run
-            # no point trying to get real abspath or version if nothing was actually installed
             return ShallowBinary.model_construct(
                 name=bin_name,
                 description=bin_name,

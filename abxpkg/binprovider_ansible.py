@@ -373,6 +373,14 @@ class AnsibleProvider(BinProvider):
         ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
 
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): ansible-playbook install %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return f"DRY RUN: would install {install_args} via ansible"
+
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
 
         return ansible_package_install(
@@ -400,6 +408,14 @@ class AnsibleProvider(BinProvider):
 
         ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
+
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): ansible-playbook update %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return f"DRY RUN: would update {install_args} via ansible"
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
         if module_extra_kwargs:
@@ -438,6 +454,14 @@ class AnsibleProvider(BinProvider):
 
         ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert ansible_playbook
+
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): ansible-playbook uninstall %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return True
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
         if module_extra_kwargs:

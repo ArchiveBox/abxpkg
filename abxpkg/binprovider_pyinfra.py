@@ -294,6 +294,14 @@ class PyinfraProvider(BinProvider):
         pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
 
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): pyinfra install %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return f"DRY RUN: would install {install_args} via pyinfra"
+
         return pyinfra_package_install(
             pkg_names=install_args,
             pyinfra_abspath=str(pyinfra_abspath),
@@ -316,6 +324,14 @@ class PyinfraProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
+
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): pyinfra update %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return f"DRY RUN: would update {install_args} via pyinfra"
 
         return pyinfra_package_install(
             pkg_names=install_args,
@@ -341,6 +357,14 @@ class PyinfraProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert pyinfra_abspath
+
+        if self.dry_run:
+            logger.info(
+                "DRY RUN (%s): pyinfra uninstall %s",
+                self.__class__.__name__,
+                " ".join(install_args),
+            )
+            return True
 
         pyinfra_package_install(
             pkg_names=install_args,
