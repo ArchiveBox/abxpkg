@@ -225,7 +225,7 @@ class NixProvider(BinProvider):
             bin_name=installer_bin,
             cmd=[
                 "profile",
-                "install",
+                "add",
                 "--extra-experimental-features",
                 "nix-command",
                 "--extra-experimental-features",
