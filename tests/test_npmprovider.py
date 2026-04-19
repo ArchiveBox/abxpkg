@@ -47,7 +47,12 @@ class TestNpmProvider:
 
             assert installed is not None
             proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode != 0
+            # POSIX shells propagate the failing vendor binary's exit
+            # code; Windows ``.cmd`` wrappers return 0 but emit the
+            # ``is not recognized`` error to stderr — accept either as
+            # proof the ``--ignore-scripts`` path skipped the vendor
+            # postinstall download.
+            assert proc.returncode != 0 or "not recognized" in (proc.stderr or "")
 
     def test_install_root_alias_installs_into_the_requested_prefix(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
