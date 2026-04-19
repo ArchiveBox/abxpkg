@@ -245,6 +245,12 @@ def link_binary(source: Path, link_path: Path) -> Path:
     source = Path(source).expanduser().absolute()
 
     if link_path.exists() or link_path.is_symlink():
+        # Guard against ``source == link_path``: on Windows the managed
+        # shim is typically a hardlink or copy (since ``symlink_to`` needs
+        # admin / dev mode), so the ``is_symlink()`` early-return below
+        # would miss it and we'd ``unlink`` the only copy of the binary.
+        if source == link_path.expanduser().absolute():
+            return link_path
         try:
             if link_path.is_symlink() and link_path.readlink() == source:
                 return link_path

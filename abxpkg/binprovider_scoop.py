@@ -137,14 +137,12 @@ class ScoopProvider(BinProvider):
         link_name = Path(bin_name_str).name
         if self.bin_dir is None or not link_name or link_name in {".", ".."}:
             return TypeAdapter(HostBinPath).validate_python(abspath)
-        link_path = self.bin_dir / link_name
-        # Skip the link step when ``abspath`` already IS the managed shim:
-        # ``link_binary`` would otherwise unlink + recreate it, which on
-        # Windows (where the shim is a hardlink/copy, not a symlink) would
-        # delete the real file before relinking and lose the binary entirely.
-        if Path(abspath) != link_path:
-            abspath = link_binary(Path(abspath), link_path)
-        return TypeAdapter(HostBinPath).validate_python(abspath)
+        # ``link_binary`` internally short-circuits when source == link_path
+        # so second-lookup ``abspath`` paths already in ``bin_dir`` don't
+        # get unlinked + recreated (which would destroy hardlink/copy shims
+        # on Windows).
+        result = link_binary(Path(abspath), self.bin_dir / link_name)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
