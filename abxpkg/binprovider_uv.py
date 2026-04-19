@@ -15,6 +15,7 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
+    bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
 from .logging import format_command, format_subprocess_output, get_logger
@@ -599,14 +600,19 @@ class UvProvider(BinProvider):
                 quiet=True,
             )
             if proc.returncode == 0:
-                candidate = self.install_root / "venv" / VENV_BIN_SUBDIR / str(bin_name)
-                if candidate.exists():
-                    return TypeAdapter(HostBinPath).validate_python(candidate)
+                # ``bin_abspath`` wraps ``shutil.which`` which honors ``PATHEXT``
+                # on Windows, so ``<bin>.exe`` / ``.cmd`` / ``.bat`` variants
+                # dropped by pip/uv console-script install are resolved too.
+                venv_bin_dir = self.install_root / "venv" / VENV_BIN_SUBDIR
+                resolved = bin_abspath(str(bin_name), PATH=str(venv_bin_dir))
+                if resolved is not None:
+                    return TypeAdapter(HostBinPath).validate_python(resolved)
         else:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
-            candidate = self.tool_dir / tool_name / VENV_BIN_SUBDIR / str(bin_name)
-            if candidate.exists():
-                return TypeAdapter(HostBinPath).validate_python(candidate)
+            tool_bin_dir = self.tool_dir / tool_name / VENV_BIN_SUBDIR
+            resolved = bin_abspath(str(bin_name), PATH=str(tool_bin_dir))
+            if resolved is not None:
+                return TypeAdapter(HostBinPath).validate_python(resolved)
         return None
 
     def default_version_handler(
