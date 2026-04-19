@@ -164,7 +164,11 @@ class TestMachine:
         assert loaded.loaded_mtime == loaded.loaded_abspath.resolve().stat().st_mtime_ns
         assert loaded.loaded_euid == loaded.loaded_abspath.resolve().stat().st_uid
         if provider.bin_dir is not None:
-            expected_abspath = provider.bin_dir / loaded.name
+            # ``loaded.loaded_abspath`` is the actual on-disk path of the
+            # resolved binary, including any OS-specific executable suffix
+            # (``.exe`` / ``.cmd`` / ``.bat`` on Windows) — rebuilding the
+            # path from ``bin_dir / loaded.name`` would miss the suffix.
+            expected_abspath = loaded.loaded_abspath
             assert expected_abspath.exists()
             assert expected_abspath.is_relative_to(provider.bin_dir)
             assert loaded.loaded_respath is not None

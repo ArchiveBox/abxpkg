@@ -2593,6 +2593,19 @@ class EnvProvider(BinProvider):
         if not link_name or link_name in {".", ".."} or "/" in str(bin_name):
             return TypeAdapter(HostBinPath).validate_python(target)
 
+        # On Windows preserve the source's executable suffix (``.exe`` /
+        # ``.cmd`` / ``.bat``): ``shutil.which`` honors ``PATHEXT`` so a
+        # suffix-less ``bin_dir/black`` shim would never resolve back to
+        # the managed binary when providers later search their PATH.
+        if (
+            IS_WINDOWS
+            and source_path.suffix
+            and not link_name.endswith(
+                source_path.suffix,
+            )
+        ):
+            link_name = link_name + source_path.suffix
+
         # ``link_binary`` symlinks on Unix; on Windows it falls back to
         # hardlink then copy (since ``symlink_to`` requires admin/dev mode).
         # If every strategy fails it returns ``target`` unchanged so the
