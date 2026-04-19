@@ -18,6 +18,7 @@ from abxpkg.exceptions import (
     BinaryUninstallError,
     BinaryUpdateError,
 )
+from abxpkg.windows_compat import VENV_BIN_SUBDIR
 
 
 class TestBinary:
@@ -284,7 +285,7 @@ class TestBinary:
             assert installed.loaded_abspath is not None
             provider = binary.get_binprovider("pip")
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.bin_dir == install_root / "venv" / VENV_BIN_SUBDIR
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_binary_dry_run_passes_through_to_provider_without_installing(self):

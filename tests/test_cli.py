@@ -12,6 +12,7 @@ import rich_click as click
 from click.testing import CliRunner
 
 from abxpkg import EnvProvider, SemVer
+from abxpkg.windows_compat import VENV_BIN_SUBDIR
 import abxpkg.cli as cli_module
 
 
@@ -2286,9 +2287,9 @@ def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
     assert proc.returncode == 0, proc.stderr
     lines = proc.stdout.splitlines()
     assert lines
-    assert lines[0].startswith(str(lib / "pip" / "venv" / "bin"))
+    assert lines[0].startswith(str(lib / "pip" / "venv" / VENV_BIN_SUBDIR))
     assert str(lib / "env" / "bin") in lines[1]
-    assert str(lib / "pip" / "venv" / "bin") in lines[1]
+    assert str(lib / "pip" / "venv" / VENV_BIN_SUBDIR) in lines[1]
 
 
 @pytest.fixture()
