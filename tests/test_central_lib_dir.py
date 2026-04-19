@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from abxpkg.windows_compat import IS_WINDOWS
+
 
 def _run_with_lib_dir(
     lib_dir_value: str,
@@ -247,7 +249,13 @@ class TestAbxPkgLibDir:
         test_machine.require_tool("bun")
         test_machine.require_tool("deno")
         test_machine.require_tool("cargo")
-        test_machine.require_tool("gem")
+        # gem is disabled on Windows (see
+        # ``windows_compat.UNIX_ONLY_PROVIDER_NAMES``) — Ruby's
+        # ``gem install --bindir`` wrapper layout + elevated-context
+        # permission errors make the full lifecycle fragile enough that
+        # it gets filtered out of the default provider set.
+        if not IS_WINDOWS:
+            test_machine.require_tool("gem")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             lib_dir = Path(tmp_dir) / "abx-lib"
@@ -298,11 +306,13 @@ class TestAbxPkgLibDir:
                     overrides={"loc": {"install_args": ["loc"]}},
                 ).install("loc")
 
-                gem = GemProvider()
-                results["gem"] = str(gem.install_root)
-                gem.get_provider_with_overrides(
-                    overrides={"lolcat": {"install_args": ["lolcat"]}},
-                ).install("lolcat")
+                import sys as _sys
+                if _sys.platform != "win32":
+                    gem = GemProvider()
+                    results["gem"] = str(gem.install_root)
+                    gem.get_provider_with_overrides(
+                        overrides={"lolcat": {"install_args": ["lolcat"]}},
+                    ).install("lolcat")
 
                 print(json.dumps(results))
                 """,
