@@ -270,16 +270,30 @@ def link_binary(source: Path, link_path: Path) -> Path:
         pass
 
     if IS_WINDOWS:
-        try:
-            os.link(source, link_path)
-            return link_path
-        except OSError:
-            pass
-        try:
-            shutil.copy2(source, link_path)
-            return link_path
-        except OSError:
-            pass
+        # Windows's hardlink/copy fallback breaks venv-aware Python
+        # interpreters: CPython uses the invoked path to find its
+        # ``pyvenv.cfg``, so a hardlinked or copied ``python.exe`` sitting
+        # outside its venv's ``Scripts`` dir can't locate that config and
+        # runs as a plain system Python (``VIRTUAL_ENV`` / ``site-packages``
+        # become wrong, which cascades into every downstream provider
+        # that resolves Python). When ``source`` lives inside a venv,
+        # skip the copy and return ``source`` unchanged so the caller
+        # still gets a working venv-aware interpreter — just not a
+        # managed shim path.
+        if not (
+            (source.parent / "pyvenv.cfg").exists()
+            or (source.parent.parent / "pyvenv.cfg").exists()
+        ):
+            try:
+                os.link(source, link_path)
+                return link_path
+            except OSError:
+                pass
+            try:
+                shutil.copy2(source, link_path)
+                return link_path
+            except OSError:
+                pass
 
     return source
 
