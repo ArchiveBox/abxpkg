@@ -40,8 +40,20 @@ IS_WINDOWS: bool = platform.system().lower() == "windows"
 # when ``IS_WINDOWS`` is true. ``scoop`` takes brew's place on Windows.
 # ``docker`` is excluded because its install handler writes a ``/bin/sh``
 # shim; the CLI itself works fine once installed outside abxpkg.
+# ``chromewebstore`` needs POSIX ``unzip`` (or a bundled ``unzipper``
+# npm dep) to unpack ``.crx`` files; neither is reliably available on
+# Windows runners, so disable until that's addressed.
 UNIX_ONLY_PROVIDER_NAMES: frozenset[str] = frozenset(
-    {"apt", "brew", "nix", "bash", "ansible", "pyinfra", "docker"},
+    {
+        "apt",
+        "brew",
+        "nix",
+        "bash",
+        "ansible",
+        "pyinfra",
+        "docker",
+        "chromewebstore",
+    },
 )
 
 # Mirrors the 7-tuple layout of :class:`pwd.struct_passwd` so Unix and
