@@ -65,7 +65,11 @@ class TestAbxPkgLibDir:
 
     @pytest.mark.parametrize(
         "lib_dir_value",
-        ["./lib", "~/.config/abx/lib", "/tmp/abxlib"],
+        # ``/tmp/abxlib`` is a POSIX literal; on Windows ``Path(...).resolve()``
+        # would anchor it to the system drive (``C:``) while the test runs
+        # from the runner's work drive (``D:``), causing a drive-mismatch
+        # assertion failure. Pick the OS-appropriate temp dir instead.
+        ["./lib", "~/.config/abx/lib", str(Path(tempfile.gettempdir()) / "abxlib")],
     )
     def test_all_path_formats_resolve_across_every_provider(
         self,
