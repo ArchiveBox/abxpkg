@@ -42,7 +42,12 @@ IS_WINDOWS: bool = platform.system().lower() == "windows"
 # shim; the CLI itself works fine once installed outside abxpkg.
 # ``chromewebstore`` needs POSIX ``unzip`` (or a bundled ``unzipper``
 # npm dep) to unpack ``.crx`` files; neither is reliably available on
-# Windows runners, so disable until that's addressed.
+# Windows runners.
+# ``gem`` fails on Windows because ``gem install --bindir`` writes a
+# Ruby script + ``.bat`` wrapper pair that doesn't satisfy the
+# post-install ``shutil.which`` lookup, plus ``Gem::FilePermissionError``
+# on uninstall in the runner's elevated context — disable until those
+# Ruby-on-Windows quirks are addressed in a follow-up.
 UNIX_ONLY_PROVIDER_NAMES: frozenset[str] = frozenset(
     {
         "apt",
@@ -53,6 +58,7 @@ UNIX_ONLY_PROVIDER_NAMES: frozenset[str] = frozenset(
         "pyinfra",
         "docker",
         "chromewebstore",
+        "gem",
     },
 )
 
