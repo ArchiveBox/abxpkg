@@ -608,7 +608,7 @@ class PipProvider(BinProvider):
             ].split("Location: ", 1)[-1]
         except IndexError:
             return None
-        PATH = str(Path(location).parent.parent.parent / VENV_BIN_SUBDIR)
+        PATH = str(scripts_dir_from_site_packages(Path(location)))
         abspath = bin_abspath(str(bin_name), PATH=PATH)
         if abspath:
             return TypeAdapter(HostBinPath).validate_python(abspath)
