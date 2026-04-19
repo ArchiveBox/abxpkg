@@ -10,16 +10,22 @@ from abxpkg import AptProvider, Binary, BrewProvider, SemVer
 from abxpkg.exceptions import BinaryLoadError
 from abxpkg.windows_compat import IS_WINDOWS, UNIX_ONLY_PROVIDER_NAMES
 
-# Pytest collection filter: on Windows every test file targeting a
-# Unix-only provider (apt / brew / nix / bash / ansible / pyinfra / docker)
-# is skipped at collection time. The CI workflow treats pytest exit 5
-# ("no tests collected") as success for the per-file job, so these files
-# simply become no-ops on Windows without blocking the rest of the matrix.
-collect_ignore: list[str] = (
-    [f"test_{name}provider.py" for name in UNIX_ONLY_PROVIDER_NAMES]
-    if IS_WINDOWS
-    else []
+# On Windows every test file targeting a Unix-only provider (apt / brew /
+# nix / bash / ansible / pyinfra / docker) is skipped at collection time.
+# We use ``pytest_ignore_collect`` (not ``collect_ignore``) because the
+# CI per-file jobs pass the file explicitly on the command line, and
+# ``collect_ignore`` is only consulted during directory traversal.
+# ``pytest_ignore_collect`` runs for explicit paths too, and the CI
+# workflow treats pytest exit 5 ("no tests collected") as success.
+_UNIX_ONLY_TEST_FILENAMES = frozenset(
+    f"test_{name}provider.py" for name in UNIX_ONLY_PROVIDER_NAMES
 )
+
+
+def pytest_ignore_collect(collection_path, config) -> bool | None:
+    if IS_WINDOWS and collection_path.name in _UNIX_ONLY_TEST_FILENAMES:
+        return True
+    return None
 
 
 def _brew_formula_is_installed(package: str) -> bool:

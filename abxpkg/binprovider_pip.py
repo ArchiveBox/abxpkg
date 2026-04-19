@@ -46,6 +46,11 @@ USER_CACHE_PATH = user_cache_path(
 # the directory where python.exe / pip.exe / installed console scripts
 # live. All ``install_root/venv/<this>`` lookups must agree on this name.
 VENV_BIN_SUBDIR = "Scripts" if IS_WINDOWS else "bin"
+# Same idea for the executable filenames themselves: Windows suffixes
+# ``.exe`` onto everything in the venv's scripts dir.
+_EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
+VENV_PYTHON_BIN = f"python{_EXE_SUFFIX}"
+VENV_PIP_BIN = f"pip{_EXE_SUFFIX}"
 
 
 # pip >= 26.0 is required for ``--uploaded-prior-to`` (see pypa/pip#13625).
@@ -125,7 +130,9 @@ class PipProvider(BinProvider):
     def is_valid(self) -> bool:
         """False if install_root is not created yet or if pip binary is not found in PATH"""
         if self.install_root:
-            venv_pip_path = self.install_root / "venv" / VENV_BIN_SUBDIR / "python"
+            venv_pip_path = (
+                self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
+            )
             if venv_pip_path.exists() and not (
                 os.path.isfile(venv_pip_path) and os.access(venv_pip_path, os.X_OK)
             ):
@@ -172,14 +179,18 @@ class PipProvider(BinProvider):
             # remove any active venv from PATH because we're trying to only get the global system python paths
             active_venv = os.environ.get("VIRTUAL_ENV")
             if active_venv:
-                pip_bin_dirs.discard(f"{active_venv}/{VENV_BIN_SUBDIR}")
+                # ``Path`` join (not ``f"{a}/{b}"``): on Windows the other
+                # entries in ``pip_bin_dirs`` are ``\\``-separated strings,
+                # so a forward-slash concatenation would never match and
+                # the active venv's Scripts dir would stay in PATH.
+                pip_bin_dirs.discard(str(Path(active_venv) / VENV_BIN_SUBDIR))
 
             self.PATH = self._merge_PATH(*sorted(pip_bin_dirs), PATH=PATH)
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
         if self.install_root:
-            venv_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / "pip"
+            venv_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PIP_BIN
             if venv_pip.is_file() and os.access(venv_pip, os.X_OK):
                 if not no_cache:
                     loaded = self.load_cached_binary(self.INSTALLER_BIN, venv_pip)
@@ -315,7 +326,7 @@ class PipProvider(BinProvider):
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
-        venv_pip_path = pip_venv / VENV_BIN_SUBDIR / "python"
+        venv_pip_path = pip_venv / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
         venv_pip_binary_exists = os.path.isfile(venv_pip_path) and os.access(
             venv_pip_path,
             os.X_OK,
@@ -581,7 +592,7 @@ class PipProvider(BinProvider):
             return None
 
         if self.install_root:
-            managed_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / "pip"
+            managed_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PIP_BIN
             if pip_abspath != managed_pip:
                 return None
 
