@@ -297,3 +297,56 @@ def chown_recursive(sudo_bin: str, path: Path, uid: int, gid: int) -> int:
         capture_output=True,
         text=True,
     ).returncode
+
+
+# -------------------------------------------------------------------------
+# Python venv layout (used by PipProvider / UvProvider)
+#
+# CPython's ``venv`` module writes a different on-disk layout on Windows
+# vs. everything else:
+#
+#    layout       | Unix                          | Windows
+#    scripts dir  | ``<venv>/bin``                | ``<venv>/Scripts``
+#    python exe   | ``python`` (no suffix)        | ``python.exe``
+#    pip exe      | ``pip``                       | ``pip.exe``
+#    site-packages| ``<venv>/lib/pythonX.Y/sp``   | ``<venv>/Lib/sp``
+#                 |  (one versioned subdir)       |  (flat)
+#
+# Centralized here so every managed-venv provider agrees on the paths
+# regardless of platform.
+
+VENV_BIN_SUBDIR: str = "Scripts" if IS_WINDOWS else "bin"
+_EXE_SUFFIX: str = ".exe" if IS_WINDOWS else ""
+VENV_PYTHON_BIN: str = f"python{_EXE_SUFFIX}"
+VENV_PIP_BIN: str = f"pip{_EXE_SUFFIX}"
+
+
+def venv_site_packages_dirs(venv_root: Path) -> list[Path]:
+    """Resolve a venv's ``site-packages`` dirs regardless of OS layout.
+
+    Unix: ``<venv>/lib/pythonX.Y/site-packages`` (versioned subdir).
+    Windows: ``<venv>/Lib/site-packages`` (flat, no Python version).
+    Returned list is sorted and may be empty when the venv hasn't been
+    created yet.
+    """
+    unix = sorted((venv_root / "lib").glob("python*/site-packages"))
+    if unix:
+        return unix
+    windows = venv_root / "Lib" / "site-packages"
+    return [windows] if windows.is_dir() else []
+
+
+def scripts_dir_from_site_packages(site_packages: Path) -> Path:
+    """Navigate from a ``site-packages`` path to the matching scripts dir.
+
+    Unix layout is ``<prefix>/lib/pythonX.Y/site-packages`` — three
+    parents up lands at ``<prefix>``. Windows is ``<prefix>/Lib/
+    site-packages`` — only two parents up. Appends the OS-appropriate
+    ``VENV_BIN_SUBDIR`` either way.
+    """
+    prefix = (
+        site_packages.parent.parent
+        if IS_WINDOWS
+        else site_packages.parent.parent.parent
+    )
+    return prefix / VENV_BIN_SUBDIR

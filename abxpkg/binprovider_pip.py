@@ -34,38 +34,19 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
-from .windows_compat import IS_WINDOWS
+from .windows_compat import (
+    VENV_BIN_SUBDIR,
+    VENV_PIP_BIN,
+    VENV_PYTHON_BIN,
+    scripts_dir_from_site_packages,
+    venv_site_packages_dirs,
+)
 
 
 USER_CACHE_PATH = user_cache_path(
     appname="pip",
     appauthor="abxpkg",
 )
-
-# ``venv`` creates ``Scripts/`` on Windows and ``bin/`` everywhere else —
-# the directory where python.exe / pip.exe / installed console scripts
-# live. All ``install_root/venv/<this>`` lookups must agree on this name.
-VENV_BIN_SUBDIR = "Scripts" if IS_WINDOWS else "bin"
-# Same idea for the executable filenames themselves: Windows suffixes
-# ``.exe`` onto everything in the venv's scripts dir.
-_EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
-VENV_PYTHON_BIN = f"python{_EXE_SUFFIX}"
-VENV_PIP_BIN = f"pip{_EXE_SUFFIX}"
-
-
-def venv_site_packages_dirs(venv_root: Path) -> list[Path]:
-    """Resolve a venv's ``site-packages`` dirs regardless of OS layout.
-
-    Unix: ``<venv>/lib/pythonX.Y/site-packages`` (versioned subdir).
-    Windows: ``<venv>/Lib/site-packages`` (flat, no Python version).
-    Returned list is sorted and may be empty if the venv hasn't been
-    created yet.
-    """
-    unix = sorted((venv_root / "lib").glob("python*/site-packages"))
-    if unix:
-        return unix
-    windows = venv_root / "Lib" / "site-packages"
-    return [windows] if windows.is_dir() else []
 
 
 # pip >= 26.0 is required for ``--uploaded-prior-to`` (see pypa/pip#13625).
@@ -173,13 +154,10 @@ class PipProvider(BinProvider):
         else:
             pip_bin_dirs = {
                 *(
-                    str(Path(sitepackage_dir).parent.parent.parent / VENV_BIN_SUBDIR)
+                    str(scripts_dir_from_site_packages(Path(sitepackage_dir)))
                     for sitepackage_dir in site.getsitepackages()
                 ),
-                str(
-                    Path(site.getusersitepackages()).parent.parent.parent
-                    / VENV_BIN_SUBDIR,
-                ),
+                str(scripts_dir_from_site_packages(Path(site.getusersitepackages()))),
                 sysconfig.get_path("scripts"),
                 str(Path(sys.executable).resolve().parent),
             }
