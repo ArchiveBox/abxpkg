@@ -164,7 +164,10 @@ class TestEnvProvider:
             assert cached_record["mtime"] == stat_result.st_mtime_ns
 
             assert provider.uninstall("python3") is False
-            assert linked_binary.is_symlink()
+            if not IS_WINDOWS:
+                # Same rationale as the earlier ``is_symlink`` check:
+                # Windows venv ``python.exe`` is never shimmed.
+                assert (provider.bin_dir / "python3").is_symlink()
             assert load_derived_cache(derived_env_path) == {}
             assert provider.load("python3", no_cache=True) is not None
 
