@@ -93,7 +93,7 @@ effects are correct.
 - Exception for Windows: the Unix-only providers listed in
   `abxpkg.windows_compat.UNIX_ONLY_PROVIDER_NAMES` (apt / brew / nix /
   bash / ansible / pyinfra / docker) have no Windows implementation, so
-  `tests/conftest.py::pytest_ignore_collect` skips their per-file test
+  `tests/conftest.py::pytest_collection_modifyitems` skips their per-file test
   modules on Windows. Every other provider must still run its real
   install lifecycle on Windows and fail loudly if the host tooling is
   missing. The scoop provider takes brew's place as the Windows
