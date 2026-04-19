@@ -108,7 +108,7 @@ class PipProvider(BinProvider):
         env: dict[str, str] = {"VIRTUAL_ENV": str(venv_root)}
         # Add site-packages to PYTHONPATH so scripts can import installed pkgs
         for sp in venv_site_packages_dirs(venv_root):
-            env["PYTHONPATH"] = ":" + str(sp)
+            env["PYTHONPATH"] = os.pathsep + str(sp)
             break
         return env
 

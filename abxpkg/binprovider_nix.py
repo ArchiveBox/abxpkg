@@ -61,7 +61,7 @@ class NixProvider(BinProvider):
         if not self.install_root:
             return {}
         env: dict[str, str] = {
-            "LD_LIBRARY_PATH": ":" + str(self.install_root / "lib"),
+            "LD_LIBRARY_PATH": os.pathsep + str(self.install_root / "lib"),
         }
         return env
 

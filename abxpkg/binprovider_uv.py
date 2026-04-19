@@ -79,7 +79,7 @@ class UvProvider(BinProvider):
             for sp in sorted(
                 (venv_root / "lib").glob("python*/site-packages"),
             ):
-                env["PYTHONPATH"] = ":" + str(sp)
+                env["PYTHONPATH"] = os.pathsep + str(sp)
                 break
             return env
         env["UV_TOOL_DIR"] = str(self.tool_dir)

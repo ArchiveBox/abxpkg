@@ -74,7 +74,7 @@ class BunProvider(BinProvider):
         return {
             "NODE_MODULES_DIR": node_modules_dir,
             "NODE_MODULE_DIR": node_modules_dir,
-            "NODE_PATH": ":" + node_modules_dir,
+            "NODE_PATH": os.pathsep + node_modules_dir,
             "BUN_INSTALL": str(self.install_root),
         }
 
