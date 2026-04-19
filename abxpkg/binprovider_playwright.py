@@ -567,9 +567,12 @@ class PlaywrightProvider(BinProvider):
                 return None
             return None
         if self.bin_dir is not None:
-            link = self.bin_dir / str(bin_name)
-            if link.exists() and os.access(link, os.X_OK):
-                return link
+            # ``bin_abspath`` honors ``PATHEXT`` on Windows so the managed
+            # shim's ``.exe`` / ``.cmd`` / ``.bat`` suffix is resolved
+            # transparently.
+            existing_shim = bin_abspath(str(bin_name), PATH=str(self.bin_dir))
+            if existing_shim and os.access(existing_shim, os.X_OK):
+                return existing_shim
         resolved = self._playwright_browser_path(
             str(bin_name),
             no_cache=no_cache,

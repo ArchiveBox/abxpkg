@@ -241,8 +241,19 @@ def link_binary(source: Path, link_path: Path) -> Path:
     fall back to a hardlink (same volume only), then a plain file copy,
     then — if everything fails — return ``source`` unchanged so the
     binary is still usable even when no managed shim could be written.
+
+    Windows name adjustment: callers typically build ``link_path =
+    bin_dir / bin_name`` where ``bin_name`` is the suffix-less logical
+    name (``python``, ``black`` …). Windows' ``shutil.which`` /
+    ``PATHEXT`` resolution requires the shim to carry the real
+    executable suffix (``.exe`` / ``.cmd`` / ``.bat``), so when the
+    requested ``link_path`` has no suffix we transparently append
+    ``source.suffix`` here. Every caller gets correct behavior without
+    repeating the OS-specific logic.
     """
     source = Path(source).expanduser().absolute()
+    if IS_WINDOWS and source.suffix and not link_path.suffix:
+        link_path = link_path.with_name(link_path.name + source.suffix)
 
     if link_path.exists() or link_path.is_symlink():
         # Guard against ``source == link_path``: on Windows the managed
