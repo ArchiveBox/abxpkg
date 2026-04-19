@@ -350,7 +350,7 @@ class TestAbxPkgLibDir:
             top_level_subdirs = {
                 child.name for child in lib_dir.iterdir() if child.is_dir()
             }
-            assert {
+            expected_subdirs = {
                 "pip",
                 "uv",
                 "npm",
@@ -359,5 +359,7 @@ class TestAbxPkgLibDir:
                 "bun",
                 "deno",
                 "cargo",
-                "gem",
-            }.issubset(top_level_subdirs)
+            }
+            if not IS_WINDOWS:
+                expected_subdirs.add("gem")
+            assert expected_subdirs.issubset(top_level_subdirs)
