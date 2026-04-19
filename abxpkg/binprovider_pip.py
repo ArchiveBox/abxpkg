@@ -53,6 +53,21 @@ VENV_PYTHON_BIN = f"python{_EXE_SUFFIX}"
 VENV_PIP_BIN = f"pip{_EXE_SUFFIX}"
 
 
+def venv_site_packages_dirs(venv_root: Path) -> list[Path]:
+    """Resolve a venv's ``site-packages`` dirs regardless of OS layout.
+
+    Unix: ``<venv>/lib/pythonX.Y/site-packages`` (versioned subdir).
+    Windows: ``<venv>/Lib/site-packages`` (flat, no Python version).
+    Returned list is sorted and may be empty if the venv hasn't been
+    created yet.
+    """
+    unix = sorted((venv_root / "lib").glob("python*/site-packages"))
+    if unix:
+        return unix
+    windows = venv_root / "Lib" / "site-packages"
+    return [windows] if windows.is_dir() else []
+
+
 # pip >= 26.0 is required for ``--uploaded-prior-to`` (see pypa/pip#13625).
 _PIP_MIN_RELEASE_AGE_VERSION = SemVer((26, 0, 0))
 
@@ -92,9 +107,7 @@ class PipProvider(BinProvider):
         venv_root = self.install_root / "venv"
         env: dict[str, str] = {"VIRTUAL_ENV": str(venv_root)}
         # Add site-packages to PYTHONPATH so scripts can import installed pkgs
-        for sp in sorted(
-            (venv_root / "lib").glob("python*/site-packages"),
-        ):
+        for sp in venv_site_packages_dirs(venv_root):
             env["PYTHONPATH"] = ":" + str(sp)
             break
         return env
@@ -660,15 +673,16 @@ class PipProvider(BinProvider):
             return cache_info
 
         normalized_name = package_name.lower().replace("-", "_")
-        metadata_files = sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/METADATA",
-            ),
-        ) or sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/PKG-INFO",
-            ),
-        )
+        site_packages_dirs = venv_site_packages_dirs(self.install_root / "venv")
+        metadata_files: list[Path] = []
+        for sp in site_packages_dirs:
+            metadata_files = sorted(
+                sp.glob(f"{normalized_name}*.dist-info/METADATA"),
+            ) or sorted(
+                sp.glob(f"{normalized_name}*.dist-info/PKG-INFO"),
+            )
+            if metadata_files:
+                break
         if metadata_files:
             cache_info["fingerprint_paths"].append(metadata_files[0])
         return cache_info
