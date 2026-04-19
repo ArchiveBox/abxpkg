@@ -2,7 +2,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from abxpkg.semver import SemVer, bin_version, is_semver_str, semver_to_str
+from abxpkg.windows_compat import IS_WINDOWS
 
 
 class TestSemVer:
@@ -12,6 +15,11 @@ class TestSemVer:
         assert version is not None
         assert version == SemVer("{}.{}.{}".format(*sys.version_info[:3]))
 
+    @pytest.mark.skipif(
+        IS_WINDOWS,
+        reason="bash is a Unix-only provider (see UNIX_ONLY_PROVIDER_NAMES); "
+        "git-bash's bash.exe on Windows runners returns non-zero for --version",
+    )
     def test_parse_reads_exact_live_bash_banner_version(self):
         bash_version_output = subprocess.check_output(
             ["bash", "--version"],
