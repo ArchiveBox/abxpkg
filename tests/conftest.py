@@ -170,9 +170,16 @@ class TestMachine:
             # path from ``bin_dir / loaded.name`` would miss the suffix.
             expected_abspath = loaded.loaded_abspath
             assert expected_abspath.exists()
-            assert expected_abspath.is_relative_to(provider.bin_dir)
-            assert loaded.loaded_respath is not None
-            assert expected_abspath.resolve() == loaded.loaded_respath
+            # When ``link_binary`` could create a managed shim, the
+            # resolved path sits under ``bin_dir``. Some sources can't be
+            # safely shimmed on every OS (e.g. venv-rooted ``python.exe``
+            # on Windows would break CPython's ``pyvenv.cfg`` discovery),
+            # so ``link_binary`` returns ``source`` unchanged — in that
+            # case the caller still gets a usable binary, just not via a
+            # bin_dir shim.
+            if expected_abspath.is_relative_to(provider.bin_dir):
+                assert loaded.loaded_respath is not None
+                assert expected_abspath.resolve() == loaded.loaded_respath
 
         if expected_version is not None:
             assert loaded.loaded_version >= expected_version
