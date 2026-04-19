@@ -1814,6 +1814,71 @@ _BARE_TRUE_BOOL_FLAGS = frozenset(
 )
 
 
+_BINARY_OVERRIDE_FLAGS = frozenset({"--abspath", "--install-args", "--packages"})
+_BINARY_OVERRIDE_COMMANDS = frozenset(
+    {"install", "update", "upgrade", "uninstall", "load", "run"},
+)
+
+
+def _normalize_binary_override_option_order(argv: list[str]) -> list[str]:
+    """Allow binary override flags before or after the subcommand.
+
+    Click only knows ``--abspath`` / ``--install-args`` / ``--packages`` on
+    the concrete binary subcommands, so a call like ``abxpkg --install-args
+    '["black"]' upgrade black`` would normally fail at the group level before
+    ``upgrade`` gets a chance to parse it. Hoist those flags across the first
+    binary-managing subcommand so both placements normalize to the same argv.
+    """
+
+    group_opts_with_values = frozenset(
+        opt
+        for param in cli.params
+        if isinstance(param, click.Option) and not param.is_flag
+        for opt in param.opts
+        if opt.startswith("--") and opt not in _BARE_TRUE_BOOL_FLAGS
+    )
+
+    prefix: list[str] = []
+    hoisted: list[str] = []
+    idx = 0
+    while idx < len(argv):
+        tok = argv[idx]
+        if tok == "--":
+            return argv
+        if tok.startswith("--") and "=" in tok:
+            opt_name = tok.split("=", 1)[0]
+            if opt_name in _BINARY_OVERRIDE_FLAGS:
+                hoisted.append(tok)
+            else:
+                prefix.append(tok)
+            idx += 1
+            continue
+        if tok in _BINARY_OVERRIDE_FLAGS:
+            hoisted.append(tok)
+            if idx + 1 < len(argv):
+                hoisted.append(argv[idx + 1])
+                idx += 2
+            else:
+                idx += 1
+            continue
+        if tok in group_opts_with_values:
+            prefix.append(tok)
+            if idx + 1 < len(argv):
+                prefix.append(argv[idx + 1])
+                idx += 2
+            else:
+                idx += 1
+            continue
+        if tok.startswith("-") and tok != "-":
+            prefix.append(tok)
+            idx += 1
+            continue
+        if tok not in _BINARY_OVERRIDE_COMMANDS or not hoisted:
+            return argv
+        return [*prefix, tok, *hoisted, *argv[idx + 1 :]]
+    return argv
+
+
 def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
     """Translate bare bool flags (``--dry-run``) into their value form
     (``--dry-run=True``) so a single click string option can handle both.
@@ -1849,7 +1914,7 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
 
 
 def main() -> None:
-    cli(_expand_bare_bool_flags(sys.argv[1:]))
+    cli(_expand_bare_bool_flags(_normalize_binary_override_option_order(sys.argv[1:])))
 
 
 # ---------------------------------------------------------------------------

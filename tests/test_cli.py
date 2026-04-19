@@ -1500,34 +1500,48 @@ def test_upgrade_command_dispatches_to_update(monkeypatch):
     assert captured["action"] == "update"
 
 
-def test_upgrade_command_accepts_binary_override_flags(monkeypatch):
-    captured = {}
+@pytest.mark.parametrize(
+    ("argv", "lib_subdir"),
+    [
+        (
+            [
+                "--binproviders=pip",
+                '--install-args=["black==25.0.0"]',
+                '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
+                "--min-release-age=0",
+                "upgrade",
+                "black",
+            ],
+            "before-subcommand",
+        ),
+        (
+            [
+                "upgrade",
+                "--binproviders=pip",
+                '--install-args=["black==25.0.0"]',
+                '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
+                "--min-release-age=0",
+                "black",
+            ],
+            "after-subcommand",
+        ),
+    ],
+)
+def test_upgrade_command_accepts_binary_override_flags(tmp_path, argv, lib_subdir):
+    """Binary override flags should work before or after the subcommand."""
 
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
-    result = CliRunner().invoke(
-        cli_module.cli,
-        [
-            "upgrade",
-            "--binproviders=pip",
-            '--install-args=["black==24.2.0"]',
-            '--overrides={"pip":{"version_timeout":99}}',
-            "black",
-        ],
+    lib_dir = tmp_path / lib_subdir
+    proc = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        *argv,
+        timeout=900,
     )
 
-    assert result.exit_code == 0
-    assert captured["binary_name"] == "black"
-    assert captured["action"] == "update"
-    assert captured["options"].handler_overrides == {
-        "install_args": ["black==24.2.0"],
-    }
-    assert captured["options"].overrides == {"pip": {"version_timeout": 99}}
+    assert proc.returncode == 0, proc.stderr
+    assert "24.2.0" in proc.stdout
+    assert list((lib_dir / "pip").rglob("black")), (
+        f"Expected black under {lib_dir / 'pip'}, stderr was:\n{proc.stderr}"
+    )
 
 
 def test_add_command_dispatches_to_install(monkeypatch):
