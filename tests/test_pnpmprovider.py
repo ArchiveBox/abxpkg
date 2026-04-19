@@ -67,8 +67,11 @@ class TestPnpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
             # Real on-disk pnpm install side effects.
             assert (install_root / "node_modules" / "zx" / "package.json").exists()
             assert (install_root / "package.json").exists()
@@ -117,8 +120,11 @@ class TestPnpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
             # The two installs must have produced two different on-disk binaries.
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None

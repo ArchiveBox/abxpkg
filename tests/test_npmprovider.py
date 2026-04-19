@@ -70,8 +70,11 @@ class TestNpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
 
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -110,8 +113,11 @@ class TestNpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
             assert installed.loaded_version > ambient_installed.loaded_version

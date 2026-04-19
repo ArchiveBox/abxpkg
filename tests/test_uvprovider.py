@@ -581,7 +581,13 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert reloaded is not None
-                assert reloaded.loaded_abspath == tool_dir / "cowsay" / "bin" / "cowsay"
+                # Windows uv-tool layout uses ``Scripts/cowsay.exe``
+                # while POSIX writes ``bin/cowsay``. Check ``.stem`` +
+                # ``.parent`` to match both.
+                assert reloaded.loaded_abspath.parent == (
+                    tool_dir / "cowsay" / VENV_BIN_SUBDIR
+                )
+                assert reloaded.loaded_abspath.stem == "cowsay"
 
                 assert provider.uninstall("cowsay") is True
                 assert provider.load("cowsay", quiet=True, no_cache=True) is None
