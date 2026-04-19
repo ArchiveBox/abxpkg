@@ -2387,6 +2387,22 @@ class BinProvider(BaseModel):
         if self.dry_run:
             return True
 
+        # After a successful provider-level uninstall, remove any managed
+        # shim we wrote into ``bin_dir`` for this binary. Symlinks on Unix
+        # become dangling when their target gets uninstalled; hardlinks
+        # and copies on Windows survive the provider's cleanup and would
+        # make ``get_abspath`` keep returning the stale shim. The shim
+        # name varies by OS extension (``bin_name``, ``bin_name.exe``,
+        # ``bin_name.cmd``, ``bin_name.bat``), so glob all variants.
+        if uninstall_result is not False and self.bin_dir is not None:
+            bin_dir = self.bin_dir
+            shim_name = Path(str(bin_name)).name
+            for candidate in (bin_dir / shim_name, *bin_dir.glob(f"{shim_name}.*")):
+                try:
+                    candidate.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
         if uninstall_result is not False:
             logger.info("🗑️ Uninstalled %s via %s", bin_name, self.name)
         return uninstall_result is not False
