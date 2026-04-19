@@ -75,7 +75,7 @@ class TestUvProvider:
                         provider.install_root
                         / "venv"
                         / VENV_BIN_SUBDIR
-                        / VENV_PYTHON_BIN
+                        / VENV_PYTHON_BIN,
                     ),
                     "saws",
                 ],
@@ -438,7 +438,7 @@ class TestUvProvider:
                         provider.install_root
                         / "venv"
                         / VENV_BIN_SUBDIR
-                        / VENV_PYTHON_BIN
+                        / VENV_PYTHON_BIN,
                     ),
                     "chromium",
                 ],
