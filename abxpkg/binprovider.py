@@ -2509,6 +2509,17 @@ class EnvProvider(BinProvider):
             "abspath": "self.python_abspath_handler",
             "version": "{}.{}.{}".format(*sys.version_info[:3]),
         },
+        # Route ``python3`` to the same handler: Unix distros ship both
+        # ``python3`` and ``python`` on PATH, but Windows venvs only
+        # expose ``python.exe`` (no ``python3.exe``), so a naive PATH
+        # lookup falls through to the hosted-toolcache interpreter
+        # instead of ``sys.executable``. Returning ``sys.executable``
+        # unconditionally matches the semantics of "resolve the active
+        # Python interpreter" on every platform.
+        "python3": {
+            "abspath": "self.python_abspath_handler",
+            "version": "{}.{}.{}".format(*sys.version_info[:3]),
+        },
     }
 
     def setup_PATH(self, no_cache: bool = False) -> None:
