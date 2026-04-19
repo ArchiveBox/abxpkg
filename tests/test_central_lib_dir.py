@@ -335,7 +335,10 @@ class TestAbxPkgLibDir:
                 "bun",
                 "deno",
                 "cargo",
-                "gem",
+                # ``gem`` is only installed on non-Windows (see the
+                # platform guard in the script above + the conftest
+                # Unix-only-provider skip).
+                *(() if IS_WINDOWS else ("gem",)),
             ):
                 reported = Path(payload[provider_name])
                 assert reported == lib_dir.resolve() / provider_name, (
