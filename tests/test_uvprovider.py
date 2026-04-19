@@ -581,6 +581,7 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert reloaded is not None
+                assert reloaded.loaded_abspath is not None
                 # Windows uv-tool layout uses ``Scripts/cowsay.exe``
                 # while POSIX writes ``bin/cowsay``. Check ``.stem`` +
                 # ``.parent`` to match both.
