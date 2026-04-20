@@ -31,6 +31,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
+from .windows_compat import link_binary
 
 
 USER_CACHE_PATH = user_cache_path(
@@ -73,7 +74,7 @@ class NpmProvider(BinProvider):
         return {
             "NODE_MODULES_DIR": node_modules_dir,
             "NODE_MODULE_DIR": node_modules_dir,
-            "NODE_PATH": ":" + node_modules_dir,
+            "NODE_PATH": os.pathsep + node_modules_dir,
             "npm_config_prefix": str(self.install_root),
         }
 
@@ -379,8 +380,9 @@ class NpmProvider(BinProvider):
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        link_path.symlink_to(target)
-        return TypeAdapter(HostBinPath).validate_python(link_path)
+        # Symlink on Unix, hardlink/copy fallback on Windows (dev-mode symlink may fail).
+        result = link_binary(target, link_path)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

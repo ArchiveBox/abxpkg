@@ -17,7 +17,9 @@ class TestGoGetProvider:
         assert installer is not None
         assert installer.loaded_abspath is not None
         assert installer.loaded_version is not None
-        assert installer.loaded_abspath.name == "go"
+        # ``.stem`` strips Windows' ``.EXE`` / ``.exe`` suffix so both
+        # POSIX ``go`` and Windows ``go.EXE`` layouts match.
+        assert installer.loaded_abspath.stem == "go"
         loaded_version = installer.loaded_version
         expected_version = SemVer.parse("1.0.0")
         assert expected_version is not None
@@ -54,7 +56,7 @@ class TestGoGetProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath.name == "shfmt"
+            assert installed.loaded_abspath.stem == "shfmt"
             assert provider.load(module_path, quiet=True, no_cache=True) is not None
             assert provider.uninstall(module_path)
             assert provider.load(module_path, quiet=True, no_cache=True) is None

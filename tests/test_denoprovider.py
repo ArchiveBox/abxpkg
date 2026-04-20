@@ -160,9 +160,11 @@ class TestDenoProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root is not None
-            assert (
-                installed.loaded_abspath == provider.install_root / "bin" / "fileserver"
-            )
+            # ``deno install`` writes ``bin/fileserver`` on POSIX and
+            # ``bin/fileserver.CMD`` (+ optional ``.PS1`` wrapper) on
+            # Windows; compare parent + stem so both layouts pass.
+            assert installed.loaded_abspath.parent == provider.install_root / "bin"
+            assert installed.loaded_abspath.stem == "fileserver"
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:

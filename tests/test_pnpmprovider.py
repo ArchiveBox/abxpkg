@@ -36,8 +36,12 @@ class TestPnpmProvider:
             assert installed.loaded_abspath.exists()
             # The wrapper exists but the postinstall download was skipped via
             # explicit --ignore-scripts, so the vendored binary is missing.
+            # POSIX shells propagate the failing vendor binary's exit code;
+            # Windows ``.cmd`` wrappers return 0 but emit the ``is not
+            # recognized`` error to stderr — accept either as proof the
+            # postinstall was skipped.
             proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode != 0
+            assert proc.returncode != 0 or "not recognized" in (proc.stderr or "")
             # The provider's strict 100-year min_release_age was overridden
             # by the explicit --config.minimumReleaseAge=0 in install_args,
             # so the resolver was able to pick a real version.
@@ -67,8 +71,11 @@ class TestPnpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
             # Real on-disk pnpm install side effects.
             assert (install_root / "node_modules" / "zx" / "package.json").exists()
             assert (install_root / "package.json").exists()
@@ -117,8 +124,11 @@ class TestPnpmProvider:
             assert provider.install_root == install_root
             assert bin_dir == install_root / "node_modules" / ".bin"
             assert bin_dir.exists()
-            assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
+            # POSIX writes ``bin_dir/zx`` while Windows writes the
+            # ``bin_dir/zx.CMD`` launcher — compare ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.stem == "zx"
             # The two installs must have produced two different on-disk binaries.
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None

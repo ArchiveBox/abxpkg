@@ -30,6 +30,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
+from .windows_compat import IS_WINDOWS, link_binary
 from .semver import SemVer
 
 
@@ -85,7 +86,7 @@ class PnpmProvider(BinProvider):
             node_modules_dir = str(self.install_root / "node_modules")
             env["NODE_MODULES_DIR"] = node_modules_dir
             env["NODE_MODULE_DIR"] = node_modules_dir
-            env["NODE_PATH"] = ":" + node_modules_dir
+            env["NODE_PATH"] = os.pathsep + node_modules_dir
         return env
 
     def get_cache_info(
@@ -157,7 +158,14 @@ class PnpmProvider(BinProvider):
         default_cache_dir = Path(USER_CACHE_PATH)
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
-        return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{os.getuid()}"
+        # Use the real UID (not effective): under ``sudo`` the effective
+        # UID flips to 0, which would split the pnpm store between sudo
+        # and non-sudo runs and cause cache misses. ``os.getuid()`` is
+        # Unix-only so fall back to ``USERNAME`` on Windows.
+        user_suffix = (
+            os.getuid() if not IS_WINDOWS else (os.environ.get("USERNAME") or "user")
+        )
+        return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{user_suffix}"
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or PNPM_HOME in global mode."""
@@ -276,8 +284,9 @@ class PnpmProvider(BinProvider):
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        link_path.symlink_to(target)
-        return TypeAdapter(HostBinPath).validate_python(link_path)
+        # Symlink on Unix, hardlink/copy fallback on Windows.
+        result = link_binary(target, link_path)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

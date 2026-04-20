@@ -27,6 +27,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
+from .windows_compat import link_binary
 
 
 DEFAULT_GOPATH = Path(os.environ.get("GOPATH", "~/go")).expanduser()
@@ -296,8 +297,9 @@ class GoGetProvider(BinProvider):
         link_path.parent.mkdir(parents=True, exist_ok=True)
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        link_path.symlink_to(direct_abspath)
-        return TypeAdapter(HostBinPath).validate_python(link_path)
+        # Symlink on Unix, hardlink/copy fallback on Windows.
+        result = link_binary(direct_abspath, link_path)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     def default_version_handler(
         self,

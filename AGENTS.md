@@ -90,4 +90,13 @@ creating new superfluous/duplicative tests
 effects are correct.
 - NEVER skip tests in any environment other than apt on macos, that is the ONLY exception. 
 - assume ALL binproviders (other than apt on macos) are always available in the host environment (e.g. brew, pip, npm, docker, gem, etc. are ALL available in all environments), let it hard fail naturally if any are missing/broken. do not skip or disable those failing tests.
+- Exception for Windows: the Unix-only providers listed in
+  `abxpkg.windows_compat.UNIX_ONLY_PROVIDER_NAMES` (apt / brew / nix /
+  bash / ansible / pyinfra / docker / chromewebstore / gem) have no
+  Windows implementation, so
+  `tests/conftest.py::pytest_collection_modifyitems` skips their per-file test
+  modules on Windows. Every other provider must still run its real
+  install lifecycle on Windows and fail loudly if the host tooling is
+  missing. The scoop provider takes brew's place as the Windows
+  system-package source (see `binprovider_scoop.py`).
 - it's ok to modify the host environment / run all tests with live installs, even when install_root/lib_dir=None and some providers mutate global system packages

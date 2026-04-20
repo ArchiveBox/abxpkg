@@ -3,16 +3,13 @@ __package__ = "abxpkg"
 import logging as py_logging
 import os
 import sys
-import pwd
 import json
 import inspect
 import shutil
-import stat
 import hashlib
 import platform
 import subprocess
 import functools
-import tempfile
 from contextvars import ContextVar
 
 from typing import (
@@ -90,19 +87,31 @@ from .config import (
     load_derived_cache,
     save_derived_cache,
 )
+from .windows_compat import (
+    DEFAULT_PATH,
+    IS_WINDOWS,
+    drop_privileges_preexec,
+    ensure_writable_cache_dir,
+    get_current_euid,
+    get_pw_record,
+    link_binary,
+    uid_has_passwd_entry,
+)
 
 logger = get_logger(__name__)
 
 ################## GLOBALS ##########################################
 
 OPERATING_SYSTEM = platform.system().lower()
-DEFAULT_PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 DEFAULT_ENV_PATH = os.environ.get("PATH", DEFAULT_PATH)
 PYTHON_BIN_DIR = str(Path(sys.executable).parent)
 
 if PYTHON_BIN_DIR not in DEFAULT_ENV_PATH:
-    DEFAULT_ENV_PATH = PYTHON_BIN_DIR + ":" + DEFAULT_ENV_PATH
+    DEFAULT_ENV_PATH = PYTHON_BIN_DIR + os.pathsep + DEFAULT_ENV_PATH
 
+# Sentinel "this path is unknown" — ``/usr/bin/true`` is a real no-op
+# on Unix; on Windows we use the same symbolic value because the
+# sentinel is only compared for equality (never executed).
 UNKNOWN_ABSPATH = Path("/usr/bin/true")
 UNKNOWN_VERSION = cast(SemVer, SemVer.parse("999.999.999"))
 ACTIVE_EXEC_LOG_PREFIX: ContextVar[str | None] = ContextVar(
@@ -712,18 +721,14 @@ class BinProvider(BaseModel):
 
     @staticmethod
     def uid_has_passwd_entry(uid: int) -> bool:
-        try:
-            pwd.getpwuid(uid)
-        except KeyError:
-            return False
-        return True
+        return uid_has_passwd_entry(uid)
 
     def detect_euid(
         self,
         owner_paths: Iterable[str | Path | None] = (),
         preserve_root: bool = False,
     ) -> int:
-        current_euid = os.geteuid()
+        current_euid = get_current_euid()
         candidate_euid = None
 
         for path in owner_paths:
@@ -768,23 +773,8 @@ class BinProvider(BaseModel):
 
         return candidate_euid if candidate_euid is not None else current_euid
 
-    def get_pw_record(self, uid: int) -> pwd.struct_passwd:
-        try:
-            return pwd.getpwuid(uid)
-        except KeyError:
-            if uid != os.geteuid():
-                raise
-            return pwd.struct_passwd(
-                (
-                    os.environ.get("USER") or os.environ.get("LOGNAME") or str(uid),
-                    "x",
-                    uid,
-                    os.getegid(),
-                    "",
-                    os.environ.get("HOME", tempfile.gettempdir()),
-                    os.environ.get("SHELL", "/bin/sh"),
-                ),
-            )
+    def get_pw_record(self, uid: int) -> Any:
+        return get_pw_record(uid)
 
     @property
     def EUID(self) -> int:
@@ -1503,7 +1493,7 @@ class BinProvider(BaseModel):
         to an ambient seed. This method must not resolve INSTALLER_BINARY()
         from here or perform eager work at construction time.
         """
-        for path in reversed(self.PATH.split(":")):
+        for path in reversed(self.PATH.split(os.pathsep)):
             if path not in sys.path:
                 sys.path.insert(
                     0,
@@ -1519,14 +1509,14 @@ class BinProvider(BaseModel):
         prepend: bool = False,
     ) -> PATHStr:
         new_entries = [str(entry) for entry in entries if str(entry)]
-        existing_entries = [entry for entry in (PATH or "").split(":") if entry]
+        existing_entries = [entry for entry in (PATH or "").split(os.pathsep) if entry]
         merged_entries = (
             [*new_entries, *existing_entries]
             if prepend
             else [*existing_entries, *new_entries]
         )
         return TypeAdapter(PATHStr).validate_python(
-            ":".join(dict.fromkeys(merged_entries)),
+            os.pathsep.join(dict.fromkeys(merged_entries)),
         )
 
     def _version_from_exec(
@@ -1571,25 +1561,8 @@ class BinProvider(BaseModel):
         ) from validation_err
 
     def _ensure_writable_cache_dir(self, cache_dir: Path) -> bool:
-        if cache_dir.exists() and not cache_dir.is_dir():
-            return False
-
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
         pw_record = self.get_pw_record(self.EUID)
-        try:
-            os.chown(cache_dir, self.EUID, pw_record.pw_gid)
-        except PermissionError:
-            pass
-
-        try:
-            cache_dir.chmod(
-                cache_dir.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH,
-            )
-        except PermissionError:
-            pass
-
-        return cache_dir.is_dir() and os.access(cache_dir, os.W_OK)
+        return ensure_writable_cache_dir(cache_dir, self.EUID, pw_record.pw_gid)
 
     def _raise_proc_error(
         self,
@@ -1663,7 +1636,7 @@ class BinProvider(BaseModel):
 
         # https://stackoverflow.com/a/6037494/2156113
         # copy env and modify it to run the subprocess as the the designated user
-        current_euid = os.geteuid()
+        current_euid = get_current_euid()
         explicit_env = kwargs.pop("env", None)
         base_env = self.build_exec_env(
             providers=[self],
@@ -1684,17 +1657,17 @@ class BinProvider(BaseModel):
             env["HOME"] = identity.pw_dir
             env["LOGNAME"] = identity.pw_name
             env["USER"] = identity.pw_name
+            # Windows tools look for these first. Setting them on Unix is harmless.
+            env["USERNAME"] = identity.pw_name
+            env["USERPROFILE"] = identity.pw_dir
             return env
 
         sudo_env = _env_for_identity(target_pw_record, source_env=base_env)
         fallback_env = _env_for_identity(current_pw_record, source_env=base_env)
 
-        def drop_privileges():
-            try:
-                os.setuid(run_as_uid)
-                os.setgid(run_as_gid)
-            except Exception:
-                pass
+        # Returns a callable on Unix, ``None`` on Windows. Passing ``None``
+        # to ``subprocess`` is valid; passing a callable there raises.
+        drop_privileges = drop_privileges_preexec(run_as_uid, run_as_gid)
 
         if self.dry_run and not is_version_probe:
             return subprocess.CompletedProcess(cmd, 0, "", "skipped (dry run)")
@@ -1703,7 +1676,9 @@ class BinProvider(BaseModel):
         kwargs.setdefault("text", True)
 
         sudo_failure_output = None
-        if current_euid != 0 and run_as_uid != current_euid:
+        # Windows has no ``sudo`` and ``current_euid`` is a ``-1`` sentinel there,
+        # so the uid-mismatch check below would fire spuriously — skip entirely.
+        if not IS_WINDOWS and current_euid != 0 and run_as_uid != current_euid:
             sudo_abspath = shutil.which("sudo", path=sudo_env["PATH"]) or shutil.which(
                 "sudo",
             )
@@ -2412,6 +2387,22 @@ class BinProvider(BaseModel):
         if self.dry_run:
             return True
 
+        # After a successful provider-level uninstall, remove any managed
+        # shim we wrote into ``bin_dir`` for this binary. Symlinks on Unix
+        # become dangling when their target gets uninstalled; hardlinks
+        # and copies on Windows survive the provider's cleanup and would
+        # make ``get_abspath`` keep returning the stale shim. The shim
+        # name varies by OS extension (``bin_name``, ``bin_name.exe``,
+        # ``bin_name.cmd``, ``bin_name.bat``), so glob all variants.
+        if uninstall_result is not False and self.bin_dir is not None:
+            bin_dir = self.bin_dir
+            shim_name = Path(str(bin_name)).name
+            for candidate in (bin_dir / shim_name, *bin_dir.glob(f"{shim_name}.*")):
+                try:
+                    candidate.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
         if uninstall_result is not False:
             logger.info("🗑️ Uninstalled %s via %s", bin_name, self.name)
         return uninstall_result is not False
@@ -2518,6 +2509,17 @@ class EnvProvider(BinProvider):
             "abspath": "self.python_abspath_handler",
             "version": "{}.{}.{}".format(*sys.version_info[:3]),
         },
+        # Route ``python3`` to the same handler: Unix distros ship both
+        # ``python3`` and ``python`` on PATH, but Windows venvs only
+        # expose ``python.exe`` (no ``python3.exe``), so a naive PATH
+        # lookup falls through to the hosted-toolcache interpreter
+        # instead of ``sys.executable``. Returning ``sys.executable``
+        # unconditionally matches the semantics of "resolve the active
+        # Python interpreter" on every platform.
+        "python3": {
+            "abspath": "self.python_abspath_handler",
+            "version": "{}.{}.{}".format(*sys.version_info[:3]),
+        },
     }
 
     def setup_PATH(self, no_cache: bool = False) -> None:
@@ -2618,13 +2620,15 @@ class EnvProvider(BinProvider):
         if not link_name or link_name in {".", ".."} or "/" in str(bin_name):
             return TypeAdapter(HostBinPath).validate_python(target)
 
-        link_path = self.bin_dir / link_name
-        if link_path.exists() or link_path.is_symlink():
-            if link_path.is_symlink() and link_path.readlink() == target:
-                return TypeAdapter(HostBinPath).validate_python(link_path)
-            link_path.unlink()
-        link_path.symlink_to(target)
-        return TypeAdapter(HostBinPath).validate_python(link_path)
+        # ``link_binary`` symlinks on Unix; on Windows it falls back to
+        # hardlink then copy (since ``symlink_to`` requires admin/dev
+        # mode) and transparently appends the source's executable suffix
+        # (``.exe`` / ``.cmd`` / ``.bat``) to the link path so
+        # ``PATHEXT`` resolution finds the shim. If every strategy fails
+        # it returns ``target`` unchanged so the original binary is
+        # still usable even without a managed shim.
+        result = link_binary(target, self.bin_dir / link_name)
+        return TypeAdapter(HostBinPath).validate_python(result)
 
     def _is_managed_by_other_provider(
         self,

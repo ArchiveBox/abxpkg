@@ -23,7 +23,7 @@ class SupportsExecEnv(Protocol):
 
 
 def _split_path(path_value: str | None) -> list[str]:
-    return [entry for entry in str(path_value or "").split(":") if entry]
+    return [entry for entry in str(path_value or "").split(os.pathsep) if entry]
 
 
 def apply_exec_env(
@@ -32,17 +32,20 @@ def apply_exec_env(
 ) -> None:
     """Apply one execution-time env layer to ``env`` in place.
 
-    Value semantics:
+    Value semantics (``SEP`` is :data:`os.pathsep` — ``:`` on Unix, ``;``
+    on Windows — used as both the sentinel and the separator, so on each
+    host the resulting path-list is natively well-formed):
     - ``"value"`` overwrites the existing value
-    - ``":value"`` appends to the existing value
-    - ``"value:"`` prepends to the existing value
+    - ``"<SEP>value"`` appends to the existing value
+    - ``"value<SEP>"`` prepends to the existing value
     """
 
+    sep = os.pathsep
     for key, value in exec_env.items():
-        if value.startswith(":"):
+        if value.startswith(sep):
             existing = env.get(key, "")
             env[key] = f"{existing}{value}" if existing else value[1:]
-        elif value.endswith(":"):
+        elif value.endswith(sep):
             existing = env.get(key, "")
             env[key] = f"{value}{existing}" if existing else value[:-1]
         else:
@@ -69,7 +72,7 @@ def merge_exec_path(
             seen.add(entry)
             merged.append(entry)
 
-    return ":".join(merged)
+    return os.pathsep.join(merged)
 
 
 def build_exec_env(

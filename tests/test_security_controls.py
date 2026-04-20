@@ -14,6 +14,7 @@ from abxpkg import (
     SemVer,
 )
 from abxpkg.exceptions import BinaryInstallError, BinaryLoadError
+from abxpkg.windows_compat import IS_WINDOWS
 
 
 class TestSecurityControls:
@@ -147,10 +148,15 @@ class TestSecurityControls:
                 ).install("zx", no_cache=True)
                 is not None
             )
-            assert (
-                BrewProvider(
-                    dry_run=True,
-                    postinstall_scripts=None,
-                ).install("node", no_cache=True)
-                is not None
-            )
+            # Brew is in UNIX_ONLY_PROVIDER_NAMES on Windows — its
+            # ``INSTALLER_BINARY`` lookup raises
+            # ``BinProviderUnavailableError`` on hosts without ``brew``,
+            # which is exactly what this test is not verifying.
+            if not IS_WINDOWS:
+                assert (
+                    BrewProvider(
+                        dry_run=True,
+                        postinstall_scripts=None,
+                    ).install("node", no_cache=True)
+                    is not None
+                )

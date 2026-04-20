@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from abxpkg.windows_compat import IS_WINDOWS
+
 
 def _run_with_lib_dir(
     lib_dir_value: str,
@@ -65,7 +67,11 @@ class TestAbxPkgLibDir:
 
     @pytest.mark.parametrize(
         "lib_dir_value",
-        ["./lib", "~/.config/abx/lib", "/tmp/abxlib"],
+        # ``/tmp/abxlib`` is a POSIX literal; on Windows ``Path(...).resolve()``
+        # would anchor it to the system drive (``C:``) while the test runs
+        # from the runner's work drive (``D:``), causing a drive-mismatch
+        # assertion failure. Pick the OS-appropriate temp dir instead.
+        ["./lib", "~/.config/abx/lib", str(Path(tempfile.gettempdir()) / "abxlib")],
     )
     def test_all_path_formats_resolve_across_every_provider(
         self,
@@ -243,7 +249,13 @@ class TestAbxPkgLibDir:
         test_machine.require_tool("bun")
         test_machine.require_tool("deno")
         test_machine.require_tool("cargo")
-        test_machine.require_tool("gem")
+        # gem is disabled on Windows (see
+        # ``windows_compat.UNIX_ONLY_PROVIDER_NAMES``) — Ruby's
+        # ``gem install --bindir`` wrapper layout + elevated-context
+        # permission errors make the full lifecycle fragile enough that
+        # it gets filtered out of the default provider set.
+        if not IS_WINDOWS:
+            test_machine.require_tool("gem")
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             lib_dir = Path(tmp_dir) / "abx-lib"
@@ -294,11 +306,13 @@ class TestAbxPkgLibDir:
                     overrides={"loc": {"install_args": ["loc"]}},
                 ).install("loc")
 
-                gem = GemProvider()
-                results["gem"] = str(gem.install_root)
-                gem.get_provider_with_overrides(
-                    overrides={"lolcat": {"install_args": ["lolcat"]}},
-                ).install("lolcat")
+                import sys as _sys
+                if _sys.platform != "win32":
+                    gem = GemProvider()
+                    results["gem"] = str(gem.install_root)
+                    gem.get_provider_with_overrides(
+                        overrides={"lolcat": {"install_args": ["lolcat"]}},
+                    ).install("lolcat")
 
                 print(json.dumps(results))
                 """,
@@ -321,7 +335,10 @@ class TestAbxPkgLibDir:
                 "bun",
                 "deno",
                 "cargo",
-                "gem",
+                # ``gem`` is only installed on non-Windows (see the
+                # platform guard in the script above + the conftest
+                # Unix-only-provider skip).
+                *(() if IS_WINDOWS else ("gem",)),
             ):
                 reported = Path(payload[provider_name])
                 assert reported == lib_dir.resolve() / provider_name, (
@@ -333,7 +350,7 @@ class TestAbxPkgLibDir:
             top_level_subdirs = {
                 child.name for child in lib_dir.iterdir() if child.is_dir()
             }
-            assert {
+            expected_subdirs = {
                 "pip",
                 "uv",
                 "npm",
@@ -342,5 +359,7 @@ class TestAbxPkgLibDir:
                 "bun",
                 "deno",
                 "cargo",
-                "gem",
-            }.issubset(top_level_subdirs)
+            }
+            if not IS_WINDOWS:
+                expected_subdirs.add("gem")
+            assert expected_subdirs.issubset(top_level_subdirs)

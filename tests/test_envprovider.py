@@ -7,6 +7,7 @@ import pytest
 from abxpkg import Binary, EnvProvider, PipProvider, SemVer
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
+from abxpkg.windows_compat import IS_WINDOWS
 
 
 class TestEnvProvider:
@@ -136,9 +137,18 @@ class TestEnvProvider:
             assert provider.bin_dir is not None
             assert provider.bin_dir.exists()
             assert loaded.loaded_respath == Path(sys.executable).resolve()
-            linked_binary = provider.bin_dir / "python3"
-            assert linked_binary.is_symlink()
-            assert linked_binary.resolve() == Path(sys.executable).resolve()
+            # Unix: ``_link_loaded_binary`` creates a managed symlink in
+            # ``bin_dir`` pointing to ``sys.executable``. Windows: venv-
+            # rooted ``python.exe`` is returned unchanged by
+            # ``link_binary`` because CPython's ``pyvenv.cfg`` discovery
+            # can't follow the linked path — no shim is written, and
+            # ``loaded_abspath`` is the real venv python.
+            if not IS_WINDOWS:
+                linked_binary = provider.bin_dir / "python3"
+                assert linked_binary.is_symlink()
+                assert linked_binary.resolve() == Path(sys.executable).resolve()
+            else:
+                assert loaded.loaded_abspath == Path(sys.executable)
 
             derived_env_path = install_root / "derived.env"
             cache = load_derived_cache(derived_env_path)
@@ -154,7 +164,10 @@ class TestEnvProvider:
             assert cached_record["mtime"] == stat_result.st_mtime_ns
 
             assert provider.uninstall("python3") is False
-            assert linked_binary.is_symlink()
+            if not IS_WINDOWS:
+                # Same rationale as the earlier ``is_symlink`` check:
+                # Windows venv ``python.exe`` is never shimmed.
+                assert (provider.bin_dir / "python3").is_symlink()
             assert load_derived_cache(derived_env_path) == {}
             assert provider.load("python3", no_cache=True) is not None
 

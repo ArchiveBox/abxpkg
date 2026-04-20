@@ -8,6 +8,29 @@ import pytest
 
 from abxpkg import AptProvider, Binary, BrewProvider, SemVer
 from abxpkg.exceptions import BinaryLoadError
+from abxpkg.windows_compat import IS_WINDOWS, UNIX_ONLY_PROVIDER_NAMES
+
+# On Windows every test file targeting a Unix-only provider (apt / brew /
+# nix / bash / ansible / pyinfra / docker) is skipped. We hook into
+# ``pytest_collection_modifyitems`` (not ``collect_ignore`` /
+# ``pytest_ignore_collect``) because pytest bypasses those for paths
+# passed explicitly on the command line (the CI per-file jobs do exactly
+# that), while ``modifyitems`` runs after collection regardless of how
+# the items got there.
+_UNIX_ONLY_TEST_FILENAMES = frozenset(
+    f"test_{name}provider.py" for name in UNIX_ONLY_PROVIDER_NAMES
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    if not IS_WINDOWS:
+        return
+    skip_marker = pytest.mark.skip(
+        reason="Unix-only provider (not available on Windows, see windows_compat.UNIX_ONLY_PROVIDER_NAMES)",
+    )
+    for item in items:
+        if item.path.name in _UNIX_ONLY_TEST_FILENAMES:
+            item.add_marker(skip_marker)
 
 
 def _brew_formula_is_installed(package: str) -> bool:
@@ -141,11 +164,22 @@ class TestMachine:
         assert loaded.loaded_mtime == loaded.loaded_abspath.resolve().stat().st_mtime_ns
         assert loaded.loaded_euid == loaded.loaded_abspath.resolve().stat().st_uid
         if provider.bin_dir is not None:
-            expected_abspath = provider.bin_dir / loaded.name
+            # ``loaded.loaded_abspath`` is the actual on-disk path of the
+            # resolved binary, including any OS-specific executable suffix
+            # (``.exe`` / ``.cmd`` / ``.bat`` on Windows) — rebuilding the
+            # path from ``bin_dir / loaded.name`` would miss the suffix.
+            expected_abspath = loaded.loaded_abspath
             assert expected_abspath.exists()
-            assert expected_abspath.is_relative_to(provider.bin_dir)
-            assert loaded.loaded_respath is not None
-            assert expected_abspath.resolve() == loaded.loaded_respath
+            # When ``link_binary`` could create a managed shim, the
+            # resolved path sits under ``bin_dir``. Some sources can't be
+            # safely shimmed on every OS (e.g. venv-rooted ``python.exe``
+            # on Windows would break CPython's ``pyvenv.cfg`` discovery),
+            # so ``link_binary`` returns ``source`` unchanged — in that
+            # case the caller still gets a usable binary, just not via a
+            # bin_dir shim.
+            if expected_abspath.is_relative_to(provider.bin_dir):
+                assert loaded.loaded_respath is not None
+                assert expected_abspath.resolve() == loaded.loaded_respath
 
         if expected_version is not None:
             assert loaded.loaded_version >= expected_version

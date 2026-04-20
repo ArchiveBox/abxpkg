@@ -33,7 +33,13 @@ class TestBunProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode != 0
+            # ``--ignore-scripts`` skipped gifsicle's postinstall download so
+            # the shim has no real binary to call. POSIX shells propagate
+            # the failing child's exit code (non-zero); Windows ``cmd``
+            # wrapper returns 0 but writes the ``is not recognized`` error
+            # to stderr — accept either as proof the postinstall was
+            # skipped.
+            assert proc.returncode != 0 or "not recognized" in (proc.stderr or "")
             # The provider's strict 100-year min_release_age was overridden
             # by the explicit --minimum-release-age=0 in install_args, so
             # the install resolved a real version.

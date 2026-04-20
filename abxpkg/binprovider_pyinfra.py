@@ -2,7 +2,6 @@
 __package__ = "abxpkg"
 
 import os
-import pwd
 import sys
 import shutil
 import importlib
@@ -29,6 +28,12 @@ from .logging import (
     format_subprocess_output,
     get_logger,
     log_subprocess_output,
+)
+from .windows_compat import (
+    IS_WINDOWS,
+    chown_recursive,
+    get_current_egid,
+    get_current_euid,
 )
 
 logger = get_logger(__name__)
@@ -63,8 +68,10 @@ def pyinfra_package_install(
     # to drop privileges to the user that owns ``brew``. Previously this was
     # only wired up for the macOS auto-detect branch, which left live Linux
     # (``linuxbrew``) installs broken whenever the caller happened to be root.
-    if installer_module == "operations.brew.packages" and os.geteuid() == 0:
+    if installer_module == "operations.brew.packages" and get_current_euid() == 0:
         try:
+            import pwd  # Unix-only; safe because this branch can't run on Windows.
+
             brew_abspath = shutil.which("brew")
             if brew_abspath:
                 brew_owner_uid = Path(brew_abspath).resolve().stat().st_uid
@@ -146,7 +153,7 @@ def pyinfra_package_install(
             and installer_module != "operations.brew.packages"
         ):
             sudo_bin = shutil.which("sudo", path=os.environ.get("PATH", DEFAULT_PATH))
-            if os.geteuid() != 0 and sudo_bin:
+            if not IS_WINDOWS and get_current_euid() != 0 and sudo_bin:
                 sudo_proc = subprocess.run(
                     [sudo_bin, "-n", "--", *cmd],
                     capture_output=True,
@@ -179,25 +186,19 @@ def pyinfra_package_install(
                 timeout=timeout,
             )
     finally:
-        if os.geteuid() != 0 and sudo_bin:
-            chown_proc = subprocess.run(
-                [
-                    sudo_bin,
-                    "-n",
-                    "chown",
-                    "-R",
-                    f"{os.geteuid()}:{os.getegid()}",
-                    str(temp_dir),
-                ],
-                capture_output=True,
-                text=True,
+        if not IS_WINDOWS and get_current_euid() != 0 and sudo_bin:
+            rc = chown_recursive(
+                sudo_bin,
+                temp_dir,
+                get_current_euid(),
+                get_current_egid(),
             )
-            if chown_proc.returncode != 0:
+            if rc != 0:
                 log_subprocess_output(
                     logger,
                     "pyinfra sudo chown",
-                    chown_proc.stdout,
-                    chown_proc.stderr,
+                    "",
+                    f"chown -R exited with status {rc}",
                     level=py_logging.DEBUG,
                 )
         if temp_dir.exists():

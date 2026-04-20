@@ -34,6 +34,13 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
+from .windows_compat import (
+    VENV_BIN_SUBDIR,
+    VENV_PIP_BIN,
+    VENV_PYTHON_BIN,
+    scripts_dir_from_site_packages,
+    venv_site_packages_dirs,
+)
 
 
 USER_CACHE_PATH = user_cache_path(
@@ -81,10 +88,8 @@ class PipProvider(BinProvider):
         venv_root = self.install_root / "venv"
         env: dict[str, str] = {"VIRTUAL_ENV": str(venv_root)}
         # Add site-packages to PYTHONPATH so scripts can import installed pkgs
-        for sp in sorted(
-            (venv_root / "lib").glob("python*/site-packages"),
-        ):
-            env["PYTHONPATH"] = ":" + str(sp)
+        for sp in venv_site_packages_dirs(venv_root):
+            env["PYTHONPATH"] = os.pathsep + str(sp)
             break
         return env
 
@@ -119,7 +124,9 @@ class PipProvider(BinProvider):
     def is_valid(self) -> bool:
         """False if install_root is not created yet or if pip binary is not found in PATH"""
         if self.install_root:
-            venv_pip_path = self.install_root / "venv" / "bin" / "python"
+            venv_pip_path = (
+                self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
+            )
             if venv_pip_path.exists() and not (
                 os.path.isfile(venv_pip_path) and os.access(venv_pip_path, os.X_OK)
             ):
@@ -130,7 +137,7 @@ class PipProvider(BinProvider):
     def detect_euid_to_use(self) -> Self:
         """Derive the managed virtualenv bin_dir from install_root when one is pinned."""
         if self.bin_dir is None and self.install_root is not None:
-            self.bin_dir = self.install_root / "venv" / "bin"
+            self.bin_dir = self.install_root / "venv" / VENV_BIN_SUBDIR
         return self
 
     @property
@@ -147,10 +154,10 @@ class PipProvider(BinProvider):
         else:
             pip_bin_dirs = {
                 *(
-                    str(Path(sitepackage_dir).parent.parent.parent / "bin")
+                    str(scripts_dir_from_site_packages(Path(sitepackage_dir)))
                     for sitepackage_dir in site.getsitepackages()
                 ),
-                str(Path(site.getusersitepackages()).parent.parent.parent / "bin"),
+                str(scripts_dir_from_site_packages(Path(site.getusersitepackages()))),
                 sysconfig.get_path("scripts"),
                 str(Path(sys.executable).resolve().parent),
             }
@@ -163,14 +170,18 @@ class PipProvider(BinProvider):
             # remove any active venv from PATH because we're trying to only get the global system python paths
             active_venv = os.environ.get("VIRTUAL_ENV")
             if active_venv:
-                pip_bin_dirs.discard(f"{active_venv}/bin")
+                # ``Path`` join (not ``f"{a}/{b}"``): on Windows the other
+                # entries in ``pip_bin_dirs`` are ``\\``-separated strings,
+                # so a forward-slash concatenation would never match and
+                # the active venv's Scripts dir would stay in PATH.
+                pip_bin_dirs.discard(str(Path(active_venv) / VENV_BIN_SUBDIR))
 
             self.PATH = self._merge_PATH(*sorted(pip_bin_dirs), PATH=PATH)
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
         if self.install_root:
-            venv_pip = self.install_root / "venv" / "bin" / "pip"
+            venv_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PIP_BIN
             if venv_pip.is_file() and os.access(venv_pip, os.X_OK):
                 if not no_cache:
                     loaded = self.load_cached_binary(self.INSTALLER_BIN, venv_pip)
@@ -306,7 +317,7 @@ class PipProvider(BinProvider):
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
 
         # create new venv in pip_venv if it doesn't exist
-        venv_pip_path = pip_venv / "bin" / "python"
+        venv_pip_path = pip_venv / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
         venv_pip_binary_exists = os.path.isfile(venv_pip_path) and os.access(
             venv_pip_path,
             os.X_OK,
@@ -572,7 +583,7 @@ class PipProvider(BinProvider):
             return None
 
         if self.install_root:
-            managed_pip = self.install_root / "venv" / "bin" / "pip"
+            managed_pip = self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PIP_BIN
             if pip_abspath != managed_pip:
                 return None
 
@@ -597,7 +608,7 @@ class PipProvider(BinProvider):
             ].split("Location: ", 1)[-1]
         except IndexError:
             return None
-        PATH = str(Path(location).parent.parent.parent / "bin")
+        PATH = str(scripts_dir_from_site_packages(Path(location)))
         abspath = bin_abspath(str(bin_name), PATH=PATH)
         if abspath:
             return TypeAdapter(HostBinPath).validate_python(abspath)
@@ -640,15 +651,16 @@ class PipProvider(BinProvider):
             return cache_info
 
         normalized_name = package_name.lower().replace("-", "_")
-        metadata_files = sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/METADATA",
-            ),
-        ) or sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/PKG-INFO",
-            ),
-        )
+        site_packages_dirs = venv_site_packages_dirs(self.install_root / "venv")
+        metadata_files: list[Path] = []
+        for sp in site_packages_dirs:
+            metadata_files = sorted(
+                sp.glob(f"{normalized_name}*.dist-info/METADATA"),
+            ) or sorted(
+                sp.glob(f"{normalized_name}*.dist-info/PKG-INFO"),
+            )
+            if metadata_files:
+                break
         if metadata_files:
             cache_info["fingerprint_paths"].append(metadata_files[0])
         return cache_info

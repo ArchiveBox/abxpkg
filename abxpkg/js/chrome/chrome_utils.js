@@ -1347,19 +1347,46 @@ async function installExtension(extension, options = {}) {
         }
     }
 
-    // Unzip CRX file to unpacked_path (CRX files have extra header bytes but unzip handles it)
+    // Unzip CRX file to unpacked_path. CRX files are ZIP archives with
+    // an extra header (magic ``Cr24``, version, public key, signature)
+    // prefixed to the real ZIP stream. POSIX ``unzip`` is lenient about
+    // the header, but Windows has no ``unzip``, and ``tar``/``Expand-
+    // Archive`` are strict. Strip the header in-process first so every
+    // platform can extract the resulting plain ZIP with whatever tool
+    // it already has.
     await fs.promises.mkdir(extension.unpacked_path, { recursive: true });
 
+    // Locate the local-file header magic (``PK\x03\x04``) that starts
+    // the real ZIP payload and write that suffix to a sibling ``.zip``.
+    let zipPath = extension.crx_path;
     try {
-        // Use -q to suppress warnings about extra bytes in CRX header
-        await execAsync(`/usr/bin/unzip -q -o "${extension.crx_path}" -d "${extension.unpacked_path}"`);
+        const raw = await fs.promises.readFile(extension.crx_path);
+        const pkIdx = raw.indexOf(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+        if (pkIdx > 0) {
+            zipPath = `${extension.crx_path}.zip`;
+            await fs.promises.writeFile(zipPath, raw.subarray(pkIdx));
+        }
+    } catch (stripErr) {
+        console.warn(`[⚠️] Failed to strip CRX header from ${extension.crx_path}:`, stripErr.message);
+    }
+
+    // Pick a platform-appropriate extractor. ``tar -xf`` is present on
+    // Windows 10 1803+ and every mainstream *nix distro and handles
+    // plain ZIP transparently; POSIX ``unzip`` stays as the default
+    // elsewhere so we don't regress hosts that already work.
+    const unzipCmd = process.platform === 'win32'
+        ? `tar -xf "${zipPath}" -C "${extension.unpacked_path}"`
+        : `/usr/bin/unzip -q -o "${zipPath}" -d "${extension.unpacked_path}"`;
+    try {
+        await execAsync(unzipCmd);
     } catch (err1) {
-        // unzip may return non-zero even on success due to CRX header warning, check if manifest exists
+        // Extractors may return non-zero even on success due to CRX
+        // header warnings, check if the manifest landed anyway.
         if (!fs.existsSync(manifest_path)) {
             if (unzip) {
                 // Fallback to unzipper library
                 try {
-                    await unzip(extension.crx_path, extension.unpacked_path);
+                    await unzip(zipPath, extension.unpacked_path);
                 } catch (err2) {
                     console.error(`[❌] Failed to unzip ${extension.crx_path}:`, err2.message);
                     return false;

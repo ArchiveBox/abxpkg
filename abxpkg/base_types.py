@@ -74,9 +74,9 @@ BinDirPath = Annotated[Path, AfterValidator(validate_bin_dir)]
 
 
 def validate_PATH(PATH: str | list[str]) -> str:
-    paths = PATH.split(":") if isinstance(PATH, str) else list(PATH)
+    paths = PATH.split(os.pathsep) if isinstance(PATH, str) else list(PATH)
     assert all(Path(bin_dir) for bin_dir in paths)
-    return ":".join(paths).strip(":")
+    return os.pathsep.join(paths).strip(os.pathsep)
 
 
 PATHStr = Annotated[str, BeforeValidator(validate_PATH)]
@@ -218,7 +218,7 @@ def bin_abspath(
         # print(bin_path_or_name, PATH.split(':'), binpath, 'GOPINGNGN')
         if not binpath:
             # some bins dont show up with shutil.which (e.g. django-admin.py)
-            for path in PATH.split(":"):
+            for path in PATH.split(os.pathsep):
                 bin_dir = Path(path)
                 # print('BIN_DIR', bin_dir, bin_dir.is_dir())
                 if not (os.path.isdir(bin_dir) and os.access(bin_dir, os.R_OK)):
@@ -258,7 +258,7 @@ def bin_abspaths(
         abspaths.append(Path(bin_path_or_name).expanduser().absolute())
     else:
         # not a path yet, get path using shutil.which
-        for path in PATH.split(":"):
+        for path in PATH.split(os.pathsep):
             binpath = shutil.which(bin_path_or_name, mode=os.X_OK, path=path)
             if binpath and str(Path(binpath).parent) in PATH:
                 abspaths.append(binpath)

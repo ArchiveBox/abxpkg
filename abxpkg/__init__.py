@@ -67,6 +67,8 @@ from .binprovider_chromewebstore import ChromeWebstoreProvider
 from .binprovider_puppeteer import PuppeteerProvider
 from .binprovider_playwright import PlaywrightProvider
 from .binprovider_bash import BashProvider
+from .binprovider_scoop import ScoopProvider
+from .windows_compat import IS_WINDOWS, UNIX_ONLY_PROVIDER_NAMES
 
 ALL_PROVIDERS = [
     EnvProvider,
@@ -90,6 +92,7 @@ ALL_PROVIDERS = [
     PyinfraProvider,
     ChromeWebstoreProvider,
     BashProvider,
+    ScoopProvider,
 ]
 
 
@@ -105,12 +108,18 @@ ALL_PROVIDER_CLASS_NAMES = [
 ]  # PipProvider, AptProvider, BrewProvider, etc.
 
 
-# Default provider names: names of providers that are enabled by default based on the current OS
+# Default provider names: names of providers that are enabled by default based on the current OS.
+# On Windows we also drop everything in ``UNIX_ONLY_PROVIDER_NAMES`` (apt,
+# brew, nix, bash, ansible, pyinfra, docker) since none of them have a
+# working Windows backend, and we drop ``scoop`` on non-Windows hosts
+# since it's Windows-only.
 DEFAULT_PROVIDER_NAMES = [
     provider_name
     for provider_name in ALL_PROVIDER_NAMES
     if not (OPERATING_SYSTEM == "darwin" and provider_name == "apt")
     and provider_name not in ("ansible", "pyinfra")
+    and not (IS_WINDOWS and provider_name in UNIX_ONLY_PROVIDER_NAMES)
+    and not (not IS_WINDOWS and provider_name == "scoop")
 ]
 
 # Lazy provider singletons: maps provider name -> class
@@ -204,6 +213,7 @@ __all__ = [
     "PuppeteerProvider",
     "PlaywrightProvider",
     "BashProvider",
+    "ScoopProvider",
     # Note: provider singleton names (apt, pip, brew, etc.) are intentionally
     # excluded from __all__ so that `from abxpkg import *` does not eagerly
     # instantiate every provider. Use explicit imports instead:

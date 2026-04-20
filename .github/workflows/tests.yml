@@ -83,6 +83,19 @@ jobs:
     runs-on: ${{ matrix.target.os }}
     timeout-minutes: 20
     if: ${{ needs.discover-standard-tests.outputs.test-files != '[]' }}
+    # Windows support is best-effort: the core library (Binary /
+    # BinProvider / Scoop / pip / uv / etc.) works on Windows, but a
+    # handful of tests still carry POSIX-only assertions (hardcoded
+    # ``/tmp`` paths, ``.CMD`` vs no-suffix shim names, CRX extraction
+    # that needs a bundled ``unzipper`` npm dep, etc.). Mark the
+    # Windows leg as ``experimental`` so CI still surfaces its status
+    # without blocking merge on leftover per-test Windows fixups.
+    continue-on-error: ${{ matrix.target.experimental || false }}
+    # Use git-bash on Windows runners so the (mostly POSIX) setup scripts
+    # below keep working without duplicating them in PowerShell.
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       max-parallel: 20
@@ -94,6 +107,9 @@ jobs:
           python_version: '3.14'
         - os: macOS-latest
           python_version: '3.13'
+        - os: windows-latest
+          python_version: '3.13'
+          experimental: true
         test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
 
     steps:
@@ -103,7 +119,7 @@ jobs:
       uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.target.python_version }}
-   
+
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
       with:
@@ -121,6 +137,9 @@ jobs:
         node-version: '22'
 
     - name: Setup Yarn (classic + Berry)
+      # Uses ``ln -sf`` / Unix prefix dirs — not applicable to the Windows
+      # runner and not needed for the Windows test matrix anyway.
+      if: runner.os != 'Windows'
       run: |
         npm install -g yarn@1.22.22
         if [ "$(uname -s)" = "Darwin" ]; then
@@ -146,6 +165,30 @@ jobs:
         yarn-berry --version
         yarn --version | grep -q '^1\.' || { echo "ERROR: yarn is not 1.x"; exit 1; }
 
+    - name: Setup Yarn (classic + Berry, Windows)
+      # Windows equivalent of the Unix setup: classic yarn via ``npm -g``,
+      # then Berry via ``npm --prefix`` + a ``.cmd`` wrapper at a stable
+      # ``yarn-berry.cmd`` PATH entry (git-bash has no ``ln -sf``).
+      if: runner.os == 'Windows'
+      run: |
+        npm install -g yarn@1.22.22
+        YARN_BERRY_PREFIX="$USERPROFILE/yarn-berry"
+        YARN_BERRY_ALIAS_DIR="$USERPROFILE/yarn-berry-bin"
+        mkdir -p "$YARN_BERRY_ALIAS_DIR"
+        # GITHUB_PATH is interpreted by runner as \-prefixed lines on Windows.
+        echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        # Emit a one-line ``yarn-berry.cmd`` that forwards to npm-installed
+        # ``yarn.cmd``. Use ``%*`` to pass through all args.
+        cat > "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd" <<EOF
+@echo off
+"$YARN_BERRY_PREFIX\\node_modules\\.bin\\yarn.cmd" %*
+EOF
+        export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
+        command -v yarn-berry
+        yarn-berry --version | grep -q '^4\.'
+        yarn --version | grep -q '^1\.'
+
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
       with:
@@ -162,31 +205,46 @@ jobs:
         go-version: '1.25'
 
     - name: Install Nix
+      # Nix has no Windows build.
+      if: runner.os != 'Windows'
       uses: DeterminateSystems/nix-installer-action@v22
 
     - name: Setup venv and install pip dependencies
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         uv venv --python "${{ matrix.target.python_version }}"
-        uv sync --all-extras
+        # ``ansible`` has no Windows build, and ``pyinfra`` pulls it in
+        # transitively, so on Windows we install the base extras only.
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          uv sync
+        else
+          uv sync --all-extras
+        fi
         uv pip install pip
         mkdir -p "$PNPM_HOME"
         echo "$PNPM_HOME" >> "$GITHUB_PATH"
-        echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
-        if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
+        if [ "${{ runner.os }}" != "Windows" ]; then
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
+        fi
 
     - name: Environment diagnostic
       run: |
         echo "=== OS ==="; uname -a
         # Activate the uv-managed venv so ``.venv/bin`` (where
         # ``uv sync --all-extras`` installs pyinfra / ansible / pip /
-        # etc.) is on PATH, matching what ``uv run pytest`` sees.
+        # etc.) is on PATH, matching what ``uv run pytest`` sees. On
+        # Windows the executable scripts go into ``.venv/Scripts`` instead.
         if [ -d .venv/bin ]; then
           export PATH="$PWD/.venv/bin:$PATH"
           echo "=== venv === $PWD/.venv"
         fi
+        if [ -d .venv/Scripts ]; then
+          export PATH="$PWD/.venv/Scripts:$PATH"
+          echo "=== venv === $PWD/.venv (Windows layout)"
+        fi
         echo "=== PATH ==="; echo "$PATH" | tr ':' '\n'
-        for bin in python pip uv node npm pnpm yarn bun deno go gem cargo rustc brew apt-get dpkg docker nix nix-env ansible ansible-playbook pyinfra sh bash; do
+        for bin in python pip uv node npm pnpm yarn bun deno go gem cargo rustc brew apt-get dpkg docker nix nix-env ansible ansible-playbook pyinfra scoop sh bash; do
           path=$(command -v "$bin" 2>/dev/null || true)
           if [ -z "$path" ]; then
             echo "=== $bin === (not installed)"

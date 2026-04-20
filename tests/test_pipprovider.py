@@ -9,6 +9,7 @@ import pytest
 from abxpkg import Binary, PipProvider, SemVer
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import BinaryInstallError
+from abxpkg.windows_compat import VENV_BIN_SUBDIR
 
 
 class TestPipProvider:
@@ -179,7 +180,7 @@ class TestPipProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.bin_dir == install_root / "venv" / VENV_BIN_SUBDIR
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -215,7 +216,7 @@ class TestPipProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.bin_dir == install_root / "venv" / VENV_BIN_SUBDIR
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None

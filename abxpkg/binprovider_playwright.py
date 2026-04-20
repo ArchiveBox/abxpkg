@@ -25,6 +25,7 @@ from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .binprovider_npm import NpmProvider
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
+from .windows_compat import IS_WINDOWS, get_current_euid, link_binary
 
 logger = get_logger(__name__)
 
@@ -295,7 +296,14 @@ class PlaywrightProvider(BinProvider):
             env_assignments.append(
                 f"PLAYWRIGHT_BROWSERS_PATH={self.install_root}",
             )
-        needs_sudo_env_wrapper = os.geteuid() != 0 and self.EUID != os.geteuid()
+        # Unix-only: the ``/usr/bin/env KEY=VAL`` wrapper + sudo path below
+        # doesn't exist on Windows, and ``get_current_euid()`` returns ``-1``
+        # there which would spuriously trip the guard.
+        needs_sudo_env_wrapper = (
+            not IS_WINDOWS
+            and get_current_euid() != 0
+            and self.EUID != get_current_euid()
+        )
         if env_assignments and needs_sudo_env_wrapper:
             resolved_bin = bin_name
             if not os.path.isabs(str(bin_name)):
@@ -536,8 +544,8 @@ class PlaywrightProvider(BinProvider):
             )
             link.chmod(0o755)
             return link
-        link.symlink_to(target)
-        return link
+        # Cross-platform: symlink on Unix, falls back to hardlink/copy on Windows.
+        return link_binary(target, link)
 
     def default_abspath_handler(
         self,
@@ -559,9 +567,12 @@ class PlaywrightProvider(BinProvider):
                 return None
             return None
         if self.bin_dir is not None:
-            link = self.bin_dir / str(bin_name)
-            if link.exists() and os.access(link, os.X_OK):
-                return link
+            # ``bin_abspath`` honors ``PATHEXT`` on Windows so the managed
+            # shim's ``.exe`` / ``.cmd`` / ``.bat`` suffix is resolved
+            # transparently.
+            existing_shim = bin_abspath(str(bin_name), PATH=str(self.bin_dir))
+            if existing_shim and os.access(existing_shim, os.X_OK):
+                return existing_shim
         resolved = self._playwright_browser_path(
             str(bin_name),
             no_cache=no_cache,
@@ -635,10 +646,13 @@ class PlaywrightProvider(BinProvider):
         # ``PermissionError``. The chown itself routes through the
         # same euid=0 → sudo path, so it gets root permission for
         # free. No-op when we're already root or there is no install_root.
+        # chown is Unix-only; ``os.getuid()`` / ``os.getgid()`` below don't
+        # exist on Windows and NTFS ACL inheritance makes this block moot there.
         if (
-            self.install_root is not None
+            not IS_WINDOWS
+            and self.install_root is not None
             and self.install_root.is_dir()
-            and os.geteuid() != 0
+            and get_current_euid() != 0
         ):
             chown_bin = shutil.which("chown") or "/usr/sbin/chown"
             self.exec(

@@ -89,7 +89,7 @@ class YarnProvider(BinProvider):
             node_modules_dir = str(self.install_root / "node_modules")
             env["NODE_MODULES_DIR"] = node_modules_dir
             env["NODE_MODULE_DIR"] = node_modules_dir
-            env["NODE_PATH"] = ":" + node_modules_dir
+            env["NODE_PATH"] = os.pathsep + node_modules_dir
         return env
 
     @property

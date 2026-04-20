@@ -8,6 +8,7 @@ import pytest
 from abxpkg import Binary, SemVer, UvProvider
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg.windows_compat import VENV_BIN_SUBDIR, VENV_PYTHON_BIN
 
 
 class TestUvProvider:
@@ -70,7 +71,12 @@ class TestUvProvider:
                     "pip",
                     "show",
                     "--python",
-                    str(provider.install_root / "venv" / "bin" / "python"),
+                    str(
+                        provider.install_root
+                        / "venv"
+                        / VENV_BIN_SUBDIR
+                        / VENV_PYTHON_BIN,
+                    ),
                     "saws",
                 ],
                 timeout=provider.version_timeout,
@@ -133,7 +139,13 @@ class TestUvProvider:
             # The provider-level 100yr ``min_release_age`` was overridden by
             # the explicit ``--exclude-newer=2100-01-01`` in install_args so
             # the resolver was able to pick a real version.
-            assert installed.loaded_abspath == venv_path / "venv" / "bin" / "cowsay"
+            # On Windows the console-script shim is ``cowsay.exe`` while
+            # POSIX writes bare ``cowsay`` — compare via ``.stem`` so both
+            # layouts pass.
+            assert installed.loaded_abspath.parent == (
+                venv_path / "venv" / VENV_BIN_SUBDIR
+            )
+            assert installed.loaded_abspath.stem == "cowsay"
 
     def test_install_root_alias_installs_into_the_requested_venv(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -155,13 +167,23 @@ class TestUvProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.bin_dir == install_root / "venv" / VENV_BIN_SUBDIR
             assert installed.loaded_abspath.parent == provider.bin_dir
             # Real on-disk side effects: ``uv venv`` created a real venv.
             assert (install_root / "venv" / "pyvenv.cfg").exists()
-            assert (install_root / "venv" / "bin" / "python").exists()
-            # And the cowsay CLI got wired up inside the venv.
-            assert (install_root / "venv" / "bin" / "cowsay").exists()
+            assert (install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN).exists()
+            # And the cowsay CLI got wired up inside the venv. On Windows
+            # it's ``cowsay.exe``; use ``shutil.which``-style PATHEXT
+            # resolution via ``bin_abspath``.
+            from abxpkg.base_types import bin_abspath as _ba
+
+            assert (
+                _ba(
+                    "cowsay",
+                    PATH=str(install_root / "venv" / VENV_BIN_SUBDIR),
+                )
+                is not None
+            )
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
@@ -201,7 +223,7 @@ class TestUvProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.bin_dir == install_root / "venv" / VENV_BIN_SUBDIR
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version == SemVer("6.1.0")
@@ -412,7 +434,12 @@ class TestUvProvider:
                     "pip",
                     "show",
                     "--python",
-                    str(provider.install_root / "venv" / "bin" / "python"),
+                    str(
+                        provider.install_root
+                        / "venv"
+                        / VENV_BIN_SUBDIR
+                        / VENV_PYTHON_BIN,
+                    ),
                     "chromium",
                 ],
                 quiet=True,
@@ -448,7 +475,17 @@ class TestUvProvider:
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="cowsay")
             # dry_run must not have actually installed anything into the venv.
-            assert not (Path(temp_dir) / "venv" / "venv" / "bin" / "cowsay").exists()
+            # ``dry_run`` must not have installed anything; check the venv
+            # scripts dir is clean regardless of Windows ``.exe`` suffix.
+            from abxpkg.base_types import bin_abspath as _ba
+
+            assert (
+                _ba(
+                    "cowsay",
+                    PATH=str(Path(temp_dir) / "venv" / "venv" / VENV_BIN_SUBDIR),
+                )
+                is None
+            )
 
     def test_provider_action_args_override_provider_defaults(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -534,8 +571,13 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert installed is not None
-                shim_path = tool_bin_dir / "cowsay"
-                assert shim_path.exists()
+                # POSIX writes ``bin_dir/cowsay`` while Windows writes
+                # ``bin_dir/cowsay.exe`` — resolve the actual shim via
+                # ``bin_abspath`` (PATHEXT-aware) so both layouts match.
+                from abxpkg.base_types import bin_abspath as _ba
+
+                shim_path = _ba("cowsay", PATH=str(tool_bin_dir))
+                assert shim_path is not None and shim_path.exists()
                 shim_path.unlink()
 
                 reloaded = provider.load("cowsay", quiet=True, no_cache=True)
@@ -544,7 +586,14 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert reloaded is not None
-                assert reloaded.loaded_abspath == tool_dir / "cowsay" / "bin" / "cowsay"
+                assert reloaded.loaded_abspath is not None
+                # Windows uv-tool layout uses ``Scripts/cowsay.exe``
+                # while POSIX writes ``bin/cowsay``. Check ``.stem`` +
+                # ``.parent`` to match both.
+                assert reloaded.loaded_abspath.parent == (
+                    tool_dir / "cowsay" / VENV_BIN_SUBDIR
+                )
+                assert reloaded.loaded_abspath.stem == "cowsay"
 
                 assert provider.uninstall("cowsay") is True
                 assert provider.load("cowsay", quiet=True, no_cache=True) is None

@@ -15,10 +15,16 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
+    bin_abspath,
 )
 from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
+from .windows_compat import (
+    VENV_BIN_SUBDIR,
+    VENV_PYTHON_BIN,
+    venv_site_packages_dirs,
+)
 
 USER_CACHE_PATH = user_cache_path("uv", "abxpkg")
 logger = get_logger(__name__)
@@ -76,10 +82,8 @@ class UvProvider(BinProvider):
         if self.install_root:
             venv_root = self.install_root / "venv"
             env["VIRTUAL_ENV"] = str(venv_root)
-            for sp in sorted(
-                (venv_root / "lib").glob("python*/site-packages"),
-            ):
-                env["PYTHONPATH"] = ":" + str(sp)
+            for sp in venv_site_packages_dirs(venv_root):
+                env["PYTHONPATH"] = os.pathsep + str(sp)
                 break
             return env
         env["UV_TOOL_DIR"] = str(self.tool_dir)
@@ -97,7 +101,7 @@ class UvProvider(BinProvider):
     @property
     def is_valid(self) -> bool:
         if self.install_root:
-            venv_python = self.install_root / "venv" / "bin" / "python"
+            venv_python = self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
             if venv_python.exists() and not (
                 venv_python.is_file() and os.access(venv_python, os.X_OK)
             ):
@@ -108,7 +112,7 @@ class UvProvider(BinProvider):
     def detect_euid_to_use(self) -> Self:
         """Derive uv's managed virtualenv bin_dir from install_root when configured."""
         if self.bin_dir is None and self.install_root is not None:
-            self.bin_dir = self.install_root / "venv" / "bin"
+            self.bin_dir = self.install_root / "venv" / VENV_BIN_SUBDIR
         return self
 
     @property
@@ -193,7 +197,7 @@ class UvProvider(BinProvider):
         """Create the managed uv virtualenv on first use when install_root is pinned."""
         assert self.install_root is not None
         venv_root = self.install_root / "venv"
-        venv_python = venv_root / "bin" / "python"
+        venv_python = venv_root / VENV_BIN_SUBDIR / VENV_PYTHON_BIN
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
             return
         self.install_root.parent.mkdir(parents=True, exist_ok=True)
@@ -285,15 +289,16 @@ class UvProvider(BinProvider):
 
         package_name = self._package_name_for_bin(str(bin_name))
         normalized_name = package_name.lower().replace("-", "_")
-        metadata_files = sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/METADATA",
-            ),
-        ) or sorted(
-            ((self.install_root / "venv") / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/PKG-INFO",
-            ),
-        )
+        site_packages_dirs = venv_site_packages_dirs(self.install_root / "venv")
+        metadata_files: list[Path] = []
+        for sp in site_packages_dirs:
+            metadata_files = sorted(
+                sp.glob(f"{normalized_name}*.dist-info/METADATA"),
+            ) or sorted(
+                sp.glob(f"{normalized_name}*.dist-info/PKG-INFO"),
+            )
+            if metadata_files:
+                break
         if metadata_files:
             cache_info["fingerprint_paths"].append(metadata_files[0])
         return cache_info
@@ -317,7 +322,7 @@ class UvProvider(BinProvider):
                     "pip",
                     "show",
                     "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
+                    str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                     package_name,
                 ],
                 timeout=timeout,
@@ -393,7 +398,7 @@ class UvProvider(BinProvider):
                 "pip",
                 "install",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                 "--compile-bytecode",
                 cache_arg,
                 *flags,
@@ -471,7 +476,7 @@ class UvProvider(BinProvider):
                     "pip",
                     "uninstall",
                     "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
+                    str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                     *tool_names,
                 ],
                 timeout=timeout,
@@ -490,8 +495,8 @@ class UvProvider(BinProvider):
             # venv's site-packages between the uninstall and the install
             # so Python is forced to recompile from the freshly-written
             # source. Targeted, not the whole venv.
-            for site_packages in ((self.install_root / "venv") / "lib").glob(
-                "python*/site-packages",
+            for site_packages in venv_site_packages_dirs(
+                self.install_root / "venv",
             ):
                 for pycache_dir in site_packages.rglob("__pycache__"):
                     if pycache_dir.exists():
@@ -504,7 +509,7 @@ class UvProvider(BinProvider):
                 "pip",
                 "install",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                 "--compile-bytecode",
                 cache_arg,
                 *flags,
@@ -552,7 +557,7 @@ class UvProvider(BinProvider):
                 "pip",
                 "uninstall",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                 *tool_names,
             ]
         else:
@@ -588,21 +593,26 @@ class UvProvider(BinProvider):
                     "pip",
                     "show",
                     "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
+                    str(self.install_root / "venv" / VENV_BIN_SUBDIR / VENV_PYTHON_BIN),
                     tool_name,
                 ],
                 timeout=self.version_timeout,
                 quiet=True,
             )
             if proc.returncode == 0:
-                candidate = self.install_root / "venv" / "bin" / str(bin_name)
-                if candidate.exists():
-                    return TypeAdapter(HostBinPath).validate_python(candidate)
+                # ``bin_abspath`` wraps ``shutil.which`` which honors ``PATHEXT``
+                # on Windows, so ``<bin>.exe`` / ``.cmd`` / ``.bat`` variants
+                # dropped by pip/uv console-script install are resolved too.
+                venv_bin_dir = self.install_root / "venv" / VENV_BIN_SUBDIR
+                resolved = bin_abspath(str(bin_name), PATH=str(venv_bin_dir))
+                if resolved is not None:
+                    return TypeAdapter(HostBinPath).validate_python(resolved)
         else:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
-            candidate = self.tool_dir / tool_name / "bin" / str(bin_name)
-            if candidate.exists():
-                return TypeAdapter(HostBinPath).validate_python(candidate)
+            tool_bin_dir = self.tool_dir / tool_name / VENV_BIN_SUBDIR
+            resolved = bin_abspath(str(bin_name), PATH=str(tool_bin_dir))
+            if resolved is not None:
+                return TypeAdapter(HostBinPath).validate_python(resolved)
         return None
 
     def default_version_handler(

@@ -29,6 +29,12 @@ from .logging import (
     log_subprocess_output,
 )
 from .config import apply_exec_env
+from .windows_compat import (
+    IS_WINDOWS,
+    chown_recursive,
+    get_current_egid,
+    get_current_euid,
+)
 
 logger = get_logger(__name__)
 
@@ -188,7 +194,7 @@ def ansible_package_install(
             resolved_installer_module,
         )
         env["TMPDIR"] = SYSTEM_TEMP_DIR
-        apply_exec_env({"PATH": f"{Path(sys.executable).parent}:"}, env)
+        apply_exec_env({"PATH": f"{Path(sys.executable).parent}{os.pathsep}"}, env)
         cmd = [
             ansible_playbook_abspath,
             "-i",
@@ -200,11 +206,12 @@ def ansible_package_install(
         proc = None
         sudo_failure_output = None
         if (
-            OPERATING_SYSTEM != "darwin"
+            not IS_WINDOWS
+            and OPERATING_SYSTEM != "darwin"
             and installer_module != "community.general.homebrew"
         ):
             sudo_bin = shutil.which("sudo", path=env["PATH"]) or shutil.which("sudo")
-            if os.geteuid() != 0 and sudo_bin:
+            if get_current_euid() != 0 and sudo_bin:
                 sudo_proc = subprocess.run(
                     [
                         sudo_bin,
@@ -259,25 +266,19 @@ def ansible_package_install(
             f"Installing {pkg_names} failed! (retry with sudo, or install manually)\n{result_text}",
         )
     finally:
-        if os.geteuid() != 0 and sudo_bin:
-            chown_proc = subprocess.run(
-                [
-                    sudo_bin,
-                    "-n",
-                    "chown",
-                    "-R",
-                    f"{os.geteuid()}:{os.getegid()}",
-                    str(temp_dir),
-                ],
-                capture_output=True,
-                text=True,
+        if not IS_WINDOWS and get_current_euid() != 0 and sudo_bin:
+            rc = chown_recursive(
+                sudo_bin,
+                temp_dir,
+                get_current_euid(),
+                get_current_egid(),
             )
-            if chown_proc.returncode != 0:
+            if rc != 0:
                 log_subprocess_output(
                     logger,
                     "ansible sudo chown",
-                    chown_proc.stdout,
-                    chown_proc.stderr,
+                    "",
+                    f"chown -R exited with status {rc}",
                     level=py_logging.DEBUG,
                 )
         if temp_dir.exists():

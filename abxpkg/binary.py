@@ -1,5 +1,6 @@
 __package__ = "abxpkg"
 
+import os
 from typing import Any
 from typing import Self
 
@@ -189,7 +190,7 @@ class Binary(ShallowBinary):
     @property
     def loaded_bin_dirs(self) -> dict[BinProviderName, PATHStr]:
         return {
-            provider_name: ":".join(
+            provider_name: os.pathsep.join(
                 [str(bin_abspath.parent) for bin_abspath in bin_abspaths],
             )
             for provider_name, bin_abspaths in self.loaded_abspaths.items()

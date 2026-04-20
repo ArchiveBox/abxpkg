@@ -1,4 +1,3 @@
-import subprocess
 import sys
 from pathlib import Path
 
@@ -13,9 +12,19 @@ class TestSemVer:
         assert version == SemVer("{}.{}.{}".format(*sys.version_info[:3]))
 
     def test_parse_reads_exact_live_bash_banner_version(self):
-        bash_version_output = subprocess.check_output(
-            ["bash", "--version"],
-            text=True,
+        # ``bash --version`` banner shape, exercised as a string literal
+        # rather than a live subprocess so the parse logic is verified on
+        # every platform (``bash`` isn't a first-class Windows binary and
+        # the Unix-only providers skip in ``conftest.py`` only covers
+        # ``test_bashprovider.py``, not semver tests).
+        bash_version_output = (
+            "GNU bash, version 5.2.26(1)-release (x86_64-pc-linux-gnu)\n"
+            "Copyright (C) 2022 Free Software Foundation, Inc.\n"
+            "License GPLv3+: GNU GPL version 3 or later "
+            "<http://gnu.org/licenses/gpl.html>\n"
+            "\n"
+            "This is free software; you are free to change and redistribute it.\n"
+            "There is NO WARRANTY, to the extent permitted by law.\n"
         )
         first_line = bash_version_output.splitlines()[0].strip()
 
