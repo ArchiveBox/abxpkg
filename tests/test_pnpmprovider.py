@@ -36,8 +36,12 @@ class TestPnpmProvider:
             assert installed.loaded_abspath.exists()
             # The wrapper exists but the postinstall download was skipped via
             # explicit --ignore-scripts, so the vendored binary is missing.
+            # POSIX shells propagate the failing vendor binary's exit code;
+            # Windows ``.cmd`` wrappers return 0 but emit the ``is not
+            # recognized`` error to stderr — accept either as proof the
+            # postinstall was skipped.
             proc = installed.exec(cmd=("--version",), quiet=True)
-            assert proc.returncode != 0
+            assert proc.returncode != 0 or "not recognized" in (proc.stderr or "")
             # The provider's strict 100-year min_release_age was overridden
             # by the explicit --config.minimumReleaseAge=0 in install_args,
             # so the resolver was able to pick a real version.

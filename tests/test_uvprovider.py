@@ -571,8 +571,13 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert installed is not None
-                shim_path = tool_bin_dir / "cowsay"
-                assert shim_path.exists()
+                # POSIX writes ``bin_dir/cowsay`` while Windows writes
+                # ``bin_dir/cowsay.exe`` — resolve the actual shim via
+                # ``bin_abspath`` (PATHEXT-aware) so both layouts match.
+                from abxpkg.base_types import bin_abspath as _ba
+
+                shim_path = _ba("cowsay", PATH=str(tool_bin_dir))
+                assert shim_path is not None and shim_path.exists()
                 shim_path.unlink()
 
                 reloaded = provider.load("cowsay", quiet=True, no_cache=True)
