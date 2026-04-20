@@ -549,6 +549,26 @@ def _console_for_stream(*, err: bool):
     )
 
 
+def _force_utf8_stdio() -> None:
+    """Reconfigure ``sys.stdout`` / ``sys.stderr`` to UTF-8 at CLI startup.
+
+    Windows console streams default to the ANSI code page (``cp1252``
+    on US-English hosts), which can't encode the emoji / box-drawing
+    characters abxpkg prints (``🌍``, ``📦``, ``—`` …). Without this,
+    the first such character raises ``UnicodeEncodeError`` and the CLI
+    crashes mid-output. Unix stdio is already UTF-8 by default so this
+    is effectively a no-op there; the ``errors='replace'`` fallback is
+    belt-and-suspenders in case the platform refuses UTF-8 outright.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def _echo(message: Any, *, err: bool = False) -> None:
     console = _console_for_stream(err=err)
     if console is not None:
@@ -1849,6 +1869,7 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
 
 
 def main() -> None:
+    _force_utf8_stdio()
     cli(_expand_bare_bool_flags(sys.argv[1:]))
 
 
@@ -1939,6 +1960,7 @@ def abx_main() -> None:
     surface area — every option is still documented and parsed exactly
     once, by ``abxpkg`` itself.
     """
+    _force_utf8_stdio()
     argv = list(sys.argv[1:])
     pre, rest = _split_abx_argv(argv)
     # Expand bare bool flags only in the pre-binary-name slice; rest is

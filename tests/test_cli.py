@@ -542,9 +542,11 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
                 "",
             )
 
+    fake_bin_path = tmp_path / "fake-bin"
+
     class FakeRunBinary:
         def __init__(self):
-            self.loaded_abspath = Path("/tmp/fake-bin")
+            self.loaded_abspath = fake_bin_path
             self.loaded_version = SemVer("1.2.3")
             self.loaded_binprovider = FakeLoadedProvider("env")
             self.binproviders = []
@@ -585,7 +587,7 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
     assert calls == [
         ("load", (False,)),
         ("update", (("brew",), False, False)),
-        ("exec", ("brew", "/tmp/fake-bin", ("--version",), False)),
+        ("exec", ("brew", str(fake_bin_path), ("--version",), False)),
     ]
 
 
