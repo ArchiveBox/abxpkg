@@ -179,11 +179,10 @@ jobs:
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
         npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
         # Emit a one-line ``yarn-berry.cmd`` that forwards to npm-installed
-        # ``yarn.cmd``. Use ``%*`` to pass through all args.
-        cat > "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd" <<EOF
-@echo off
-"$YARN_BERRY_PREFIX\\node_modules\\.bin\\yarn.cmd" %*
-EOF
+        # ``yarn.cmd``. Use ``%*`` to pass through all args. Built with
+        # printf so the heredoc body doesn't collide with YAML block-scalar
+        # indentation.
+        printf '@echo off\n"%s\\node_modules\\.bin\\yarn.cmd" %%*\n' "$YARN_BERRY_PREFIX" > "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
         export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
         command -v yarn-berry
         yarn-berry --version | grep -q '^4\.'
