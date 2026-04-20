@@ -605,7 +605,14 @@ class PlaywrightProvider(BinProvider):
         **context,
     ) -> str:
         install_args = list(install_args or self.get_install_args(bin_name))
-        merged_args = ["--with-deps", *install_args]
+        # ``--with-deps`` lets Playwright ``apt-get install`` the browser's
+        # native sys-libs on Linux, is a no-op on macOS, and is flat-out
+        # unsupported on Windows (Playwright prints a hard warning and
+        # ignores the flag, but emitting it is noisy and confuses the
+        # log-line parser). Gate it on platform.
+        merged_args = (
+            list(install_args) if IS_WINDOWS else ["--with-deps", *install_args]
+        )
         if no_cache and "--force" not in merged_args:
             merged_args = ["--force", *merged_args]
 
