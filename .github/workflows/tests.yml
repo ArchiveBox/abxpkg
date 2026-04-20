@@ -165,13 +165,29 @@ jobs:
         yarn-berry --version
         yarn --version | grep -q '^1\.' || { echo "ERROR: yarn is not 1.x"; exit 1; }
 
-    - name: Setup Yarn classic (Windows)
-      # Minimal Yarn setup for Windows: classic yarn is enough for most
-      # tests that ``require_tool("yarn")``; Berry's Unix prefix scheme
-      # isn't portable to Windows and the Berry-specific tests are
-      # already gated behind ``require_tool("yarn-berry")``.
+    - name: Setup Yarn (classic + Berry, Windows)
+      # Windows equivalent of the Unix setup: classic yarn via ``npm -g``,
+      # then Berry via ``npm --prefix`` + a ``.cmd`` wrapper at a stable
+      # ``yarn-berry.cmd`` PATH entry (git-bash has no ``ln -sf``).
       if: runner.os == 'Windows'
-      run: npm install -g yarn@1.22.22
+      run: |
+        npm install -g yarn@1.22.22
+        YARN_BERRY_PREFIX="$USERPROFILE/yarn-berry"
+        YARN_BERRY_ALIAS_DIR="$USERPROFILE/yarn-berry-bin"
+        mkdir -p "$YARN_BERRY_ALIAS_DIR"
+        # GITHUB_PATH is interpreted by runner as \-prefixed lines on Windows.
+        echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        # Emit a one-line ``yarn-berry.cmd`` that forwards to npm-installed
+        # ``yarn.cmd``. Use ``%*`` to pass through all args.
+        cat > "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd" <<EOF
+@echo off
+"$YARN_BERRY_PREFIX\\node_modules\\.bin\\yarn.cmd" %*
+EOF
+        export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
+        command -v yarn-berry
+        yarn-berry --version | grep -q '^4\.'
+        yarn --version | grep -q '^1\.'
 
     - name: Setup Bun
       uses: oven-sh/setup-bun@v2
