@@ -31,7 +31,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .logging import format_subprocess_output
-from .windows_compat import link_binary
+from .windows_compat import IS_WINDOWS, link_binary
 
 
 USER_CACHE_PATH = user_cache_path(
@@ -400,8 +400,16 @@ class NpmProvider(BinProvider):
         assert postinstall_scripts is not None
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Windows ``npm.cmd`` runs through ``cmd.exe`` which treats
+            # ``>`` / ``<`` as redirect metacharacters, so passing
+            # ``zx@>=8.8.0`` as an argv item gets shell-eaten to
+            # ``zx@`` (and cmd redirects stdout into a file called
+            # ``=8.8.0``). Use the equivalent ``^X.Y.Z`` npm range
+            # shorthand on Windows — same ``>=X.Y.Z, <X+1.0.0`` upgrade
+            # semantics, no ``>`` metacharacter.
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
@@ -463,8 +471,16 @@ class NpmProvider(BinProvider):
         assert postinstall_scripts is not None
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Windows ``npm.cmd`` runs through ``cmd.exe`` which treats
+            # ``>`` / ``<`` as redirect metacharacters, so passing
+            # ``zx@>=8.8.0`` as an argv item gets shell-eaten to
+            # ``zx@`` (and cmd redirects stdout into a file called
+            # ``=8.8.0``). Use the equivalent ``^X.Y.Z`` npm range
+            # shorthand on Windows — same ``>=X.Y.Z, <X+1.0.0`` upgrade
+            # semantics, no ``>`` metacharacter.
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
