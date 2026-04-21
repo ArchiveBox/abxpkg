@@ -23,6 +23,7 @@ from .base_types import (
 from .binary import Binary
 from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .binprovider_npm import NpmProvider
+from .binprovider_puppeteer import CLAUDE_SANDBOX_NO_PROXY
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
@@ -81,12 +82,29 @@ class PlaywrightProvider(BinProvider):
     @property
     def ENV(self) -> "dict[str, str]":
         # In managed mode we pin ``PLAYWRIGHT_BROWSERS_PATH`` to
-        # ``<install_root>/cache``. In unmanaged mode we export nothing
-        # and the ambient env (or playwright's own
-        # ``~/.cache/ms-playwright`` default) passes through untouched.
-        if self.install_root is None:
-            return {}
-        return {"PLAYWRIGHT_BROWSERS_PATH": str(self.install_root / "cache")}
+        # ``<install_root>/cache``. In unmanaged mode we leave the
+        # ambient env (or playwright's own ``~/.cache/ms-playwright``
+        # default) untouched.
+        env: dict[str, str] = {}
+        if self.install_root is not None:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.install_root / "cache")
+        # ``playwright install`` downloads browsers from
+        # ``cdn.playwright.dev`` (Azure blob storage) and
+        # ``storage.googleapis.com`` depending on the build. In
+        # sandboxed environments the egress proxy's NO_PROXY often
+        # includes ``.googleapis.com`` / ``.google.com``, which forces
+        # the direct connection — which then fails DNS resolution or
+        # times out. Mirror the PuppeteerProvider fix: override
+        # NO_PROXY / no_proxy to a safe sandbox allowlist so the
+        # download goes through the proxy instead.
+        ambient_no_proxy = os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+        if not ambient_no_proxy or (
+            ".googleapis.com" in ambient_no_proxy.lower()
+            or ".google.com" in ambient_no_proxy.lower()
+        ):
+            env["NO_PROXY"] = CLAUDE_SANDBOX_NO_PROXY
+            env["no_proxy"] = CLAUDE_SANDBOX_NO_PROXY
+        return env
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False

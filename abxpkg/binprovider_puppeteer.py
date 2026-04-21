@@ -71,12 +71,28 @@ class PuppeteerProvider(BinProvider):
     @property
     def ENV(self) -> "dict[str, str]":
         # In managed mode we pin ``PUPPETEER_CACHE_DIR`` to
-        # ``<install_root>/cache``. In unmanaged mode we export nothing
-        # and the ambient env (or puppeteer-browsers' own
-        # ``~/.cache/puppeteer`` default) passes through untouched.
-        if self.install_root is None:
-            return {}
-        return {"PUPPETEER_CACHE_DIR": str(self.install_root / "cache")}
+        # ``<install_root>/cache``. In unmanaged mode we leave the
+        # ambient env (or puppeteer-browsers' own ``~/.cache/puppeteer``
+        # default) untouched.
+        env: dict[str, str] = {}
+        if self.install_root is not None:
+            env["PUPPETEER_CACHE_DIR"] = str(self.install_root / "cache")
+        # @puppeteer/browsers downloads browsers from
+        # storage.googleapis.com. In sandboxed environments the egress
+        # proxy's NO_PROXY often includes ``.googleapis.com`` / ``.google.com``,
+        # which forces the direct connection — which then fails DNS
+        # resolution or times out. Override NO_PROXY / no_proxy to a
+        # safe sandbox allowlist so the download goes through the proxy
+        # instead. Callers that need their own NO_PROXY can still set it
+        # via the CLI override flags; our value only fills in the default.
+        ambient_no_proxy = os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+        if not ambient_no_proxy or (
+            ".googleapis.com" in ambient_no_proxy.lower()
+            or ".google.com" in ambient_no_proxy.lower()
+        ):
+            env["NO_PROXY"] = CLAUDE_SANDBOX_NO_PROXY
+            env["no_proxy"] = CLAUDE_SANDBOX_NO_PROXY
+        return env
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
