@@ -212,6 +212,22 @@ jobs:
       if: runner.os != 'Windows'
       uses: DeterminateSystems/nix-installer-action@v22
 
+    - name: Install Windows Media Feature Pack (Chromium SxS dep)
+      # GitHub's ``windows-latest`` is Windows Server 2025 which ships
+      # WITHOUT the Media Feature Pack (it's a server SKU optional
+      # feature). Playwright / Puppeteer chromium builds reference
+      # ``mf.dll`` / ``mfplat.dll`` / etc. in their SxS manifests, so
+      # running ``chrome.exe --version`` fails with
+      # ``WinError 14001 side-by-side configuration is incorrect``
+      # until we add the capability.
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $cap = Get-WindowsCapability -Online -Name 'Media.MediaFeaturePack*' -ErrorAction SilentlyContinue
+        if ($cap -and $cap.State -ne 'Installed') {
+          Add-WindowsCapability -Online -Name $cap.Name -ErrorAction SilentlyContinue
+        }
+
     - name: Setup venv and install pip dependencies
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
