@@ -62,9 +62,17 @@ class PlaywrightProvider(BinProvider):
     # ``playwright_root`` is both the abxpkg install root and the
     # ``PLAYWRIGHT_BROWSERS_PATH`` we export to the CLI. Leave unset to
     # let playwright use its own OS-default browsers path.
-    # Default: ABXPKG_PLAYWRIGHT_ROOT > ABXPKG_LIB_DIR/playwright > None.
+    # Default: ABXPKG_PLAYWRIGHT_ROOT > PLAYWRIGHT_BROWSERS_PATH (playwright's
+    # own env var) > ABXPKG_LIB_DIR/playwright > None.
     install_root: Path | None = Field(
-        default_factory=lambda: abxpkg_install_root_default("playwright"),
+        default_factory=lambda: (
+            abxpkg_install_root_default("playwright")
+            or (
+                Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).expanduser()
+                if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+                else None
+            )
+        ),
         validation_alias="playwright_root",
     )
     # Only set in managed mode: setup()/default_abspath_handler() use it to create and read

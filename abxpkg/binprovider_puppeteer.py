@@ -66,10 +66,18 @@ class PuppeteerProvider(BinProvider):
     # Only set in managed mode: setup()/default_abspath_handler() use it to expose stable
     # browser launch shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    # Explicit override for the directory browsers get downloaded into. When
-    # unset, cache_dir defaults to ``<install_root>/cache``; when set, it wins
-    # so callers can point ``PUPPETEER_CACHE_DIR`` at an arbitrary path.
-    browser_cache_dir: Path | None = None
+    # Explicit override for the directory browsers get downloaded into.
+    # Hydrated from ``PUPPETEER_CACHE_DIR`` (puppeteer's own standard env var)
+    # when unset so callers can pin the cache dir the same way they would for
+    # a vanilla ``puppeteer-browsers install``. When still unset, ``cache_dir``
+    # falls back to ``<install_root>/cache``.
+    browser_cache_dir: Path | None = Field(
+        default_factory=lambda: (
+            Path(os.environ["PUPPETEER_CACHE_DIR"]).expanduser()
+            if os.environ.get("PUPPETEER_CACHE_DIR")
+            else None
+        ),
+    )
 
     @computed_field
     @property
