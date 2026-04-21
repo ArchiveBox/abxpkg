@@ -80,23 +80,19 @@ class PlaywrightProvider(BinProvider):
     @computed_field
     @property
     def cache_dir(self) -> Path | None:
-        """Where browser downloads land.
+        """``<install_root>/cache`` when managed, else ``None``.
 
-        When ``install_root`` is pinned we always use
-        ``<install_root>/cache``. When ``install_root`` is unset we fall
-        back to the caller's ``PLAYWRIGHT_BROWSERS_PATH`` env var
-        (playwright's native convention) so ``load``/``uninstall``/
-        scope checks all target the same directory the user already
-        configured externally. When neither is set we return ``None``
-        and let playwright pick its own default
-        (``~/.cache/ms-playwright`` on Linux etc.).
+        Internal helper for the install/uninstall/load sites. When
+        ``install_root`` is unset we stay out of the way: the ambient
+        ``PLAYWRIGHT_BROWSERS_PATH`` (or playwright's
+        ``~/.cache/ms-playwright`` default) passes through to
+        subprocesses untouched, ``default_abspath_handler`` trusts
+        whatever path ``executablePath()`` reports, and
+        ``default_uninstall_handler`` skips rmtree of the user's cache.
         """
-        if self.install_root is not None:
-            return self.install_root / "cache"
-        env_override = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-        if env_override:
-            return Path(env_override).expanduser()
-        return None
+        if self.install_root is None:
+            return None
+        return self.install_root / "cache"
 
     @computed_field
     @property
