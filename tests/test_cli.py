@@ -607,30 +607,46 @@ def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
     # Drop a tiny shim script into a fresh PATH directory that the env
     # provider will pick up. The script must respond to --version so
     # EnvProvider can .load() it, then return a non-zero exit code with
-    # output split across stdout/stderr.
-    script = tmp_path / "abxpkg-run-shim"
-    script.write_text(
-        "#!/bin/sh\n"
-        'if [ "$1" = "--version" ]; then\n'
-        '  echo "abxpkg-run-shim 1.2.3"\n'
-        "  exit 0\n"
-        "fi\n"
-        "echo 'this goes to stdout'\n"
-        "echo 'this goes to stderr' >&2\n"
-        "exit 7\n",
-    )
-    script.chmod(0o755)
+    # output split across stdout/stderr. On POSIX we use a ``sh`` shim;
+    # on Windows a ``.cmd`` batch file (and PATHEXT lets the env provider
+    # resolve ``abxpkg-run-shim`` → ``abxpkg-run-shim.cmd``).
+    shim_name = "abxpkg-run-shim"
+    if os.name == "nt":
+        script = tmp_path / f"{shim_name}.cmd"
+        script.write_text(
+            "@echo off\r\n"
+            'if "%1"=="--version" (\r\n'
+            '  echo abxpkg-run-shim 1.2.3\r\n'
+            "  exit /b 0\r\n"
+            ")\r\n"
+            "echo this goes to stdout\r\n"
+            "echo this goes to stderr 1>&2\r\n"
+            "exit /b 7\r\n",
+        )
+    else:
+        script = tmp_path / shim_name
+        script.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then\n'
+            '  echo "abxpkg-run-shim 1.2.3"\n'
+            "  exit 0\n"
+            "fi\n"
+            "echo 'this goes to stdout'\n"
+            "echo 'this goes to stderr' >&2\n"
+            "exit 7\n",
+        )
+        script.chmod(0o755)
 
     # Use an ad-hoc PATH that exposes the custom script as a "binary".
     proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
-        script.name,
-        env_overrides={"PATH": f"{tmp_path}:{os.environ['PATH']}"},
+        shim_name,
+        env_overrides={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
     )
 
     assert proc.returncode == 7, proc.stderr
-    assert proc.stdout == "this goes to stdout\n"
+    assert proc.stdout.strip() == "this goes to stdout"
     assert "this goes to stderr" in proc.stderr
     # Nothing from abxpkg itself should leak into stdout.
     assert "abxpkg" not in proc.stdout.lower()
@@ -2308,14 +2324,16 @@ def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
 def abx_e2e_lib():
     """Provide a lib dir with playwright + chromium pre-installed.
 
-    Uses a shared cache at ``/tmp/abx-e2e-lib`` so the ~370 MB browser
-    download only happens once.
+    Uses a shared cache at ``<tempdir>/abx-e2e-lib`` so the ~370 MB
+    browser download only happens once per runner.
 
     Install order matters: npm playwright first (provides the CLI),
     then playwright provider installs the chromium browser.
     """
 
-    lib = Path("/tmp/abx-e2e-lib")
+    import tempfile as _tempfile
+
+    lib = Path(_tempfile.gettempdir()) / "abx-e2e-lib"
     npm_prefix = lib / "npm"
     playwright_root = lib / "playwright"
 

@@ -167,29 +167,29 @@ jobs:
 
     - name: Setup Yarn (classic + Berry, Windows)
       # Windows equivalent of the Unix setup: classic yarn via ``npm -g``,
-      # then Berry via ``npm --prefix`` + a ``.cmd`` wrapper at a stable
-      # ``yarn-berry.cmd`` PATH entry (git-bash has no ``ln -sf``).
+      # then Berry via ``npm --prefix`` + copy the npm-generated
+      # ``yarn.cmd`` / ``yarn`` launchers to a ``yarn-berry``-prefixed
+      # alias on a stable PATH directory (git-bash has no ``ln -sf``).
       if: runner.os == 'Windows'
       run: |
         npm install -g yarn@1.22.22
-        YARN_BERRY_PREFIX="$USERPROFILE/yarn-berry"
-        YARN_BERRY_ALIAS_DIR="$USERPROFILE/yarn-berry-bin"
+        # Normalize USERPROFILE to forward slashes for bash.
+        YARN_BERRY_PREFIX="${USERPROFILE//\\//}/yarn-berry"
+        YARN_BERRY_ALIAS_DIR="${USERPROFILE//\\//}/yarn-berry-bin"
         mkdir -p "$YARN_BERRY_ALIAS_DIR"
         # Stage onto GITHUB_PATH so later steps (pytest subprocess
         # ``shutil.which``, etc.) find ``yarn-berry.cmd`` via ``PATHEXT``.
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
         npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-        # Emit a one-line ``yarn-berry.cmd`` that forwards to npm-installed
-        # ``yarn.cmd``. Use ``%*`` to pass through all args. Built with
-        # printf so the heredoc body doesn't collide with YAML block-scalar
-        # indentation.
-        YARN_BERRY_CMD="$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
-        printf '@echo off\n"%s\\node_modules\\.bin\\yarn.cmd" %%*\n' "$YARN_BERRY_PREFIX" > "$YARN_BERRY_CMD"
+        # npm drops both ``yarn`` (Unix launcher script) and ``yarn.cmd``
+        # (Windows launcher) into ``node_modules/.bin``. Copy each under
+        # the ``yarn-berry`` alias so ``shutil.which('yarn-berry')``
+        # resolves on every invocation style.
+        cp "$YARN_BERRY_PREFIX/node_modules/.bin/yarn.cmd" "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
+        cp "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS_DIR/yarn-berry"
         # Verify each shim works. ``command -v`` in git-bash doesn't
-        # consult ``PATHEXT`` so reference the ``.cmd`` file directly for
-        # the version check — the GITHUB_PATH export above is what later
-        # pytest steps rely on.
-        "$YARN_BERRY_CMD" --version | grep -q '^4\.'
+        # consult ``PATHEXT`` so reference the ``.cmd`` file directly.
+        "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd" --version | grep -q '^4\.'
         yarn --version | grep -q '^1\.'
 
     - name: Setup Bun
@@ -212,21 +212,30 @@ jobs:
       if: runner.os != 'Windows'
       uses: DeterminateSystems/nix-installer-action@v22
 
-    - name: Install Windows Media Feature Pack (Chromium SxS dep)
+    - name: Install Windows Chromium runtime deps (Media Foundation + VC++)
       # GitHub's ``windows-latest`` is Windows Server 2025 which ships
-      # WITHOUT the Media Feature Pack (it's a server SKU optional
-      # feature). Playwright / Puppeteer chromium builds reference
-      # ``mf.dll`` / ``mfplat.dll`` / etc. in their SxS manifests, so
-      # running ``chrome.exe --version`` fails with
+      # WITHOUT the ``Server-Media-Foundation`` role (a server-SKU
+      # optional feature) — chromium builds reference ``mf.dll`` /
+      # ``mfplat.dll`` / etc. in their SxS manifests, so running
+      # ``chrome.exe --version`` fails with
       # ``WinError 14001 side-by-side configuration is incorrect``
-      # until we add the capability.
+      # until the role is enabled. We also install the Visual C++ 2015-2022
+      # x64 Redistributable explicitly because Playwright's
+      # ``--with-deps`` flag on Windows is a best-effort no-op on some
+      # Playwright versions.
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
+        # Windows Server: enable the Media Foundation role (ships ``mf.dll`` etc.).
+        Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction SilentlyContinue | Out-Null
+        # Belt-and-suspenders: also try the consumer-SKU Media Feature Pack
+        # capability in case we're ever on a client Windows host.
         $cap = Get-WindowsCapability -Online -Name 'Media.MediaFeaturePack*' -ErrorAction SilentlyContinue
         if ($cap -and $cap.State -ne 'Installed') {
           Add-WindowsCapability -Online -Name $cap.Name -ErrorAction SilentlyContinue
         }
+        # VC++ 2015-2022 x64 Redistributable (covers chromium's runtime).
+        choco install -y --no-progress vcredist140
 
     - name: Setup venv and install pip dependencies
       run: |
