@@ -56,6 +56,16 @@ def _run_cli(
         [str(script), *args],
         capture_output=True,
         text=True,
+        # Decode as UTF-8 on every host. The child ``abxpkg`` / ``abx``
+        # CLIs force their stdio to UTF-8 via ``_force_utf8_stdio`` (so
+        # they can emit the 🌍 / 📦 / etc. emojis without hitting
+        # ``cp1252`` ``UnicodeEncodeError`` on Windows). Without this the
+        # parent decodes the child's UTF-8 bytes using
+        # ``locale.getpreferredencoding()`` (cp1252 on Windows runners),
+        # which fails on emoji bytes and ends up with ``stderr=None`` on
+        # the returned ``CompletedProcess``.
+        encoding="utf-8",
+        errors="replace",
         env=env,
         timeout=timeout,
     )
