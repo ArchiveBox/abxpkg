@@ -70,14 +70,14 @@ class TestPlaywrightProvider:
             assert provider.bin_dir is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath == provider.bin_dir / "chromium"
-            # The symlink resolves into playwright_root (which is also
-            # PLAYWRIGHT_BROWSERS_PATH for this provider).
+            # The symlink resolves into ``playwright_root/cache`` (the
+            # managed ``PLAYWRIGHT_BROWSERS_PATH`` for this provider).
             real_target = installed.loaded_abspath.resolve()
-            assert playwright_root.resolve() in real_target.parents
+            assert (playwright_root / "cache").resolve() in real_target.parents
             # Playwright lays out chromium builds as chromium-<build>/.
             assert any(
                 child.name.startswith("chromium-")
-                for child in playwright_root.iterdir()
+                for child in (playwright_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -134,7 +134,7 @@ class TestPlaywrightProvider:
             # the effective PLAYWRIGHT_BROWSERS_PATH for this provider).
             assert any(
                 child.name.startswith("chromium-")
-                for child in install_root.iterdir()
+                for child in (install_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -171,7 +171,7 @@ class TestPlaywrightProvider:
             # Browser tree still landed in install_root, not bin_dir.
             assert any(
                 child.name.startswith("chromium-")
-                for child in install_root.iterdir()
+                for child in (install_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -244,9 +244,10 @@ class TestPlaywrightProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.exists()
+            cache_dir = playwright_root / "cache"
             chromium_dirs = [
                 child
-                for child in playwright_root.iterdir()
+                for child in cache_dir.iterdir()
                 if child.is_dir()
                 and child.name.startswith("chromium-")
                 and not child.name.startswith("chromium_headless_shell")
@@ -255,7 +256,7 @@ class TestPlaywrightProvider:
             # ``--no-shell`` should have skipped the headless shell download.
             headless_shell_dirs = [
                 child
-                for child in playwright_root.iterdir()
+                for child in cache_dir.iterdir()
                 if child.is_dir() and child.name.startswith("chromium_headless_shell")
             ]
             assert not headless_shell_dirs, (
@@ -380,10 +381,10 @@ class TestPlaywrightProvider:
             # ``playwright_root``).
             updated_target = updated.loaded_abspath.resolve()
             assert updated_target.exists()
-            assert playwright_root.resolve() in updated_target.parents
+            assert (playwright_root / "cache").resolve() in updated_target.parents
             assert any(
                 child.name.startswith("chromium-")
-                for child in playwright_root.iterdir()
+                for child in (playwright_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -397,14 +398,15 @@ class TestPlaywrightProvider:
 
             test_machine.exercise_provider_dry_run(provider, bin_name="chromium")
             # dry_run must not have actually downloaded any browsers.
+            cache_dir = playwright_root / "cache"
             browser_dirs = (
                 [
                     p
-                    for p in playwright_root.iterdir()
+                    for p in cache_dir.iterdir()
                     if p.is_dir()
                     and p.name.startswith(("chromium-", "firefox-", "webkit-"))
                 ]
-                if playwright_root.is_dir()
+                if cache_dir.is_dir()
                 else []
             )
             assert not browser_dirs, (
