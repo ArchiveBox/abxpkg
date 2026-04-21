@@ -1097,12 +1097,12 @@ INSTALLER_BIN = "playwright"
 PATH = ""
 install_root = None              # abxpkg-managed root dir for bin_dir / nested npm prefix
 bin_dir = <install_root>/bin     # symlink dir for resolved browsers
-browsers_path = None             # hydrated from PLAYWRIGHT_BROWSERS_PATH env; overrides install_root/cache
+browser_cache_dir = None         # hydrated from PLAYWRIGHT_BROWSERS_PATH env; overrides install_root/cache
 euid = 0                         # routes exec() through sudo-first-then-fallback
 ```
 
 - Install root: set `install_root` to pin the abxpkg-managed root dir (where `bin_dir` symlinks and the nested npm prefix live). Leave it unset to let playwright use its own OS-default browsers path (`~/.cache/ms-playwright` on Linux etc.) — in that case abxpkg maintains no symlink dir or npm prefix at all, the `playwright` npm CLI bootstraps against the host's npm default, and `load()` returns the resolved `executablePath()` directly. `bin_dir` overrides the symlink directory when `install_root` is pinned.
-- Browsers path / `PLAYWRIGHT_BROWSERS_PATH`: the actual browsers cache dir is resolved with three-tier precedence: explicit `browsers_path` / `PLAYWRIGHT_BROWSERS_PATH` env wins → else `<install_root>/cache` when an install root is pinned → else `None` (let playwright pick its OS default). The final value is exported as `PLAYWRIGHT_BROWSERS_PATH` to every subprocess the provider runs.
+- Cache dir / `PLAYWRIGHT_BROWSERS_PATH`: the actual browsers cache dir is resolved via the `cache_dir` computed property with three-tier precedence: explicit `browser_cache_dir` / `PLAYWRIGHT_BROWSERS_PATH` env wins → else `<install_root>/cache` when an install root is pinned → else `None` (let playwright pick its OS default). The final value is exported as `PLAYWRIGHT_BROWSERS_PATH` to every subprocess the provider runs.
 - Auto-switching: bootstraps the `playwright` npm package through `NpmProvider`, then runs `playwright install --with-deps <install_args>` against it. Resolves each installed browser's real executable via the `playwright-core` Node.js API (`chromium.executablePath()` etc.) and writes a symlink into `bin_dir` when one is configured.
 - `dry_run`: shared behavior — the install handler short-circuits to a placeholder without touching the host.
 - Privilege handling: `--with-deps` installs system packages and requires root on Linux. ``euid`` defaults to ``0``, which routes every ``exec()`` call through the base ``BinProvider.exec`` sudo-first-then-fallback path — it tries ``sudo -n -- playwright install --with-deps ...`` first on non-root hosts, falls back to running the command directly if sudo fails or isn't available, and merges both stderr outputs into the final error if both attempts fail.

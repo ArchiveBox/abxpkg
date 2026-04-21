@@ -39,7 +39,7 @@ class PlaywrightProvider(BinProvider):
     finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` defaults to
     ``<install_root>/cache`` for the actual browser downloads. Callers
     that want to pin the browsers path somewhere else can set the
-    ``browsers_path`` field (hydrated from ``PLAYWRIGHT_BROWSERS_PATH``
+    ``browser_cache_dir`` field (hydrated from ``PLAYWRIGHT_BROWSERS_PATH``
     env) — that override always wins over ``install_root/cache``.
     When ``playwright_root`` is left unset, playwright picks its own
     default browsers path, the npm CLI bootstraps against the host's
@@ -77,9 +77,9 @@ class PlaywrightProvider(BinProvider):
     # env var) when unset so callers can pin the cache dir the same way they
     # would for a vanilla ``playwright install``. When both this and
     # ``install_root`` are unset, playwright falls back to its OS default; when
-    # only ``install_root`` is set, ``browsers_path`` defaults to
+    # only ``install_root`` is set, ``cache_dir`` defaults to
     # ``<install_root>/cache`` (see ``ENV``).
-    browsers_path: Path | None = Field(
+    browser_cache_dir: Path | None = Field(
         default_factory=lambda: (
             Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).expanduser()
             if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
@@ -95,17 +95,17 @@ class PlaywrightProvider(BinProvider):
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
-        resolved = self.resolved_browsers_path
+        resolved = self.cache_dir
         if resolved is None:
             return {}
         return {"PLAYWRIGHT_BROWSERS_PATH": str(resolved)}
 
     @computed_field
     @property
-    def resolved_browsers_path(self) -> Path | None:
+    def cache_dir(self) -> Path | None:
         """PLAYWRIGHT_BROWSERS_PATH precedence:
 
-        1. Explicit ``browsers_path`` (field / ``PLAYWRIGHT_BROWSERS_PATH`` env)
+        1. Explicit ``browser_cache_dir`` (field / ``PLAYWRIGHT_BROWSERS_PATH`` env)
            wins — the more specific cache-dir override always beats the less
            specific install-root.
         2. Else, when ``install_root`` is pinned, default to
@@ -113,8 +113,8 @@ class PlaywrightProvider(BinProvider):
         3. Else leave it unset and let playwright pick its own OS-default
            browsers cache directory.
         """
-        if self.browsers_path is not None:
-            return self.browsers_path
+        if self.browser_cache_dir is not None:
+            return self.browser_cache_dir
         if self.install_root is not None:
             return self.install_root / "cache"
         return None
@@ -326,11 +326,11 @@ class PlaywrightProvider(BinProvider):
         # contain our bin_dir.
         env = self.build_exec_env(base_env=(kwargs.pop("env", None) or os.environ))
         env_assignments: list[str] = []
-        resolved_browsers_path = self.resolved_browsers_path
-        if resolved_browsers_path is not None:
-            env["PLAYWRIGHT_BROWSERS_PATH"] = str(resolved_browsers_path)
+        cache_dir = self.cache_dir
+        if cache_dir is not None:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_dir)
             env_assignments.append(
-                f"PLAYWRIGHT_BROWSERS_PATH={resolved_browsers_path}",
+                f"PLAYWRIGHT_BROWSERS_PATH={cache_dir}",
             )
         needs_sudo_env_wrapper = os.geteuid() != 0 and self.EUID != os.geteuid()
         if env_assignments and needs_sudo_env_wrapper:
