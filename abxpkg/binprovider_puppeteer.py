@@ -699,16 +699,31 @@ class PuppeteerProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        install_args = list(install_args or self.get_install_args(bin_name))
-        browser_name = self._browser_name(bin_name, install_args)
+        # Drop the managed shim first so ``load()`` stops returning the
+        # symlink even if the browser-dir rmtree partially fails.
         if self.bin_dir is not None:
             bin_path = self.bin_dir / bin_name
             if bin_path.exists() or bin_path.is_symlink():
                 logger.info("$ %s", format_command(["rm", "-f", str(bin_path)]))
             bin_path.unlink(missing_ok=True)
-        if self.cache_dir is not None:
-            browser_dir = self.cache_dir / browser_name
-            if browser_dir.exists():
-                logger.info("$ %s", format_command(["rm", "-rf", str(browser_dir)]))
-                shutil.rmtree(browser_dir, ignore_errors=True)
+
+        # Use ``load()`` to resolve the actual installed browser
+        # executable — load honours managed install_root, the ambient
+        # PUPPETEER_CACHE_DIR env var, and puppeteer-browsers' own
+        # default, so this single call handles all three cases. Then
+        # walk up from that abspath to find the browser's top-level
+        # directory (``<cache>/<browser_name>/``) and rmtree it.
+        install_args = list(install_args or self.get_install_args(bin_name))
+        browser_name = self._browser_name(bin_name, install_args)
+        try:
+            loaded = self.load(bin_name, quiet=True, no_cache=True)
+        except Exception:
+            loaded = None
+        loaded_abspath = loaded.loaded_abspath if loaded else None
+        if loaded_abspath is not None:
+            for parent in Path(loaded_abspath).resolve().parents:
+                if parent.name == browser_name:
+                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
+                    shutil.rmtree(parent, ignore_errors=True)
+                    break
         return True

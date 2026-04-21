@@ -739,23 +739,32 @@ class PlaywrightProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Drop the symlink first (if we're managing one) so ``load()``
-        # stops seeing the tool even if browser dir removal partially
-        # fails.
+        # Drop the managed shim first so ``load()`` stops returning the
+        # symlink even if the browser-dir rmtree partially fails.
         if self.bin_dir is not None:
             (self.bin_dir / bin_name).unlink(missing_ok=True)
 
-        # ``playwright uninstall`` only removes *unused* browsers from
-        # the entire host, so drop the matching directories ourselves
-        # from the resolved ``cache_dir`` (= ``PLAYWRIGHT_BROWSERS_PATH``).
-        # Only touch it if the caller pinned one explicitly or via
-        # ``install_root`` — we don't delete from playwright's own
-        # OS-default cache.
-        if self.cache_dir is not None and self.cache_dir.is_dir():
-            for entry in self.cache_dir.iterdir():
-                if entry.is_dir() and entry.name.startswith(f"{bin_name}-"):
-                    logger.info("$ %s", format_command(["rm", "-rf", str(entry)]))
-                    shutil.rmtree(entry, ignore_errors=True)
+        # Use ``load()`` to resolve the actual installed browser
+        # executable — ``playwright-core``'s ``executablePath()`` reads
+        # ``PLAYWRIGHT_BROWSERS_PATH`` from the subprocess env, which
+        # the provider exports when ``install_root`` is set and which
+        # otherwise passes through from the ambient env. This single
+        # call covers managed, OS-default, and user-env-var modes.
+        # Then walk up from that abspath to find the
+        # ``<bin_name>-<buildId>/`` dir and rmtree it — playwright's
+        # own ``uninstall`` CLI has no per-browser argument, so this
+        # is still the only way to remove a specific browser.
+        try:
+            loaded = self.load(bin_name, quiet=True, no_cache=True)
+        except Exception:
+            loaded = None
+        loaded_abspath = loaded.loaded_abspath if loaded else None
+        if loaded_abspath is not None:
+            for parent in Path(loaded_abspath).resolve().parents:
+                if parent.name.startswith(f"{bin_name}-"):
+                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
+                    shutil.rmtree(parent, ignore_errors=True)
+                    break
         return True
 
 
