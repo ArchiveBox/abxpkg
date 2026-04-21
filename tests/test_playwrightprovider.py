@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from abxpkg import Binary, PlaywrightProvider
+from abxpkg.windows_compat import IS_WINDOWS
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +70,13 @@ class TestPlaywrightProvider:
             assert installed.loaded_abspath.exists()
             assert provider.bin_dir is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
-            assert installed.loaded_abspath == provider.bin_dir / "chromium"
+            # On Windows ``link_binary`` appends the source's ``.exe``
+            # suffix onto the managed shim name so ``PATHEXT``/
+            # ``shutil.which`` can resolve it; compare suffix-agnostic.
+            expected_shim = provider.bin_dir / (
+                "chromium.exe" if IS_WINDOWS else "chromium"
+            )
+            assert installed.loaded_abspath == expected_shim
             # The symlink resolves into playwright_root (which is also
             # PLAYWRIGHT_BROWSERS_PATH for this provider).
             real_target = installed.loaded_abspath.resolve()

@@ -115,10 +115,14 @@ class TestMachine:
         executable: Path,
         version_args: tuple[str, ...] = ("--version",),
     ) -> tuple[subprocess.CompletedProcess[str], SemVer | None]:
+        # Force UTF-8 decode on Windows so emoji / non-cp1252 output in
+        # ``--version`` doesn't crash the test with UnicodeDecodeError.
         proc = subprocess.run(
             [str(executable), *version_args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         combined_output = "\n".join(
             part.strip() for part in (proc.stdout, proc.stderr) if part.strip()

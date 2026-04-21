@@ -345,8 +345,12 @@ class PuppeteerProvider(BinProvider):
         output: str,
         browser_name: str,
     ) -> Path | None:
+        # ``re.MULTILINE``'s ``$`` only recognizes ``\n`` as a line
+        # terminator, so on Windows (``\r\n``) the trailing ``\r`` gets
+        # captured into ``path``. Anchor the path capture to non-newline
+        # chars and strip trailing whitespace.
         pattern = re.compile(
-            r"^(?P<browser>[^@\s]+)@(?P<version>\S+)(?:\s+\([^)]+\))?\s+(?P<path>.+)$",
+            r"^(?P<browser>[^@\s]+)@(?P<version>\S+)(?:\s+\([^)]+\))?\s+(?P<path>[^\r\n]+?)\s*$",
             re.MULTILINE,
         )
         matches = [

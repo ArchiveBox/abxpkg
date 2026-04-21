@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 from abxpkg import Binary, PuppeteerProvider
+from abxpkg.windows_compat import IS_WINDOWS
 
 
 PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
@@ -36,7 +37,11 @@ class TestPuppeteerProvider:
             assert bin_dir is not None
             assert cache_dir is not None
             assert installed.loaded_abspath.parent == bin_dir
-            assert installed.loaded_abspath == bin_dir / "chrome"
+            # On Windows ``link_binary`` appends the source's ``.exe``
+            # suffix onto the managed shim name so ``PATHEXT``/
+            # ``shutil.which`` can resolve it; compare suffix-agnostic.
+            expected_shim = bin_dir / ("chrome.exe" if IS_WINDOWS else "chrome")
+            assert installed.loaded_abspath == expected_shim
             assert (cache_dir / "chromium").exists()
 
             loaded = provider.load("chrome", no_cache=True)
