@@ -66,12 +66,14 @@ class PuppeteerProvider(BinProvider):
     # Only set in managed mode: setup()/default_abspath_handler() use it to expose stable
     # browser launch shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    # Explicit override for the directory browsers get downloaded into.
-    # Hydrated from ``PUPPETEER_CACHE_DIR`` (puppeteer's own standard env var)
-    # when unset so callers can pin the cache dir the same way they would for
-    # a vanilla ``puppeteer-browsers install``. When still unset, ``cache_dir``
-    # falls back to ``<install_root>/cache``.
-    browser_cache_dir: Path | None = Field(
+    # Where browsers get downloaded. Precedence at validate time:
+    #   1. explicit ``cache_dir`` kwarg wins (more-specific override)
+    #   2. else ``PUPPETEER_CACHE_DIR`` env var wins (same semantics for
+    #      external callers invoking via env)
+    #   3. else ``<install_root>/cache`` when an install root is pinned
+    #   4. else ``None`` (global mode — let puppeteer-browsers pick its
+    #      own default cache)
+    cache_dir: Path | None = Field(
         default_factory=lambda: (
             Path(os.environ["PUPPETEER_CACHE_DIR"]).expanduser()
             if os.environ.get("PUPPETEER_CACHE_DIR")
@@ -89,22 +91,12 @@ class PuppeteerProvider(BinProvider):
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
 
-    @computed_field
-    @property
-    def cache_dir(self) -> Path | None:
-        # Explicit override wins so PUPPETEER_CACHE_DIR can be any path.
-        if self.browser_cache_dir is not None:
-            return self.browser_cache_dir
-        # Otherwise browser downloads live under ``install_root/cache`` when we
-        # manage an install root; global mode leaves cache ownership to the host.
-        if self.install_root is not None:
-            return self.install_root / "cache"
-        return None
-
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
+        if self.cache_dir is None and self.install_root is not None:
+            self.cache_dir = self.install_root / "cache"
         return self
 
     def setup_PATH(self, no_cache: bool = False) -> None:

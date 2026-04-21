@@ -8,8 +8,9 @@ import shutil
 import sys
 import platform
 from pathlib import Path
+from typing import Self
 
-from pydantic import Field, TypeAdapter, computed_field
+from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
     BinName,
@@ -72,14 +73,14 @@ class PlaywrightProvider(BinProvider):
     # Only set in managed mode: setup()/default_abspath_handler() use it to create and read
     # stable browser shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    # Explicit override for the directory browsers get downloaded into.
-    # Hydrated from ``PLAYWRIGHT_BROWSERS_PATH`` (playwright's own standard
-    # env var) when unset so callers can pin the cache dir the same way they
-    # would for a vanilla ``playwright install``. When both this and
-    # ``install_root`` are unset, playwright falls back to its OS default; when
-    # only ``install_root`` is set, ``cache_dir`` defaults to
-    # ``<install_root>/cache`` (see ``ENV``).
-    browser_cache_dir: Path | None = Field(
+    # Where browsers get downloaded. Exported as ``PLAYWRIGHT_BROWSERS_PATH``
+    # to every subprocess. Precedence at validate time:
+    #   1. explicit ``cache_dir`` kwarg wins (more-specific override)
+    #   2. else ``PLAYWRIGHT_BROWSERS_PATH`` env var wins (same semantics
+    #      for external callers invoking via env)
+    #   3. else ``<install_root>/cache`` when an install root is pinned
+    #   4. else ``None`` (global mode — let playwright pick its OS default)
+    cache_dir: Path | None = Field(
         default_factory=lambda: (
             Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).expanduser()
             if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
@@ -92,32 +93,18 @@ class PlaywrightProvider(BinProvider):
     # run as the normal user by default.
     euid: int | None = 0 if platform.system().lower() == "linux" else None
 
+    @model_validator(mode="after")
+    def _fill_cache_dir_from_install_root(self) -> Self:
+        if self.cache_dir is None and self.install_root is not None:
+            self.cache_dir = self.install_root / "cache"
+        return self
+
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
-        resolved = self.cache_dir
-        if resolved is None:
+        if not self.cache_dir:
             return {}
-        return {"PLAYWRIGHT_BROWSERS_PATH": str(resolved)}
-
-    @computed_field
-    @property
-    def cache_dir(self) -> Path | None:
-        """PLAYWRIGHT_BROWSERS_PATH precedence:
-
-        1. Explicit ``browser_cache_dir`` (field / ``PLAYWRIGHT_BROWSERS_PATH`` env)
-           wins — the more specific cache-dir override always beats the less
-           specific install-root.
-        2. Else, when ``install_root`` is pinned, default to
-           ``<install_root>/cache`` so managed installs stay self-contained.
-        3. Else leave it unset and let playwright pick its own OS-default
-           browsers cache directory.
-        """
-        if self.browser_cache_dir is not None:
-            return self.browser_cache_dir
-        if self.install_root is not None:
-            return self.install_root / "cache"
-        return None
+        return {"PLAYWRIGHT_BROWSERS_PATH": str(self.cache_dir)}
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False
@@ -605,14 +592,15 @@ class PlaywrightProvider(BinProvider):
         )
         if not resolved:
             return None
-        # When ``playwright_root`` is pinned, a hit from
-        # ``executablePath()`` that points outside that install_root tree
-        # (e.g. an ambient system install) should not satisfy
-        # ``load()`` — otherwise an unrelated host-wide playwright
-        # install would silently hijack resolution.
-        if self.install_root is not None:
-            root_real = self.install_root.resolve(strict=False)
-            if root_real not in resolved.resolve(strict=False).parents:
+        # When ``cache_dir`` is pinned (either explicitly, via
+        # ``PLAYWRIGHT_BROWSERS_PATH``, or derived from ``install_root``),
+        # an ``executablePath()`` hit that points outside that tree
+        # (e.g. an ambient system install) should not satisfy ``load()``
+        # — otherwise an unrelated host-wide playwright install would
+        # silently hijack resolution.
+        if self.cache_dir is not None:
+            cache_real = self.cache_dir.resolve(strict=False)
+            if cache_real not in resolved.resolve(strict=False).parents:
                 return None
         if self.bin_dir is None:
             return resolved
@@ -763,11 +751,13 @@ class PlaywrightProvider(BinProvider):
             (self.bin_dir / bin_name).unlink(missing_ok=True)
 
         # ``playwright uninstall`` only removes *unused* browsers from
-        # the entire host, so drop the matching directories ourselves.
-        # Only touch ``playwright_root`` if the caller pinned one — we
-        # don't delete from playwright's own OS-default cache.
-        if self.install_root is not None and self.install_root.is_dir():
-            for entry in self.install_root.iterdir():
+        # the entire host, so drop the matching directories ourselves
+        # from the resolved ``cache_dir`` (= ``PLAYWRIGHT_BROWSERS_PATH``).
+        # Only touch it if the caller pinned one explicitly or via
+        # ``install_root`` — we don't delete from playwright's own
+        # OS-default cache.
+        if self.cache_dir is not None and self.cache_dir.is_dir():
+            for entry in self.cache_dir.iterdir():
                 if entry.is_dir() and entry.name.startswith(f"{bin_name}-"):
                     logger.info("$ %s", format_command(["rm", "-rf", str(entry)]))
                     shutil.rmtree(entry, ignore_errors=True)
