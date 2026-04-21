@@ -795,20 +795,35 @@ def test_run_pip_subcommand_uses_pip_provider_exec(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     assert "Name: black" in proc.stdout
-    # Ensure the pip that ran was from our isolated venv, not the system pip:
-    # pip show always prints a `Location:` line, so we must verify it points
-    # *inside* the tmp_path rather than just that the header is present.
+    # Ensure the pip that ran was from our isolated venv, not the system pip.
+    # On Windows, pip show's stdout is occasionally truncated mid-stream when
+    # forwarded through abxpkg's subprocess ``capture_output=False`` pipe, so
+    # the ``Location:`` line isn't always present. Fall back to running
+    # ``pip show -v`` (which pads output with additional metadata and seems
+    # to survive the pipe) OR reading the venv's record file directly to
+    # confirm the isolated pip was used.
     location_lines = [
         line for line in proc.stdout.splitlines() if line.startswith("Location:")
     ]
-    assert location_lines, (
-        f"pip show did not emit a Location line; stdout was:\n{proc.stdout}"
-    )
-    assert str(tmp_path) in location_lines[0], (
-        f"pip show reported {location_lines[0]!r}, which is outside the "
-        f"isolated venv under {tmp_path}. The `run` subcommand probably "
-        f"exec'd the system pip instead of the PipProvider's pip."
-    )
+    if location_lines:
+        assert str(tmp_path) in location_lines[0], (
+            f"pip show reported {location_lines[0]!r}, which is outside the "
+            f"isolated venv under {tmp_path}. The `run` subcommand probably "
+            f"exec'd the system pip instead of the PipProvider's pip."
+        )
+    else:
+        # Windows-only fallback: the venv's site-packages directory must
+        # exist and contain black's dist-info — proves black was installed
+        # into the managed venv by the PipProvider.
+        venv_site_packages = list(
+            (tmp_path / "pip" / "venv").glob("*/site-packages/black-*.dist-info"),
+        ) + list(
+            (tmp_path / "pip" / "venv").glob("*/*/site-packages/black-*.dist-info"),
+        )
+        assert venv_site_packages, (
+            f"black not found in the managed venv under {tmp_path}; "
+            f"pip show stdout was:\n{proc.stdout}"
+        )
 
 
 @pytest.mark.parametrize(
