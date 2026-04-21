@@ -1074,9 +1074,11 @@ INSTALLER_BIN = "puppeteer-browsers"
 PATH = ""
 install_root = $ABXPKG_PUPPETEER_ROOT or $ABXPKG_LIB_DIR/puppeteer
 bin_dir = <install_root>/bin
+browser_cache_dir = None          # hydrated from PUPPETEER_CACHE_DIR env; overrides install_root/cache
 ```
 
-- Install root: set `install_root` for the root dir and `bin_dir` for symlinked executables. Downloaded browser artifacts live under `<install_root>/cache` when an install root is pinned. Leave it unset for ambient/global mode, where cache ownership stays with the host and `INSTALLER_BINARY` must already be resolvable from the ambient provider set.
+- Install root: set `install_root` for the root dir and `bin_dir` for symlinked executables. Leave it unset for ambient/global mode, where cache ownership stays with the host and `INSTALLER_BINARY` must already be resolvable from the ambient provider set.
+- Cache dir / `PUPPETEER_CACHE_DIR`: browser downloads land in the directory resolved with three-tier precedence: explicit `browser_cache_dir` / `PUPPETEER_CACHE_DIR` env wins → else `<install_root>/cache` when an install root is pinned → else `None`. The resolved value is exported as `PUPPETEER_CACHE_DIR` to every subprocess the provider runs.
 - Auto-switching: bootstraps `@puppeteer/browsers` through `NpmProvider` and then uses that CLI for browser installs.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
@@ -1093,12 +1095,14 @@ Source: [`abxpkg/binprovider_playwright.py`](./abxpkg/binprovider_playwright.py)
 ```python
 INSTALLER_BIN = "playwright"
 PATH = ""
-install_root = None              # when set, doubles as PLAYWRIGHT_BROWSERS_PATH
+install_root = None              # abxpkg-managed root dir for bin_dir / nested npm prefix
 bin_dir = <install_root>/bin     # symlink dir for resolved browsers
+browsers_path = None             # hydrated from PLAYWRIGHT_BROWSERS_PATH env; overrides install_root/cache
 euid = 0                         # routes exec() through sudo-first-then-fallback
 ```
 
-- Install root: set `install_root` to pin both the abxpkg root dir AND `PLAYWRIGHT_BROWSERS_PATH` to the same directory. Leave it unset to let playwright use its own OS-default browsers path (`~/.cache/ms-playwright` on Linux etc.) — in that case abxpkg maintains no symlink dir or npm prefix at all, the `playwright` npm CLI bootstraps against the host's npm default, and `load()` returns the resolved `executablePath()` directly. `bin_dir` overrides the symlink directory when `install_root` is pinned.
+- Install root: set `install_root` to pin the abxpkg-managed root dir (where `bin_dir` symlinks and the nested npm prefix live). Leave it unset to let playwright use its own OS-default browsers path (`~/.cache/ms-playwright` on Linux etc.) — in that case abxpkg maintains no symlink dir or npm prefix at all, the `playwright` npm CLI bootstraps against the host's npm default, and `load()` returns the resolved `executablePath()` directly. `bin_dir` overrides the symlink directory when `install_root` is pinned.
+- Browsers path / `PLAYWRIGHT_BROWSERS_PATH`: the actual browsers cache dir is resolved with three-tier precedence: explicit `browsers_path` / `PLAYWRIGHT_BROWSERS_PATH` env wins → else `<install_root>/cache` when an install root is pinned → else `None` (let playwright pick its OS default). The final value is exported as `PLAYWRIGHT_BROWSERS_PATH` to every subprocess the provider runs.
 - Auto-switching: bootstraps the `playwright` npm package through `NpmProvider`, then runs `playwright install --with-deps <install_args>` against it. Resolves each installed browser's real executable via the `playwright-core` Node.js API (`chromium.executablePath()` etc.) and writes a symlink into `bin_dir` when one is configured.
 - `dry_run`: shared behavior — the install handler short-circuits to a placeholder without touching the host.
 - Privilege handling: `--with-deps` installs system packages and requires root on Linux. ``euid`` defaults to ``0``, which routes every ``exec()`` call through the base ``BinProvider.exec`` sudo-first-then-fallback path — it tries ``sudo -n -- playwright install --with-deps ...`` first on non-root hosts, falls back to running the command directly if sudo fails or isn't available, and merges both stderr outputs into the final error if both attempts fail.
