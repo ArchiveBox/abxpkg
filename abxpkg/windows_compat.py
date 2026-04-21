@@ -382,14 +382,25 @@ def venv_site_packages_dirs(venv_root: Path) -> list[Path]:
 def scripts_dir_from_site_packages(site_packages: Path) -> Path:
     """Navigate from a ``site-packages`` path to the matching scripts dir.
 
-    Unix layout is ``<prefix>/lib/pythonX.Y/site-packages`` — three
-    parents up lands at ``<prefix>``. Windows is ``<prefix>/Lib/
-    site-packages`` — only two parents up. Appends the OS-appropriate
-    ``VENV_BIN_SUBDIR`` either way.
+    Layouts (P = site-packages dir, each arrow shows the parent chain):
+
+    * Unix venv / system   :  ``<prefix>/lib/pythonX.Y/site-packages``
+      → 3 parents up = ``<prefix>``
+    * Windows venv / system:  ``<prefix>/Lib/site-packages``
+      → 2 parents up = ``<prefix>``
+    * Windows user-site    :  ``<root>/Python<ver>/site-packages``
+      → 1 parent up = ``<root>/Python<ver>``, whose ``Scripts/`` dir
+        is the correct user-scripts location.
+
+    Detect the Windows user-site case by checking whether the immediate
+    parent dir is named ``Lib`` (venv/system) vs anything else (user
+    site). Appends the OS-appropriate ``VENV_BIN_SUBDIR`` either way.
     """
-    prefix = (
-        site_packages.parent.parent
-        if IS_WINDOWS
-        else site_packages.parent.parent.parent
-    )
-    return prefix / VENV_BIN_SUBDIR
+    if not IS_WINDOWS:
+        return site_packages.parent.parent.parent / VENV_BIN_SUBDIR
+    # Windows: distinguish ``<prefix>/Lib/site-packages`` (venv/system,
+    # 2 parents) from ``<root>/Python<ver>/site-packages`` (user site,
+    # 1 parent) by the parent dir's name.
+    if site_packages.parent.name.lower() == "lib":
+        return site_packages.parent.parent / VENV_BIN_SUBDIR
+    return site_packages.parent / VENV_BIN_SUBDIR
