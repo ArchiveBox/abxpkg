@@ -182,12 +182,13 @@ jobs:
         # ``yarn-berry.cmd`` via ``PATHEXT``.
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
         npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-        # Write ``yarn-berry.cmd`` by hand — resolves the JS entrypoint
-        # via the prefix's ``node_modules/.bin/yarn`` (the Unix-style
-        # launcher is a pure node script that requires yarn.js relative
-        # to ITS own location, so it stays correct no matter where the
-        # wrapper file lives).
-        YARN_BERRY_JS="$YARN_BERRY_PREFIX/node_modules/.bin/yarn"
+        # Write ``yarn-berry.cmd`` by hand — point ``node`` directly at
+        # the ``@yarnpkg/cli-dist`` bundle's ``bin/yarn.js`` entrypoint.
+        # (The ``node_modules/.bin/yarn`` shim npm installs alongside is
+        # a POSIX shell script, NOT a JS file, so ``node <that>`` fails
+        # with a ``SyntaxError``; go straight to the package's own
+        # ``bin/yarn.js``.)
+        YARN_BERRY_JS="$YARN_BERRY_PREFIX/node_modules/@yarnpkg/cli-dist/bin/yarn.js"
         YARN_BERRY_CMD="$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
         printf '@echo off\r\nnode "%s" %%*\r\n' "${YARN_BERRY_JS//\//\\}" > "$YARN_BERRY_CMD"
         # Verify the shim works. ``command -v`` in git-bash doesn't
