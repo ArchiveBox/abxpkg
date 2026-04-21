@@ -73,14 +73,19 @@ class PuppeteerProvider(BinProvider):
         """Where browser downloads land.
 
         When ``install_root`` is pinned we always use
-        ``<install_root>/cache`` and export it as ``PUPPETEER_CACHE_DIR``
-        to every subprocess. When ``install_root`` is unset we leave it
-        ``None`` and let ``puppeteer-browsers`` fall back to its own
-        default (``$PUPPETEER_CACHE_DIR`` from the ambient env, otherwise
-        ``~/.cache/puppeteer``).
+        ``<install_root>/cache``. When ``install_root`` is unset we fall
+        back to the caller's ``PUPPETEER_CACHE_DIR`` env var (the
+        puppeteer-browsers native convention) so ``load``/``uninstall``/
+        scope checks all target the same directory the user already
+        configured externally. When neither is set we return ``None``
+        and let puppeteer-browsers pick its own default
+        (``~/.cache/puppeteer``).
         """
         if self.install_root is not None:
             return self.install_root / "cache"
+        env_override = os.environ.get("PUPPETEER_CACHE_DIR")
+        if env_override:
+            return Path(env_override).expanduser()
         return None
 
     @computed_field

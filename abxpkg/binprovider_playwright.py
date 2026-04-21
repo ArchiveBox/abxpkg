@@ -83,14 +83,19 @@ class PlaywrightProvider(BinProvider):
         """Where browser downloads land.
 
         When ``install_root`` is pinned we always use
-        ``<install_root>/cache`` and export it as ``PLAYWRIGHT_BROWSERS_PATH``
-        to every subprocess. When ``install_root`` is unset we leave it
-        ``None`` and let ``playwright`` fall back to its own default
-        (``$PLAYWRIGHT_BROWSERS_PATH`` from the ambient env, otherwise
-        ``~/.cache/ms-playwright`` on Linux etc.).
+        ``<install_root>/cache``. When ``install_root`` is unset we fall
+        back to the caller's ``PLAYWRIGHT_BROWSERS_PATH`` env var
+        (playwright's native convention) so ``load``/``uninstall``/
+        scope checks all target the same directory the user already
+        configured externally. When neither is set we return ``None``
+        and let playwright pick its own default
+        (``~/.cache/ms-playwright`` on Linux etc.).
         """
         if self.install_root is not None:
             return self.install_root / "cache"
+        env_override = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
+        if env_override:
+            return Path(env_override).expanduser()
         return None
 
     @computed_field
