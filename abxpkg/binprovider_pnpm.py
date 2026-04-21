@@ -307,8 +307,11 @@ class PnpmProvider(BinProvider):
         min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Windows ``pnpm.cmd`` routes through cmd.exe which eats ``>``
+            # as a redirect; use ``^X.Y.Z`` range instead.
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
@@ -370,8 +373,10 @@ class PnpmProvider(BinProvider):
         min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Same cmd.exe redirect-metachar workaround as install.
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]

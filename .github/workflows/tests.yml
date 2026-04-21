@@ -168,9 +168,17 @@ jobs:
     - name: Setup Yarn (classic + Berry, Windows)
       # Windows equivalent of the Unix setup: classic yarn via ``npm -g``,
       # then Berry via ``npm --prefix`` + a ``yarn-berry.cmd`` shim that
-      # execs the absolute path to the npm-installed ``yarn.js`` entrypoint
-      # (git-bash has no ``ln -sf``, and npm's own ``yarn.cmd`` launcher
-      # uses ``%~dp0``-relative paths that break under plain file copy).
+      # forwards to the real Yarn 4 ``yarn.cmd`` that npm installs into
+      # ``<prefix>/node_modules/.bin/``. We can't just copy that
+      # ``yarn.cmd`` into our alias dir because it uses ``%~dp0``-
+      # relative paths that resolve ``yarn.js`` via its original
+      # location; instead we ``call`` it from there so
+      # ``%~dp0`` still points at the right dir.
+      #
+      # Crucially the ``node_modules/.bin`` dir is NOT added to PATH —
+      # that would hide the globally-installed Yarn 1.x ``yarn.cmd`` and
+      # break the classic tests. The test harness recovers the real
+      # Yarn 4 dir by parsing ``yarn-berry.cmd`` content.
       if: runner.os == 'Windows'
       run: |
         npm install -g yarn@1.22.22
@@ -182,15 +190,12 @@ jobs:
         # ``yarn-berry.cmd`` via ``PATHEXT``.
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
         npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-        # Write ``yarn-berry.cmd`` by hand — point ``node`` directly at
-        # the ``@yarnpkg/cli-dist`` bundle's ``bin/yarn.js`` entrypoint.
-        # (The ``node_modules/.bin/yarn`` shim npm installs alongside is
-        # a POSIX shell script, NOT a JS file, so ``node <that>`` fails
-        # with a ``SyntaxError``; go straight to the package's own
-        # ``bin/yarn.js``.)
-        YARN_BERRY_JS="$YARN_BERRY_PREFIX/node_modules/@yarnpkg/cli-dist/bin/yarn.js"
+        # Thin forwarder: calls the real Yarn 4 ``yarn.cmd`` from its
+        # install dir so its ``%~dp0``-relative ``yarn.js`` lookup still
+        # resolves. Don't ``move`` or ``copy`` — ``%~dp0`` would break.
+        YARN_BERRY_REAL="$YARN_BERRY_PREFIX/node_modules/.bin/yarn.cmd"
         YARN_BERRY_CMD="$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
-        printf '@echo off\r\nnode "%s" %%*\r\n' "${YARN_BERRY_JS//\//\\}" > "$YARN_BERRY_CMD"
+        printf '@echo off\r\ncall "%s" %%*\r\n' "${YARN_BERRY_REAL//\//\\}" > "$YARN_BERRY_CMD"
         # Verify the shim works. ``command -v`` in git-bash doesn't
         # consult ``PATHEXT`` so reference the ``.cmd`` file directly.
         "$YARN_BERRY_CMD" --version | grep -q '^4\.'

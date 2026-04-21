@@ -1,4 +1,6 @@
 import logging
+import os
+import re
 import tempfile
 from pathlib import Path
 
@@ -7,6 +9,30 @@ import pytest
 from abxpkg import Binary, SemVer, YarnProvider
 from abxpkg.base_types import bin_abspath
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg.windows_compat import IS_WINDOWS
+
+
+def _resolve_berry_bin_dir(berry_alias: Path) -> Path:
+    """Return the dir containing the Yarn 2+ ``yarn`` executable.
+
+    On POSIX ``yarn-berry`` is a symlink into the berry install's
+    ``node_modules/.bin`` dir, so we readlink() through it. On Windows
+    ``yarn-berry.cmd`` is a ``call "<absolute>\\yarn.cmd" %*`` forwarder
+    (written by the CI workflow) since plain ``.cmd`` files can't be
+    symlinked reliably from bash; parse its content to recover the
+    target dir.
+    """
+    if IS_WINDOWS and berry_alias.suffix.lower() == ".cmd":
+        content = berry_alias.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r'"([^"]+\.cmd)"', content)
+        assert match, (
+            f"Could not parse yarn-berry.cmd forwarder content: {content!r}"
+        )
+        return Path(match.group(1)).parent
+    berry_link = berry_alias.readlink() if berry_alias.is_symlink() else None
+    if berry_link and not berry_link.is_absolute():
+        return (berry_alias.parent / berry_link).parent
+    return (berry_link or berry_alias).parent
 
 
 class TestYarnProvider:
@@ -22,17 +48,12 @@ class TestYarnProvider:
             assert berry_alias is not None, (
                 "Could not resolve the globally installed yarn-berry alias on PATH"
             )
-            berry_link = berry_alias.readlink() if berry_alias.is_symlink() else None
-            berry_bin_dir = (
-                (berry_alias.parent / berry_link).parent
-                if berry_link and not berry_link.is_absolute()
-                else (berry_link or berry_alias).parent
-            )
-            candidate_path = ":".join(
+            berry_bin_dir = _resolve_berry_bin_dir(berry_alias)
+            candidate_path = os.pathsep.join(
                 dict.fromkeys(
                     [
                         str(berry_bin_dir),
-                        *[entry for entry in current_path.split(":") if entry],
+                        *[entry for entry in current_path.split(os.pathsep) if entry],
                     ],
                 ),
             )

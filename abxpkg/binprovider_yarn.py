@@ -29,6 +29,7 @@ from .binprovider import (
 )
 from .logging import format_subprocess_output
 from .semver import SemVer
+from .windows_compat import IS_WINDOWS
 
 
 USER_CACHE_PATH = user_cache_path("yarn", "abxpkg")
@@ -370,8 +371,13 @@ class YarnProvider(BinProvider):
         min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Windows ``yarn.cmd`` runs through ``cmd.exe`` which treats
+            # ``>`` / ``<`` as redirect metacharacters, so passing
+            # ``zx@>=8.8.0`` as an argv item gets shell-eaten to ``zx@``.
+            # Use the equivalent ``^X.Y.Z`` range on Windows instead.
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
@@ -468,8 +474,10 @@ class YarnProvider(BinProvider):
         min_release_age = 7.0 if min_release_age is None else min_release_age
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
+            # Same cmd.exe redirect-metachar workaround as install (see above).
+            version_spec = f"^{min_version}" if IS_WINDOWS else f">={min_version}"
             install_args = [
-                f"{arg}@>={min_version}"
+                f"{arg}@{version_spec}"
                 if arg
                 and not arg.startswith(("-", ".", "/"))
                 and ":" not in arg.split("/")[0]
