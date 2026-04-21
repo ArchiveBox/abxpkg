@@ -175,17 +175,21 @@ jobs:
         YARN_BERRY_PREFIX="$USERPROFILE/yarn-berry"
         YARN_BERRY_ALIAS_DIR="$USERPROFILE/yarn-berry-bin"
         mkdir -p "$YARN_BERRY_ALIAS_DIR"
-        # GITHUB_PATH is interpreted by runner as \-prefixed lines on Windows.
+        # Stage onto GITHUB_PATH so later steps (pytest subprocess
+        # ``shutil.which``, etc.) find ``yarn-berry.cmd`` via ``PATHEXT``.
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
         npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
         # Emit a one-line ``yarn-berry.cmd`` that forwards to npm-installed
         # ``yarn.cmd``. Use ``%*`` to pass through all args. Built with
         # printf so the heredoc body doesn't collide with YAML block-scalar
         # indentation.
-        printf '@echo off\n"%s\\node_modules\\.bin\\yarn.cmd" %%*\n' "$YARN_BERRY_PREFIX" > "$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
-        export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
-        command -v yarn-berry
-        yarn-berry --version | grep -q '^4\.'
+        YARN_BERRY_CMD="$YARN_BERRY_ALIAS_DIR/yarn-berry.cmd"
+        printf '@echo off\n"%s\\node_modules\\.bin\\yarn.cmd" %%*\n' "$YARN_BERRY_PREFIX" > "$YARN_BERRY_CMD"
+        # Verify each shim works. ``command -v`` in git-bash doesn't
+        # consult ``PATHEXT`` so reference the ``.cmd`` file directly for
+        # the version check — the GITHUB_PATH export above is what later
+        # pytest steps rely on.
+        "$YARN_BERRY_CMD" --version | grep -q '^4\.'
         yarn --version | grep -q '^1\.'
 
     - name: Setup Bun
