@@ -223,23 +223,27 @@ jobs:
       # ``mfplat.dll`` / etc. in their SxS manifests, so running
       # ``chrome.exe --version`` fails with
       # ``WinError 14001 side-by-side configuration is incorrect``
-      # until the role is enabled. We also install the Visual C++ 2015-2022
-      # x64 Redistributable explicitly because Playwright's
-      # ``--with-deps`` flag on Windows is a best-effort no-op on some
-      # Playwright versions.
+      # until the role is enabled. Also install the Visual C++
+      # 2013 + 2015-2022 x64 Redistributables explicitly.
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         # Windows Server: enable the Media Foundation role (ships ``mf.dll`` etc.).
-        Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction SilentlyContinue | Out-Null
-        # Belt-and-suspenders: also try the consumer-SKU Media Feature Pack
-        # capability in case we're ever on a client Windows host.
+        # ``Install-WindowsFeature`` is interactive-friendly; echo the result.
+        $mf = Install-WindowsFeature -Name Server-Media-Foundation -ErrorAction SilentlyContinue
+        Write-Host "Server-Media-Foundation: $($mf | Out-String)"
+        # Also try the consumer-SKU Media Feature Pack capability (no-op on Server).
         $cap = Get-WindowsCapability -Online -Name 'Media.MediaFeaturePack*' -ErrorAction SilentlyContinue
         if ($cap -and $cap.State -ne 'Installed') {
           Add-WindowsCapability -Online -Name $cap.Name -ErrorAction SilentlyContinue
         }
-        # VC++ 2015-2022 x64 Redistributable (covers chromium's runtime).
-        choco install -y --no-progress vcredist140
+        # VC++ redistributables. ``vcredist140`` covers 2015-2022 x64;
+        # ``vcredist2013`` covers older chromium-bundled components.
+        choco install -y --no-progress vcredist140 vcredist2013
+        # Verify the DLLs are actually on disk / resolvable via SxS.
+        Write-Host "System32 mf.dll: $(Test-Path C:\Windows\System32\mf.dll)"
+        Write-Host "System32 mfplat.dll: $(Test-Path C:\Windows\System32\mfplat.dll)"
+        Write-Host "System32 vcruntime140.dll: $(Test-Path C:\Windows\System32\vcruntime140.dll)"
 
     - name: Setup venv and install pip dependencies
       run: |
