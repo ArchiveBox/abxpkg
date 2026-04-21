@@ -564,10 +564,11 @@ class PlaywrightProvider(BinProvider):
             except Exception:
                 return None
             return None
-        if self.bin_dir is not None:
-            link = self.bin_dir / str(bin_name)
-            if link.exists() and os.access(link, os.X_OK):
-                return link
+        # Authoritative lookup: ask ``playwright-core`` where the browser
+        # actually lives via its ``executablePath()`` API — never trust
+        # the managed ``bin_dir`` shim as a source of truth, it may
+        # point at a browser that was removed out-of-band. When
+        # playwright-core reports nothing, we report nothing.
         resolved = self._playwright_browser_path(
             str(bin_name),
             no_cache=no_cache,
@@ -725,8 +726,11 @@ class PlaywrightProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Drop the managed shim first so ``load()`` stops returning the
-        # symlink even if the browser-dir rmtree partially fails.
+        # Clean up the convenience shim under ``bin_dir`` alongside the
+        # real browser removal. ``load()`` never consults this shim as a
+        # source of truth (it always asks playwright-core directly), so
+        # dropping it is a cosmetic cleanup to keep the managed PATH
+        # tidy rather than a correctness requirement.
         if self.bin_dir is not None:
             (self.bin_dir / bin_name).unlink(missing_ok=True)
 

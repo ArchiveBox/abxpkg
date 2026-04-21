@@ -419,15 +419,19 @@ class PuppeteerProvider(BinProvider):
             except Exception:
                 return None
             return None
-        bin_dir = self.bin_dir
-        assert bin_dir is not None
-        link_path = bin_dir / str(bin_name)
-        if link_path.exists() and os.access(link_path, os.X_OK):
-            return link_path
 
+        # Authoritative lookup: ask puppeteer-browsers where the browser
+        # actually lives — never trust the managed ``bin_dir`` shim as a
+        # source of truth, it may point at a browser that was removed
+        # out-of-band. When the CLI reports nothing, we report nothing.
         resolved = self._resolve_installed_browser_path(str(bin_name))
         if not resolved or not resolved.exists():
             return None
+
+        # Refresh the convenience shim under ``bin_dir`` so ``PATH`` users
+        # get a stable entry pointing at the freshly-resolved executable.
+        # Fall back to the resolved path directly when the shim refresh
+        # fails (read-only FS etc.).
         try:
             return self._refresh_symlink(str(bin_name), resolved)
         except OSError:
@@ -688,8 +692,11 @@ class PuppeteerProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Drop the managed shim first so ``load()`` stops returning the
-        # symlink even if the browser-dir rmtree partially fails.
+        # Clean up the convenience shim under ``bin_dir`` alongside the
+        # real browser removal. ``load()`` never consults this shim as a
+        # source of truth (it always asks puppeteer-browsers directly),
+        # so dropping it is a cosmetic cleanup to keep the managed PATH
+        # tidy rather than a correctness requirement.
         if self.bin_dir is not None:
             bin_path = self.bin_dir / bin_name
             if bin_path.exists() or bin_path.is_symlink():
