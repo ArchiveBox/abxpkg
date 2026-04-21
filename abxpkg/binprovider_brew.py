@@ -401,10 +401,10 @@ class BrewProvider(BinProvider):
         # shim is a convenience side-effect of install — never a source
         # of truth — so we always consult brew's paths first and only
         # refresh the shim to match the freshly-resolved target.
+        linked_bin = self._linked_bin_path(bin_name)
         search_paths = self._brew_search_paths(bin_name, no_cache=no_cache)
         abspath = bin_abspath(bin_name, PATH=search_paths)
         if abspath:
-            linked_bin = self._linked_bin_path(bin_name)
             if linked_bin is None or Path(abspath).parent == self.bin_dir:
                 return abspath
             return self._refresh_bin_link(bin_name, abspath)
