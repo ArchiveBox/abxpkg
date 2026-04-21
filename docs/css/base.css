@@ -1,0 +1,170 @@
+/* ============================================================
+   ArchiveBox DS — Base / Reset / Type
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+html {
+  font-family: var(--ab-font-serif);
+  font-size: var(--ab-size-base);
+  line-height: var(--ab-lh-normal);
+  color: var(--ab-fg);
+  background: var(--ab-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "kern", "liga", "onum";
+}
+
+/* Grain is rendered as an overlay via ::before so we can use
+   mix-blend-mode: overlay (which preserves hue) instead of multiply
+   (which drifts toward olive on warm paper). */
+body {
+  min-height: 100vh;
+  background: var(--ab-bg);
+  position: relative;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMjAnIGhlaWdodD0nMjIwJz48ZmlsdGVyIGlkPSduJz48ZmVUdXJidWxlbmNlIHR5cGU9J2ZyYWN0YWxOb2lzZScgYmFzZUZyZXF1ZW5jeT0nMS4wNScgbnVtT2N0YXZlcz0nMicgc3RpdGNoVGlsZXM9J3N0aXRjaCcgc2VlZD0nNycvPjxmZUNvbG9yTWF0cml4IHZhbHVlcz0nMCAwIDAgMCAwICAwIDAgMCAwIDAgIDAgMCAwIDAgMCAgMCAwIDAgLjYgMCcvPjxmZUNvbXBvbmVudFRyYW5zZmVyPjxmZUZ1bmNBIHR5cGU9J2xpbmVhcicgc2xvcGU9JzEuMicgaW50ZXJjZXB0PSctLjEnLz48L2ZlQ29tcG9uZW50VHJhbnNmZXI+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsdGVyPSd1cmwoI24pJy8+PC9zdmc+");
+  background-size: 220px 220px;
+  opacity: var(--ab-grain-opacity);
+  mix-blend-mode: overlay;
+}
+:root[data-theme="dark"] body::before { mix-blend-mode: soft-light; }
+body > * { position: relative; z-index: 1; }
+
+::selection { background: var(--ab-selection); color: var(--ab-ink); }
+
+/* ---- Headings ---------------------------------------------- */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--ab-font-serif);
+  font-weight: 500;
+  line-height: var(--ab-lh-tight);
+  letter-spacing: -0.01em;
+  color: var(--ab-fg);
+  margin: 0 0 var(--ab-s-3) 0;
+  text-wrap: balance;
+}
+h1 { font-size: var(--ab-size-3xl); letter-spacing: -0.02em; }
+h2 { font-size: var(--ab-size-2xl); }
+h3 { font-size: var(--ab-size-xl); }
+h4 { font-size: var(--ab-size-lg); }
+h5 { font-size: var(--ab-size-md); }
+h6 { font-size: var(--ab-size-sm); text-transform: uppercase; letter-spacing: .12em; font-family: var(--ab-font-label); font-weight: 600; color: var(--ab-fg-muted); }
+
+.ab-display {
+  font-size: var(--ab-size-display);
+  line-height: .95;
+  letter-spacing: -0.035em;
+  font-weight: 400;
+}
+
+p, li { max-width: var(--ab-measure); text-wrap: pretty; }
+p { margin: 0 0 var(--ab-s-4) 0; color: var(--ab-ink-2); }
+:root[data-theme="dark"] p { color: var(--ab-ink-2); }
+
+a {
+  color: var(--ab-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color var(--ab-dur-1) var(--ab-ease);
+}
+a:hover { color: var(--ab-accent-hover); }
+
+small, .ab-small { font-size: var(--ab-size-sm); color: var(--ab-fg-muted); }
+
+code, kbd, pre, samp { font-family: var(--ab-font-mono); }
+code {
+  font-size: .9em;
+  background: var(--ab-bg-sunken);
+  border: 1px solid var(--ab-rule);
+  border-radius: var(--ab-r-1);
+  padding: 1px 5px;
+  color: var(--ab-ink-2);
+}
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--ab-rule);
+  margin: var(--ab-s-6) 0;
+}
+
+/* ---- Labels & metadata ------------------------------------- */
+.ab-label {
+  font-family: var(--ab-font-label);
+  font-size: var(--ab-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--ab-fg-muted);
+}
+.ab-meta {
+  font-family: var(--ab-font-mono);
+  font-size: var(--ab-size-xs);
+  color: var(--ab-fg-muted);
+  letter-spacing: .02em;
+}
+.ab-eyebrow {
+  font-family: var(--ab-font-label);
+  font-size: var(--ab-size-xs);
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ab-accent);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ab-s-2);
+}
+.ab-eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  height: 1px;
+  background: var(--ab-accent);
+}
+
+/* ---- Ornaments --------------------------------------------- */
+.ab-ornament {
+  display: flex;
+  align-items: center;
+  gap: var(--ab-s-3);
+  color: var(--ab-fg-muted);
+  font-family: var(--ab-font-serif);
+  font-style: italic;
+}
+.ab-ornament::before,
+.ab-ornament::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--ab-rule);
+}
+.ab-ornament-dot {
+  font-size: var(--ab-size-sm);
+  letter-spacing: .5em;
+  color: var(--ab-fg-faint);
+  text-align: center;
+}
+
+/* ---- Layout helpers ---------------------------------------- */
+.ab-container {
+  max-width: var(--ab-content-w);
+  margin: 0 auto;
+  padding: 0 var(--ab-s-6);
+}
+.ab-stack > * + * { margin-top: var(--ab-s-4); }
+.ab-stack-lg > * + * { margin-top: var(--ab-s-6); }
+.ab-row { display: flex; gap: var(--ab-s-3); align-items: center; flex-wrap: wrap; }
+.ab-grid { display: grid; gap: var(--ab-gap); }
+
+/* ---- Focus ------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--ab-accent);
+  outline-offset: 2px;
+  border-radius: var(--ab-r-2);
+}

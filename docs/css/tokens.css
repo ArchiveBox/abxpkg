@@ -1,0 +1,158 @@
+/* ============================================================
+   ArchiveBox Design System — Tokens
+   "The Stacks" — museum/institutional, paper + ink modes
+   ============================================================ */
+
+:root {
+  /* ---- Color: Neutrals (paper mode / light) ------------------
+     Warm paper — manilla, kraft, aged vellum.
+     Hue bias: red-orange warm (NOT yellow-green).
+     Think: manila envelope, unbleached cotton, library card stock. */
+  --ab-paper:        #fbf9f4;  /* near-white, barely warm */
+  --ab-paper-2:      #f3f0e8;  /* shelf / sunken */
+  --ab-paper-3:      #e4dfd3;  /* hairline / divider */
+  --ab-vellum:       #fdfcf8;  /* pale vellum, elevated surface */
+  --ab-ink:          #1c1814;  /* near-black ink */
+  --ab-ink-2:        #3a332a;  /* body copy */
+  --ab-ink-3:        #6b6253;  /* muted text */
+  --ab-ink-4:        #9a907c;  /* faint meta */
+
+  /* ---- Color: Accent ---------------------------------------- */
+  --ab-oxblood:      #8b2a2a;  /* primary accent, library red */
+  --ab-oxblood-2:    #6e1f1f;  /* hover */
+  --ab-oxblood-3:    #a54848;  /* soft */
+  --ab-oxblood-wash: #f0dfdf;  /* tint background */
+  --ab-ochre:        #b5832a;  /* warning / stamp */
+  --ab-moss:         #5a6b3c;  /* success */
+  --ab-slate:        #3e4a55;  /* info / ink-blue */
+
+  /* ---- Semantic --------------------------------------------- */
+  --ab-bg:           var(--ab-paper);
+  --ab-bg-elev:      var(--ab-vellum);
+  --ab-bg-sunken:    var(--ab-paper-2);
+  --ab-fg:           var(--ab-ink);
+  --ab-fg-muted:     var(--ab-ink-3);
+  --ab-fg-faint:     var(--ab-ink-4);
+  --ab-rule:         var(--ab-paper-3);
+  --ab-rule-strong:  #d4cdbd;
+  --ab-accent:       var(--ab-oxblood);
+  --ab-accent-hover: var(--ab-oxblood-2);
+  --ab-accent-wash:  var(--ab-oxblood-wash);
+  --ab-on-accent:    var(--ab-vellum);
+  --ab-selection:    #ece4cc;
+
+  /* ---- Typography ------------------------------------------- */
+  /* Transitional serif (editorial display + body) */
+  /* Subtle transitional serif — quieter than Spectral's bracketed serifs */
+  --ab-font-serif: 'Source Serif 4', 'Source Serif Pro', 'Iowan Old Style', 'Charter', 'Hoefler Text', Georgia, serif;
+  /* Grotesque sans (UI + labels) */
+  --ab-font-sans:  'Inter Tight', 'Söhne', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  /* Mono (terminal, code, metadata) */
+  --ab-font-mono:  'JetBrains Mono', 'IBM Plex Mono', 'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace;
+  /* Small-caps / label */
+  --ab-font-label: 'Inter Tight', 'Söhne', sans-serif;
+
+  /* Type scale — editorial, modest ratios */
+  --ab-size-xs:   11px;
+  --ab-size-sm:   13px;
+  --ab-size-base: 15px;
+  --ab-size-md:   17px;
+  --ab-size-lg:   20px;
+  --ab-size-xl:   26px;
+  --ab-size-2xl:  34px;
+  --ab-size-3xl:  46px;
+  --ab-size-4xl:  62px;
+  --ab-size-display: 84px;
+
+  --ab-lh-tight:  1.15;
+  --ab-lh-snug:   1.3;
+  --ab-lh-normal: 1.55;
+  --ab-lh-loose:  1.75;
+
+  /* ---- Space (8-based) -------------------------------------- */
+  --ab-s-0: 0;
+  --ab-s-1: 4px;
+  --ab-s-2: 8px;
+  --ab-s-3: 12px;
+  --ab-s-4: 16px;
+  --ab-s-5: 24px;
+  --ab-s-6: 32px;
+  --ab-s-7: 48px;
+  --ab-s-8: 64px;
+  --ab-s-9: 96px;
+  --ab-s-10: 128px;
+
+  /* ---- Radii — restrained ----------------------------------- */
+  --ab-r-0: 0;
+  --ab-r-1: 2px;
+  --ab-r-2: 4px;
+  --ab-r-3: 6px;
+  --ab-r-pill: 999px;
+
+  /* ---- Shadows — subtle, paper ------------------------------ */
+  --ab-shadow-1: 0 1px 0 rgba(28,24,20,.04), 0 1px 2px rgba(28,24,20,.06);
+  --ab-shadow-2: 0 2px 4px rgba(28,24,20,.06), 0 6px 16px rgba(28,24,20,.08);
+  --ab-shadow-inset: inset 0 1px 0 rgba(255,253,246,.5), inset 0 -1px 0 rgba(28,24,20,.04);
+
+  /* ---- Motion ----------------------------------------------- */
+  --ab-ease: cubic-bezier(.2, .6, .2, 1);
+  --ab-dur-1: 120ms;
+  --ab-dur-2: 200ms;
+  --ab-dur-3: 320ms;
+
+  /* ---- Density (compact is the baseline) --------------------- */
+  --ab-row-h: 32px;
+  --ab-ctrl-h: 28px;
+  --ab-ctrl-px: 10px;
+  --ab-gap: var(--ab-s-3);
+  --ab-pad: var(--ab-s-4);
+
+  /* ---- Layout ----------------------------------------------- */
+  --ab-measure: 68ch;
+  --ab-content-w: 1200px;
+  --ab-sidebar-w: 240px;
+
+  /* ---- Grain — paper fiber, hue-neutral --------------------- */
+  --ab-grain-opacity: .012;
+}
+
+/* ============ DARK (ink / archival terminal) ==================
+   Warm near-black — leather-bound ledger, not cold slate. */
+:root[data-theme="dark"] {
+  --ab-paper:        #17140f;
+  --ab-paper-2:      #1f1b14;
+  --ab-paper-3:      #2e2820;
+  --ab-vellum:       #1c1812;
+  --ab-ink:          #efe7d2;
+  --ab-ink-2:        #d6cdb6;
+  --ab-ink-3:        #958b75;
+  --ab-ink-4:        #615948;
+
+  --ab-oxblood:      #c26a6a;
+  --ab-oxblood-2:    #d88585;
+  --ab-oxblood-3:    #8a3838;
+  --ab-oxblood-wash: #2a1818;
+  --ab-ochre:        #d6a654;
+  --ab-moss:         #8aa062;
+  --ab-slate:        #7a8a96;
+
+  --ab-bg:           var(--ab-paper);
+  --ab-bg-elev:      var(--ab-paper-2);
+  --ab-bg-sunken:    #120f0a;
+  --ab-fg:           var(--ab-ink);
+  --ab-fg-muted:     var(--ab-ink-3);
+  --ab-fg-faint:     var(--ab-ink-4);
+  --ab-rule:         var(--ab-paper-3);
+  --ab-rule-strong:  #3f392e;
+  --ab-accent:       var(--ab-oxblood);
+  --ab-accent-hover: var(--ab-oxblood-2);
+  --ab-accent-wash:  var(--ab-oxblood-wash);
+  --ab-on-accent:    #17140f;
+  --ab-selection:    #3a2a1a;
+
+  --ab-shadow-1: 0 1px 0 rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.4);
+  --ab-shadow-2: 0 2px 6px rgba(0,0,0,.4), 0 8px 20px rgba(0,0,0,.5);
+  --ab-shadow-inset: inset 0 1px 0 rgba(255,255,255,.03), inset 0 -1px 0 rgba(0,0,0,.3);
+
+  --ab-grain-opacity: .04;
+}

@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import inspect
 import os
+import shutil
+import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,14 +18,17 @@ from pydantic.fields import PydanticUndefined
 
 import abxpkg
 from abxpkg.binprovider import DEFAULT_ENV_PATH, BinProvider
+from abxpkg.base_types import DEFAULT_LIB_DIR
 
 
 SITE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SITE_DIR.parent
 TEMPLATE_DIR = SITE_DIR
 DEFAULT_OUTPUT_DIR = SITE_DIR
+ASSETS_DIR = SITE_DIR / "css"
 GITHUB_REPO = "https://github.com/ArchiveBox/abxpkg"
 DEFAULT_GITHUB_REF = os.environ.get("ABXPKG_GITHUB_REF", "main")
+HOME_DIR = Path.home()
 
 # Categories for grouping providers on the landing page.
 CATEGORY_FALLBACK = "fallback"
@@ -516,17 +521,47 @@ def _esc(text: str) -> str:
     )
 
 
+def normalize_doc_path(path: Path | str) -> str:
+    text = str(path)
+    home = str(HOME_DIR)
+    if text == home:
+        return "~"
+    if text.startswith(home + os.sep):
+        return "~/" + text[len(home + os.sep) :]
+    return text
+
+
+def normalize_doc_value(value: Any) -> Any:
+    if isinstance(value, Path):
+        return Path(normalize_doc_path(value))
+    if isinstance(value, str):
+        return normalize_doc_path(value)
+    if isinstance(value, list):
+        return [normalize_doc_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(normalize_doc_value(item) for item in value)
+    if isinstance(value, dict):
+        return {
+            normalize_doc_value(key): normalize_doc_value(val)
+            for key, val in value.items()
+        }
+    return value
+
+
 def format_json_value_html(value: Any) -> Markup:
     """Return syntax-highlighted HTML for a provider field default."""
+    value = normalize_doc_value(value)
     if value is None:
         return Markup('<span class="cfg-null">None</span>')
     if isinstance(value, bool):
         cls = "cfg-bool-true" if value else "cfg-bool-false"
         return Markup(f'<span class="{cls}">{str(value)}</span>')
     if isinstance(value, (int, float)):
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
         return Markup(f'<span class="cfg-number">{_esc(str(value))}</span>')
     if isinstance(value, str):
-        value = value.replace(DEFAULT_ENV_PATH, "$PATH")
+        value = value.replace(normalize_doc_path(DEFAULT_ENV_PATH), "$PATH")
         escaped = _esc(value)
         return Markup(f'<span class="cfg-string">&quot;{escaped}&quot;</span>')
     if isinstance(value, Path):
@@ -574,7 +609,10 @@ def describe_annotation(annotation: Any) -> str:
     return s
 
 
-def collect_provider_fields(cls: type[BinProvider]) -> list[dict[str, Any]]:
+def collect_provider_fields(
+    cls: type[BinProvider],
+    instance: BinProvider,
+) -> list[dict[str, Any]]:
     """Return declared per-field metadata for a provider.
 
     Use model-field defaults instead of a live provider instance so the docs
@@ -586,7 +624,10 @@ def collect_provider_fields(cls: type[BinProvider]) -> list[dict[str, Any]]:
         if field.default is not PydanticUndefined:
             value = field.default
         elif field.default_factory is not None:
-            value = "<dynamic>"
+            try:
+                value = getattr(instance, name)
+            except Exception:
+                value = "<dynamic>"
         else:
             value = None
         # Skip noisy derived/mostly-internal base fields.
@@ -607,7 +648,7 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     instance = cls()
     short_name = instance.name
     meta = PROVIDER_METADATA.get(short_name, {})
-    fields = collect_provider_fields(cls)
+    fields = collect_provider_fields(cls, instance)
     env_vars = PROVIDER_ENV_VARS.get(short_name, [])
     source_file = meta.get("source_file") or inspect.getfile(cls).split("abxpkg/")[-1]
     source_file = (
@@ -676,6 +717,18 @@ def build_provider(cls: type[BinProvider]) -> dict[str, Any]:
     }
 
 
+def resolve_global_env_vars() -> list[dict[str, str]]:
+    env_vars = copy.deepcopy(GLOBAL_ENV_VARS)
+    resolved_defaults = {
+        "ABXPKG_BINPROVIDERS": ",".join(abxpkg.DEFAULT_PROVIDER_NAMES),
+        "ABXPKG_LIB_DIR": normalize_doc_path(DEFAULT_LIB_DIR),
+    }
+    for env_var in env_vars:
+        if env_var["name"] in resolved_defaults:
+            env_var["default"] = resolved_defaults[env_var["name"]]
+    return env_vars
+
+
 def collect_providers() -> list[dict[str, Any]]:
     providers: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -719,9 +772,20 @@ def group_by_category(providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return ordered
 
 
+def copy_assets(output_dir: Path) -> None:
+    target_dir = output_dir / "css"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for asset in ASSETS_DIR.glob("*.css"):
+        destination = target_dir / asset.name
+        if asset.resolve() == destination.resolve():
+            continue
+        shutil.copy2(asset, destination)
+
+
 def render_site(output_dir: Path, template_name: str) -> Path:
     providers = collect_providers()
     categories = group_by_category(providers)
+    global_env_vars = resolve_global_env_vars()
 
     environment = Environment(
         loader=FileSystemLoader(TEMPLATE_DIR),
@@ -739,16 +803,17 @@ def render_site(output_dir: Path, template_name: str) -> Path:
             "provider_count": len(providers),
             "field_count": sum(p["field_count"] for p in providers),
             "env_var_count": sum(p["env_var_count"] for p in providers)
-            + len(GLOBAL_ENV_VARS),
+            + len(global_env_vars),
             "providers": providers,
             "categories": categories,
-            "global_env_vars": GLOBAL_ENV_VARS,
+            "global_env_vars": global_env_vars,
         },
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     index_path = output_dir / "index.html"
     index_path.write_text(html + "\n", encoding="utf-8")
+    copy_assets(output_dir)
     (output_dir / ".nojekyll").write_text("", encoding="utf-8")
     return index_path
 
