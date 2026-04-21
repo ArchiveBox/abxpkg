@@ -473,7 +473,9 @@ class Binary(ShallowBinary):
             )
         except BinaryLoadError:
             loaded = self
-        if loaded.is_valid and not no_cache:
+        # ``load()`` was already called with the caller's ``no_cache`` flag, so
+        # a valid result is already fresh — trust it and skip ``install()``.
+        if loaded.is_valid:
             return loaded
         return self.install(
             binproviders=binproviders,
