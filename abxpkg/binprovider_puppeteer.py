@@ -384,7 +384,14 @@ class PuppeteerProvider(BinProvider):
         install_args: Iterable[str] | None = None,
         no_cache: bool = False,
     ) -> Path | None:
-        browser_name = self._browser_name(bin_name, install_args or [bin_name])
+        # Pick up the caller's configured install_args so
+        # ``bin_name=chrome`` + ``install_args=["chromium@latest"]``
+        # resolves to ``browser_name="chromium"`` (matching what
+        # ``puppeteer-browsers list`` reports), instead of falling
+        # back to ``[bin_name]`` which would look for the alias name.
+        if install_args is None:
+            install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
+        browser_name = self._browser_name(bin_name, install_args)
         candidates = [
             (version, path)
             for candidate_browser, version, path in self._list_installed_browsers(
