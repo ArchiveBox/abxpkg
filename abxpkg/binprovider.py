@@ -1732,10 +1732,18 @@ class BinProvider(BaseModel):
                     sudo_proc.stderr,
                 )
 
+        # When running as root but dropping to a non-root user (e.g. brew),
+        # use the target user's HOME/LOGNAME/USER env so the dropped-privilege
+        # subprocess finds its own cache/config dirs instead of root's.
+        dropped_env = (
+            sudo_env
+            if current_euid == 0 and run_as_uid != current_euid
+            else fallback_env
+        )
         proc = subprocess.run(
             cmd,
             cwd=str(cwd_path),
-            env=fallback_env,
+            env=dropped_env,
             preexec_fn=drop_privileges,
             **kwargs,
         )
