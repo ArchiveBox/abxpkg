@@ -692,34 +692,29 @@ class PuppeteerProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Clean up the convenience shim under ``bin_dir`` alongside the
-        # real browser removal. ``load()`` never consults this shim as a
-        # source of truth (it always asks puppeteer-browsers directly),
-        # so dropping it is a cosmetic cleanup to keep the managed PATH
-        # tidy rather than a correctness requirement.
+        # Resolve the real browser directory via the CLI directly
+        # (``_resolve_installed_browser_path`` shells out to
+        # ``puppeteer-browsers list``) so we don't round-trip through
+        # ``load()`` → ``default_abspath_handler`` and have it refresh
+        # the managed shim right as we're about to delete it. Honours
+        # managed ``install_root``, ambient ``PUPPETEER_CACHE_DIR``,
+        # and puppeteer-browsers' own default uniformly.
+        install_args = list(install_args or self.get_install_args(bin_name))
+        browser_name = self._browser_name(bin_name, install_args)
+        resolved = self._resolve_installed_browser_path(str(bin_name))
+        if resolved is not None:
+            for parent in Path(resolved).resolve().parents:
+                if parent.name == browser_name:
+                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
+                    shutil.rmtree(parent, ignore_errors=True)
+                    break
+
+        # Finally, drop the convenience shim under ``bin_dir``. Doing
+        # this last avoids the "unlink → load() refresh → rmtree →
+        # dangling shim" ordering bug.
         if self.bin_dir is not None:
             bin_path = self.bin_dir / bin_name
             if bin_path.exists() or bin_path.is_symlink():
                 logger.info("$ %s", format_command(["rm", "-f", str(bin_path)]))
             bin_path.unlink(missing_ok=True)
-
-        # Use ``load()`` to resolve the actual installed browser
-        # executable — load honours managed install_root, the ambient
-        # PUPPETEER_CACHE_DIR env var, and puppeteer-browsers' own
-        # default, so this single call handles all three cases. Then
-        # walk up from that abspath to find the browser's top-level
-        # directory (``<cache>/<browser_name>/``) and rmtree it.
-        install_args = list(install_args or self.get_install_args(bin_name))
-        browser_name = self._browser_name(bin_name, install_args)
-        try:
-            loaded = self.load(bin_name, quiet=True, no_cache=True)
-        except Exception:
-            loaded = None
-        loaded_abspath = loaded.loaded_abspath if loaded else None
-        if loaded_abspath is not None:
-            for parent in Path(loaded_abspath).resolve().parents:
-                if parent.name == browser_name:
-                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
-                    shutil.rmtree(parent, ignore_errors=True)
-                    break
         return True

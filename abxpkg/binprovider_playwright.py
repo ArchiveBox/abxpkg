@@ -726,35 +726,29 @@ class PlaywrightProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Clean up the convenience shim under ``bin_dir`` alongside the
-        # real browser removal. ``load()`` never consults this shim as a
-        # source of truth (it always asks playwright-core directly), so
-        # dropping it is a cosmetic cleanup to keep the managed PATH
-        # tidy rather than a correctness requirement.
-        if self.bin_dir is not None:
-            (self.bin_dir / bin_name).unlink(missing_ok=True)
-
-        # Use ``load()`` to resolve the actual installed browser
-        # executable — ``playwright-core``'s ``executablePath()`` reads
-        # ``PLAYWRIGHT_BROWSERS_PATH`` from the subprocess env, which
-        # the provider exports when ``install_root`` is set and which
-        # otherwise passes through from the ambient env. This single
-        # call covers managed, OS-default, and user-env-var modes.
-        # Then walk up from that abspath to find the
-        # ``<bin_name>-<buildId>/`` dir and rmtree it — playwright's
-        # own ``uninstall`` CLI has no per-browser argument, so this
-        # is still the only way to remove a specific browser.
-        try:
-            loaded = self.load(bin_name, quiet=True, no_cache=True)
-        except Exception:
-            loaded = None
-        loaded_abspath = loaded.loaded_abspath if loaded else None
-        if loaded_abspath is not None:
-            for parent in Path(loaded_abspath).resolve().parents:
+        # Resolve the real browser directory via playwright-core's
+        # ``executablePath()`` directly (``_playwright_browser_path``
+        # shells out to the node API) so we don't round-trip through
+        # ``load()`` → ``default_abspath_handler`` and have it refresh
+        # the managed shim right as we're about to delete it. Honours
+        # managed ``install_root``, ambient ``PLAYWRIGHT_BROWSERS_PATH``,
+        # and playwright's own default (``~/.cache/ms-playwright``)
+        # uniformly.
+        resolved = self._playwright_browser_path(str(bin_name), no_cache=True)
+        if resolved is not None:
+            for parent in Path(resolved).resolve().parents:
                 if parent.name.startswith(f"{bin_name}-"):
                     logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
                     shutil.rmtree(parent, ignore_errors=True)
                     break
+
+        # Finally, drop the convenience shim under ``bin_dir``. Doing
+        # this last avoids the "unlink → load() refresh → rmtree →
+        # dangling shim" ordering bug (playwright's own CLI has no
+        # per-browser uninstall argument, so this rmtree dance is
+        # still the only way to remove a specific browser).
+        if self.bin_dir is not None:
+            (self.bin_dir / bin_name).unlink(missing_ok=True)
         return True
 
 
