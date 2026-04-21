@@ -616,7 +616,7 @@ def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
         script.write_text(
             "@echo off\r\n"
             'if "%1"=="--version" (\r\n'
-            '  echo abxpkg-run-shim 1.2.3\r\n'
+            "  echo abxpkg-run-shim 1.2.3\r\n"
             "  exit /b 0\r\n"
             ")\r\n"
             "echo this goes to stdout\r\n"
