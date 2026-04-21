@@ -430,8 +430,12 @@ class PuppeteerProvider(BinProvider):
 
         # Refresh the convenience shim under ``bin_dir`` so ``PATH`` users
         # get a stable entry pointing at the freshly-resolved executable.
-        # Fall back to the resolved path directly when the shim refresh
-        # fails (read-only FS etc.).
+        # In global/unmanaged mode (``install_root=None``) we have no
+        # managed shim dir, so just return the resolved path directly.
+        # When the shim refresh fails (read-only FS etc.) we also fall
+        # back to the resolved path.
+        if self.bin_dir is None:
+            return resolved
         try:
             return self._refresh_symlink(str(bin_name), resolved)
         except OSError:
