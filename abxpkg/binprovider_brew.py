@@ -190,8 +190,13 @@ class BrewProvider(BinProvider):
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from the resolved brew prefix and known runtime brew bin dirs."""
-        if no_cache or (
-            self._INSTALLER_BINARY is None
+        # Rebuild PATH on first use, when the caller forces no_cache, or when
+        # PATH is still empty — the last case covers provider copies that
+        # inherited a resolved ``_INSTALLER_BINARY`` but an unset ``PATH``.
+        if (
+            no_cache
+            or not self.PATH
+            or self._INSTALLER_BINARY is None
             or self._INSTALLER_BINARY.loaded_abspath is None
         ):
             install_root = self.install_root
