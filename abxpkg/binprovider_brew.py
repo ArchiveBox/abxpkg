@@ -163,6 +163,26 @@ class BrewProvider(BinProvider):
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)
+        # When running as root but brew itself drops to its owner uid via
+        # ``self.exec``, we also need the managed shim dir (and its parents)
+        # traversable by that target uid so version probes / load() calls from
+        # the dropped-privilege subprocess can reach the symlink.
+        current_euid = os.geteuid()
+        target_uid = self.EUID
+        if current_euid == 0 and target_uid not in (0, current_euid):
+            try:
+                pw_record = self.get_pw_record(target_uid)
+                os.chown(link_path.parent, target_uid, pw_record.pw_gid)
+            except Exception:
+                pass
+            walk_path = link_path.parent
+            while walk_path != walk_path.parent:
+                try:
+                    mode = walk_path.stat().st_mode
+                    walk_path.chmod(mode | 0o055)
+                except Exception:
+                    break
+                walk_path = walk_path.parent
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
         link_path.symlink_to(target)

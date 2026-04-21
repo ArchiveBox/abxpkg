@@ -952,7 +952,7 @@ PATH = ""                            # prepends cargo_root/bin and cargo_home/bi
 cargo_root = None                    # set this for hermetic installs
 ```
 
-- Install root: set `install_root=Path(...)` or `install_root=Path(...)` for isolated installs under `<cargo_root>/bin`; otherwise installs go through `cargo_home`.
+- Install root: set `install_root=Path(...)` or `cargo_root=Path(...)` for isolated installs under `<cargo_root>/bin`; otherwise installs go through `cargo_home`.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
