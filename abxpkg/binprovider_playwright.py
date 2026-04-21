@@ -79,27 +79,14 @@ class PlaywrightProvider(BinProvider):
 
     @computed_field
     @property
-    def cache_dir(self) -> Path | None:
-        """``<install_root>/cache`` when managed, else ``None``.
-
-        Internal helper for the install/uninstall/load sites. When
-        ``install_root`` is unset we stay out of the way: the ambient
-        ``PLAYWRIGHT_BROWSERS_PATH`` (or playwright's
-        ``~/.cache/ms-playwright`` default) passes through to
-        subprocesses untouched, ``default_abspath_handler`` trusts
-        whatever path ``executablePath()`` reports, and
-        ``default_uninstall_handler`` skips rmtree of the user's cache.
-        """
-        if self.install_root is None:
-            return None
-        return self.install_root / "cache"
-
-    @computed_field
-    @property
     def ENV(self) -> "dict[str, str]":
-        if not self.cache_dir:
+        # In managed mode we pin ``PLAYWRIGHT_BROWSERS_PATH`` to
+        # ``<install_root>/cache``. In unmanaged mode we export nothing
+        # and the ambient env (or playwright's own
+        # ``~/.cache/ms-playwright`` default) passes through untouched.
+        if self.install_root is None:
             return {}
-        return {"PLAYWRIGHT_BROWSERS_PATH": str(self.cache_dir)}
+        return {"PLAYWRIGHT_BROWSERS_PATH": str(self.install_root / "cache")}
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False
@@ -308,8 +295,8 @@ class PlaywrightProvider(BinProvider):
         # contain our bin_dir.
         env = self.build_exec_env(base_env=(kwargs.pop("env", None) or os.environ))
         env_assignments: list[str] = []
-        cache_dir = self.cache_dir
-        if cache_dir is not None:
+        if self.install_root is not None:
+            cache_dir = self.install_root / "cache"
             env["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_dir)
             env_assignments.append(
                 f"PLAYWRIGHT_BROWSERS_PATH={cache_dir}",
@@ -587,14 +574,13 @@ class PlaywrightProvider(BinProvider):
         )
         if not resolved:
             return None
-        # When ``cache_dir`` is pinned (either explicitly, via
-        # ``PLAYWRIGHT_BROWSERS_PATH``, or derived from ``install_root``),
-        # an ``executablePath()`` hit that points outside that tree
-        # (e.g. an ambient system install) should not satisfy ``load()``
-        # — otherwise an unrelated host-wide playwright install would
-        # silently hijack resolution.
-        if self.cache_dir is not None:
-            cache_real = self.cache_dir.resolve(strict=False)
+        # When ``install_root`` is pinned, an ``executablePath()`` hit
+        # that points outside our managed cache tree (e.g. an ambient
+        # system install) should not satisfy ``load()`` — otherwise an
+        # unrelated host-wide playwright install would silently hijack
+        # resolution.
+        if self.install_root is not None:
+            cache_real = (self.install_root / "cache").resolve(strict=False)
             if cache_real not in resolved.resolve(strict=False).parents:
                 return None
         if self.bin_dir is None:

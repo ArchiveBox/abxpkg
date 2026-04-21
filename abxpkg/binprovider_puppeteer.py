@@ -69,25 +69,14 @@ class PuppeteerProvider(BinProvider):
 
     @computed_field
     @property
-    def cache_dir(self) -> Path | None:
-        """``<install_root>/cache`` when managed, else ``None``.
-
-        Internal helper for the install/uninstall/load sites. When
-        ``install_root`` is unset we stay out of the way: the ambient
-        ``PUPPETEER_CACHE_DIR`` (or the CLI's ``~/.cache/puppeteer``
-        default) passes through to subprocesses untouched, and we
-        refuse to rmtree anything in the user's cache on ``uninstall``.
-        """
-        if self.install_root is None:
-            return None
-        return self.install_root / "cache"
-
-    @computed_field
-    @property
     def ENV(self) -> "dict[str, str]":
-        if self.cache_dir is None:
+        # In managed mode we pin ``PUPPETEER_CACHE_DIR`` to
+        # ``<install_root>/cache``. In unmanaged mode we export nothing
+        # and the ambient env (or puppeteer-browsers' own
+        # ``~/.cache/puppeteer`` default) passes through untouched.
+        if self.install_root is None:
             return {}
-        return {"PUPPETEER_CACHE_DIR": str(self.cache_dir)}
+        return {"PUPPETEER_CACHE_DIR": str(self.install_root / "cache")}
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
@@ -210,7 +199,9 @@ class PuppeteerProvider(BinProvider):
                 owner_paths=(
                     self.install_root,
                     self.bin_dir,
-                    self.cache_dir,
+                    self.install_root / "cache"
+                    if self.install_root is not None
+                    else None,
                     self.install_root / "npm"
                     if self.install_root is not None
                     else None,
@@ -246,10 +237,9 @@ class PuppeteerProvider(BinProvider):
 
         if self.install_root is not None:
             self.install_root.mkdir(parents=True, exist_ok=True)
+            (self.install_root / "cache").mkdir(parents=True, exist_ok=True)
         if self.bin_dir is not None:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
-        if self.cache_dir is not None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         cli_binary = self._cli_binary(
             postinstall_scripts=postinstall_scripts,
@@ -300,8 +290,8 @@ class PuppeteerProvider(BinProvider):
             if arg_str.startswith("--path="):
                 continue
             normalized.append(arg_str)
-        if self.cache_dir is not None:
-            normalized.append(f"--path={self.cache_dir}")
+        if self.install_root is not None:
+            normalized.append(f"--path={self.install_root / 'cache'}")
         return normalized
 
     def _list_installed_browsers(
@@ -315,8 +305,8 @@ class PuppeteerProvider(BinProvider):
         if not installer_bin:
             return []
         cmd = ["list"]
-        if self.cache_dir is not None:
-            cmd.append(f"--path={self.cache_dir}")
+        if self.install_root is not None:
+            cmd.append(f"--path={self.install_root / 'cache'}")
         proc = self.exec(
             bin_name=installer_bin,
             cmd=cmd,
@@ -448,10 +438,11 @@ class PuppeteerProvider(BinProvider):
         install_output: str,
         browser_name: str,
     ) -> bool:
-        if self.cache_dir is None:
+        if self.install_root is None:
             return False
+        cache_dir = self.install_root / "cache"
         targets: set[Path] = set()
-        browser_cache_dir = self.cache_dir / browser_name
+        browser_cache_dir = cache_dir / browser_name
 
         missing_dir_match = re.search(
             r"browser folder \(([^)]+)\) exists but the executable",
@@ -473,7 +464,7 @@ class PuppeteerProvider(BinProvider):
             targets.update(browser_cache_dir.glob(f"*{build_id}*"))
 
         removed_any = False
-        resolved_cache = self.cache_dir.resolve(strict=False)
+        resolved_cache = cache_dir.resolve(strict=False)
         for target in targets:
             resolved_target = target.resolve(strict=False)
             if not (
@@ -551,27 +542,25 @@ class PuppeteerProvider(BinProvider):
             cwd=self.install_root or ".",
             timeout=self.install_timeout,
         )
-        if (
-            proc.returncode == 0
-            and self.cache_dir is not None
-            and self.cache_dir.exists()
-        ):
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_proc = self.exec(
-                bin_name=sudo_binary.loaded_abspath,
-                cmd=["chown", "-R", f"{uid}:{gid}", str(self.cache_dir)],
-                cwd=self.install_root or ".",
-                timeout=30,
-                quiet=True,
-            )
-            if chown_proc.returncode != 0:
-                log_subprocess_output(
-                    logger,
-                    f"{self.__class__.__name__} sudo chown",
-                    chown_proc.stdout,
-                    chown_proc.stderr,
+        if proc.returncode == 0 and self.install_root is not None:
+            cache_dir = self.install_root / "cache"
+            if cache_dir.exists():
+                uid = os.getuid()
+                gid = os.getgid()
+                chown_proc = self.exec(
+                    bin_name=sudo_binary.loaded_abspath,
+                    cmd=["chown", "-R", f"{uid}:{gid}", str(cache_dir)],
+                    cwd=self.install_root or ".",
+                    timeout=30,
+                    quiet=True,
                 )
+                if chown_proc.returncode != 0:
+                    log_subprocess_output(
+                        logger,
+                        f"{self.__class__.__name__} sudo chown",
+                        chown_proc.stdout,
+                        chown_proc.stderr,
+                    )
         return proc
 
     @remap_kwargs({"packages": "install_args"})
