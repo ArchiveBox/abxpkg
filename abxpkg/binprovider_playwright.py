@@ -8,9 +8,8 @@ import shutil
 import sys
 import platform
 from pathlib import Path
-from typing import Self
 
-from pydantic import Field, TypeAdapter, computed_field, model_validator
+from pydantic import Field, TypeAdapter, computed_field
 
 from .base_types import (
     BinName,
@@ -37,15 +36,14 @@ class PlaywrightProvider(BinProvider):
     ``playwright`` npm package. When ``playwright_root`` is set it acts
     as the abxpkg install root: a dedicated npm prefix is nested under
     it, ``bin_dir`` surfaces each requested browser so ``load(bin_name)``
-    finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` defaults to
-    ``<install_root>/cache`` for the actual browser downloads. Callers
-    that want to pin the browsers path somewhere else can set the
-    ``browser_cache_dir`` field (hydrated from ``PLAYWRIGHT_BROWSERS_PATH``
-    env) — that override always wins over ``install_root/cache``.
+    finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` is pinned to
+    ``<install_root>/cache`` for every subprocess the provider runs.
     When ``playwright_root`` is left unset, playwright picks its own
-    default browsers path, the npm CLI bootstraps against the host's
-    npm default, and ``load()`` returns the resolved ``executablePath()``
-    directly without creating any install_root/bin_dir symlinks.
+    default browsers path (``$PLAYWRIGHT_BROWSERS_PATH`` from the
+    ambient env, otherwise ``~/.cache/ms-playwright`` on Linux), the
+    npm CLI bootstraps against the host's npm default, and ``load()``
+    returns the resolved ``executablePath()`` directly without
+    creating any install_root/bin_dir symlinks.
 
     ``--with-deps`` installs system packages and requires root on
     Linux, so ``euid`` defaults to ``0``: the base ``BinProvider.exec``
@@ -73,31 +71,27 @@ class PlaywrightProvider(BinProvider):
     # Only set in managed mode: setup()/default_abspath_handler() use it to create and read
     # stable browser shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    # Where browsers get downloaded. Exported as ``PLAYWRIGHT_BROWSERS_PATH``
-    # to every subprocess. Precedence at validate time:
-    #   1. explicit ``cache_dir`` kwarg wins (more-specific override)
-    #   2. else ``PLAYWRIGHT_BROWSERS_PATH`` env var wins (same semantics
-    #      for external callers invoking via env)
-    #   3. else ``<install_root>/cache`` when an install root is pinned
-    #   4. else ``None`` (global mode — let playwright pick its OS default)
-    cache_dir: Path | None = Field(
-        default_factory=lambda: (
-            Path(os.environ["PLAYWRIGHT_BROWSERS_PATH"]).expanduser()
-            if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-            else None
-        ),
-    )
 
     # Only Linux needs the sudo-first execution path for
     # ``playwright install --with-deps``. On macOS and elsewhere,
     # run as the normal user by default.
     euid: int | None = 0 if platform.system().lower() == "linux" else None
 
-    @model_validator(mode="after")
-    def _fill_cache_dir_from_install_root(self) -> Self:
-        if self.cache_dir is None and self.install_root is not None:
-            self.cache_dir = self.install_root / "cache"
-        return self
+    @computed_field
+    @property
+    def cache_dir(self) -> Path | None:
+        """Where browser downloads land.
+
+        When ``install_root`` is pinned we always use
+        ``<install_root>/cache`` and export it as ``PLAYWRIGHT_BROWSERS_PATH``
+        to every subprocess. When ``install_root`` is unset we leave it
+        ``None`` and let ``playwright`` fall back to its own default
+        (``$PLAYWRIGHT_BROWSERS_PATH`` from the ambient env, otherwise
+        ``~/.cache/ms-playwright`` on Linux etc.).
+        """
+        if self.install_root is not None:
+            return self.install_root / "cache"
+        return None
 
     @computed_field
     @property
