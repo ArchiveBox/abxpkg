@@ -453,41 +453,6 @@ class Binary(ShallowBinary):
 
     @validate_call
     @log_method_call(include_result=True)
-    def load_or_install(
-        self,
-        binproviders: list[BinProviderName] | None = None,
-        no_cache: bool = False,
-        dry_run: bool | None = None,
-        postinstall_scripts: bool | None = None,
-        min_release_age: float | None = None,
-        **extra_overrides,
-    ) -> Self:
-        """Try ``load()`` first; fall back to ``install()`` if no provider
-        resolves the binary. Returns the loaded/installed copy of ``self``.
-        """
-        try:
-            loaded = self.load(
-                binproviders=binproviders,
-                no_cache=no_cache,
-                **extra_overrides,
-            )
-        except BinaryLoadError:
-            loaded = self
-        # ``load()`` was already called with the caller's ``no_cache`` flag, so
-        # a valid result is already fresh — trust it and skip ``install()``.
-        if loaded.is_valid:
-            return loaded
-        return self.install(
-            binproviders=binproviders,
-            no_cache=no_cache,
-            dry_run=dry_run,
-            postinstall_scripts=postinstall_scripts,
-            min_release_age=min_release_age,
-            **extra_overrides,
-        )
-
-    @validate_call
-    @log_method_call(include_result=True)
     def update(
         self,
         binproviders: list[BinProviderName] | None = None,
