@@ -183,6 +183,15 @@ class BrewProvider(BinProvider):
                 except Exception:
                     break
                 walk_path = walk_path.parent
+        # Idempotent refresh: skip when shim already points at target.
+        # Rewriting on every load() bumps mtime and churns the inode,
+        # which invalidates fingerprint caches unnecessarily.
+        if link_path.is_symlink():
+            try:
+                if link_path.readlink() == Path(target):
+                    return TypeAdapter(HostBinPath).validate_python(link_path)
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
         link_path.symlink_to(target)
