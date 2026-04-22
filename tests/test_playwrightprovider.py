@@ -14,21 +14,23 @@ def _resolve_shim_target(shim: Path) -> Path:
 
     On Linux the shim is a symlink, so ``.resolve()`` naturally follows
     it. On macOS the shim is a shell script that ``exec``s the binary
-    inside a ``.app`` bundle (a symlink would leave the browser launching
-    without bundle context), so ``.resolve()`` just returns the script
-    path. Parse the ``exec <path>`` line to recover the target in that
-    case.
+    inside a ``.app`` bundle (a direct symlink breaks dyld's
+    ``@executable_path``-relative Framework loading), so ``.resolve()``
+    just returns the script path itself. Parse the ``exec <path>`` line
+    to recover the target in that case. We key off ``is_symlink()``
+    rather than comparing ``shim == shim.resolve()`` because macOS
+    ``$TMPDIR`` lives under ``/var/folders/...`` → ``/private/var/...``,
+    so ``resolve()`` always differs from the input even for plain files.
     """
-    resolved = shim.resolve()
-    if resolved != shim:
-        return resolved
+    if shim.is_symlink():
+        return shim.resolve()
     try:
         script = shim.read_text(encoding="utf-8")
     except OSError:
-        return resolved
+        return shim.resolve()
     match = re.search(r"exec '([^']+)'", script)
     if not match:
-        return resolved
+        return shim.resolve()
     return Path(match.group(1)).resolve()
 
 

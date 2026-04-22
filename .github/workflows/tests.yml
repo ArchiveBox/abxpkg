@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
 
     steps:
@@ -49,7 +49,7 @@ jobs:
 
   discover-standard-tests:
     needs: precheck
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
@@ -88,9 +88,9 @@ jobs:
       max-parallel: 20
       matrix:
         target:
-        - os: ubuntu-latest
+        - os: self-hosted
           python_version: '3.11'
-        - os: ubuntu-latest
+        - os: self-hosted
           python_version: '3.14'
         - os: macOS-latest
           python_version: '3.13'
@@ -219,7 +219,7 @@ jobs:
 
   discover-live-tests:
     needs: precheck
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     timeout-minutes: 20
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
@@ -239,9 +239,9 @@ jobs:
             needs_docker=true
           fi
 
-          os_targets="ubuntu-latest macOS-latest"
+          os_targets="self-hosted macOS-latest"
           if grep -q "@pytest.mark.docker_required" "$test_file" || grep -q "@pytest.mark.root_required" "$test_file" || grep -q 'skipif("darwin"' "$test_file"; then
-            os_targets="ubuntu-latest"
+            os_targets="self-hosted"
           elif grep -q 'require_tool("brew")' "$test_file" && ! grep -q 'require_tool("apt-get")' "$test_file" && ! grep -q "operations.apt.packages" "$test_file" && ! grep -q "ansible.builtin.apt" "$test_file"; then
             os_targets="macOS-latest"
           fi
