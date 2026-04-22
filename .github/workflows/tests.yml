@@ -19,7 +19,8 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on: self-hosted
+    runs-on:
+      group: Default
     timeout-minutes: 20
 
     steps:
@@ -49,7 +50,8 @@ jobs:
 
   discover-standard-tests:
     needs: precheck
-    runs-on: self-hosted
+    runs-on:
+      group: Default
     timeout-minutes: 20
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
@@ -78,7 +80,7 @@ jobs:
         echo "$json_array"
 
   build:
-    name: ${{ matrix.target.os }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
+    name: ${{ matrix.target.os_name }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
     needs: [precheck, discover-standard-tests]
     runs-on: ${{ matrix.target.os }}
     timeout-minutes: 20
@@ -88,11 +90,16 @@ jobs:
       max-parallel: 20
       matrix:
         target:
-        - os: self-hosted
+        - os:
+            group: Default
+          os_name: linux
           python_version: '3.11'
-        - os: self-hosted
+        - os:
+            group: Default
+          os_name: linux
           python_version: '3.14'
         - os: macOS-latest
+          os_name: macOS
           python_version: '3.13'
         test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
 
@@ -219,7 +226,8 @@ jobs:
 
   discover-live-tests:
     needs: precheck
-    runs-on: self-hosted
+    runs-on:
+      group: Default
     timeout-minutes: 20
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
@@ -239,16 +247,20 @@ jobs:
             needs_docker=true
           fi
 
-          os_targets="self-hosted macOS-latest"
+          os_targets="linux macOS"
           if grep -q "@pytest.mark.docker_required" "$test_file" || grep -q "@pytest.mark.root_required" "$test_file" || grep -q 'skipif("darwin"' "$test_file"; then
-            os_targets="self-hosted"
+            os_targets="linux"
           elif grep -q 'require_tool("brew")' "$test_file" && ! grep -q 'require_tool("apt-get")' "$test_file" && ! grep -q "operations.apt.packages" "$test_file" && ! grep -q "ansible.builtin.apt" "$test_file"; then
-            os_targets="macOS-latest"
+            os_targets="macOS"
           fi
 
           for os_target in $os_targets; do
-            os_name=$(printf '%s' "$os_target" | tr '[:upper:]' '[:lower:]' | sed 's/-latest//')
-            entry="{\"name\":\"${test_name}-${os_name}\",\"path\":\"$test_file\",\"os\":\"$os_target\",\"needs_docker\":$needs_docker}"
+            if [ "$os_target" = "linux" ]; then
+              os_json='{"group":"Default"}'
+            else
+              os_json='"macOS-latest"'
+            fi
+            entry="{\"name\":\"${test_name}-${os_target}\",\"path\":\"$test_file\",\"os\":${os_json},\"os_name\":\"${os_target}\",\"needs_docker\":$needs_docker}"
             if [ "$first" = true ]; then first=false; else json_array+=","; fi
             json_array+="$entry"
           done
