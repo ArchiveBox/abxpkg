@@ -824,7 +824,16 @@ class PuppeteerProvider(BinProvider):
         # and puppeteer-browsers' own default uniformly.
         install_args = list(install_args or self.get_install_args(bin_name))
         browser_name = self._browser_name(bin_name, install_args)
-        resolved = self._resolve_installed_browser_path(str(bin_name))
+        # Forward install_args so ``_resolve_installed_browser_path`` uses
+        # the same ``browser_name`` we just derived; otherwise it re-runs
+        # ``get_install_args`` and can pick up a different alias (e.g.
+        # caller-passed ``chromium@latest`` vs provider default ``chrome``),
+        # which would leave the parent.name match below unsatisfied and
+        # silently skip the rmtree.
+        resolved = self._resolve_installed_browser_path(
+            str(bin_name),
+            install_args=install_args,
+        )
         if resolved is not None:
             for parent in Path(resolved).resolve().parents:
                 if parent.name == browser_name:
