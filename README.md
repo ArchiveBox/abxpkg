@@ -1,4 +1,5 @@
-<h1><a href="https://archivebox.github.io/abxpkg/"><code>abxpkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>uv</code>&nbsp; <code>npm</code>&nbsp; <code>pnpm</code>&nbsp; <code>yarn</code>&nbsp; <code>bun</code>&nbsp; <code>deno</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>puppeteer</code>&nbsp; <code>playwright</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>ansible</code>&nbsp; <code>pyinfra</code></small><br/><sub>Simple Python interfaces for package managers + installed binaries.</sub></h1>
+<h1><a href="https://archivebox.github.io/abxpkg/"><code>abxpkg</code></a> &nbsp; &nbsp; &nbsp; &nbsp; 📦  <small><code>apt</code>&nbsp; <code>brew</code>&nbsp; <code>pip</code>&nbsp; <code>uv</code>&nbsp; <code>npm</code>&nbsp; <code>pnpm</code>&nbsp; <code>yarn</code>&nbsp; <code>bun</code>&nbsp; <code>deno</code>&nbsp; <code>cargo</code>&nbsp; <code>gem</code>&nbsp; <code>goget</code>&nbsp; <code>nix</code>&nbsp; <code>docker</code>&nbsp; <code>bash</code>&nbsp; <code>puppeteer</code>&nbsp; <code>playwright</code>&nbsp; <code>chromewebstore</code>&nbsp; <code>ansible</code>&nbsp; <code>pyinfra</code></small>
+<br/><sub>All-in-one multi-package manager CLI + Python API.</sub></h1>
 <br/>
 
 [![PyPI][pypi-badge]][pypi]
@@ -10,7 +11,7 @@
 
 <br/>
 
-**It's an ORM for your package managers, providing nice python types for packages + installers.**  
+**Use `abxpkg` to detect & auto-install dependencies at runtime, serialize your dependencies to DB/config, and manage bins across many ecosystems.**  
   
 **This is a [Python library](https://pypi.org/project/abxpkg/) and all-in-one CLI for managing packages locally with a variety of package managers.**  
 It's designed for when you have to detect or install binary or source dependencies at runtime.
