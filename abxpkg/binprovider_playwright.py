@@ -23,11 +23,15 @@ from .base_types import (
 from .binary import Binary
 from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .binprovider_npm import NpmProvider
-from .binprovider_puppeteer import CLAUDE_SANDBOX_NO_PROXY
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
 logger = get_logger(__name__)
+
+CLAUDE_SANDBOX_NO_PROXY = (
+    "localhost,127.0.0.1,169.254.169.254,metadata.google.internal,"
+    ".svc.cluster.local,.local"
+)
 
 
 class PlaywrightProvider(BinProvider):
@@ -319,6 +323,15 @@ class PlaywrightProvider(BinProvider):
             env_assignments.append(
                 f"PLAYWRIGHT_BROWSERS_PATH={cache_dir}",
             )
+        # ``NO_PROXY`` / ``no_proxy`` are set by ``ENV`` to rescue
+        # browser downloads in sandboxes whose egress proxy NO_PROXY
+        # blocks ``cdn.playwright.dev`` / ``storage.googleapis.com``.
+        # They must also survive sudo's ``env_reset``, so forward them
+        # through the ``/usr/bin/env KEY=VAL -- ...`` wrapper below.
+        for proxy_key in ("NO_PROXY", "no_proxy"):
+            proxy_value = env.get(proxy_key)
+            if proxy_value:
+                env_assignments.append(f"{proxy_key}={proxy_value}")
         needs_sudo_env_wrapper = os.geteuid() != 0 and self.EUID != os.geteuid()
         if env_assignments and needs_sudo_env_wrapper:
             resolved_bin = bin_name
