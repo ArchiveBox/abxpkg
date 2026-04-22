@@ -491,13 +491,33 @@ class PuppeteerProvider(BinProvider):
         assert bin_dir is not None
         link_path = bin_dir / bin_name
         link_path.parent.mkdir(parents=True, exist_ok=True)
+        use_shell_shim = os.name == "posix" and ".app/Contents/MacOS/" in str(target)
+        desired_script = (
+            f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n'
+            if use_shell_shim
+            else None
+        )
+        # Idempotent refresh: leave the shim untouched when it already
+        # points at ``target``. Rewriting on every ``load()`` would bump
+        # the shim's mtime (shell-script case), which breaks callers
+        # that stat the shim to validate a freshly-installed binary.
+        if link_path.is_symlink():
+            try:
+                if os.readlink(link_path) == str(target):
+                    return link_path
+            except OSError:
+                pass
+        elif use_shell_shim and link_path.is_file():
+            try:
+                if link_path.read_text(encoding="utf-8") == desired_script:
+                    return link_path
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        if os.name == "posix" and ".app/Contents/MacOS/" in str(target):
-            link_path.write_text(
-                f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n',
-                encoding="utf-8",
-            )
+        if use_shell_shim:
+            assert desired_script is not None
+            link_path.write_text(desired_script, encoding="utf-8")
             link_path.chmod(0o755)
             return link_path
         link_path.symlink_to(target)

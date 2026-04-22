@@ -561,16 +561,36 @@ class PlaywrightProvider(BinProvider):
         )
         link = self.bin_dir / bin_name
         link.parent.mkdir(parents=True, exist_ok=True)
-        if link.exists() or link.is_symlink():
-            link.unlink(missing_ok=True)
         # On macOS the executable is buried inside a ``.app`` bundle, so
         # write a tiny shell shim instead of a symlink (same pattern as
         # PuppeteerProvider).
-        if os.name == "posix" and ".app/Contents/MacOS/" in str(target):
-            link.write_text(
-                f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n',
-                encoding="utf-8",
-            )
+        use_shell_shim = os.name == "posix" and ".app/Contents/MacOS/" in str(target)
+        desired_script = (
+            f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n'
+            if use_shell_shim
+            else None
+        )
+        # Idempotent refresh: leave the shim untouched when it already
+        # points at ``target``. Rewriting on every ``load()`` would bump
+        # the shim's mtime (shell-script case), which breaks callers
+        # that stat the shim to validate a freshly-installed binary.
+        if link.is_symlink():
+            try:
+                if os.readlink(link) == str(target):
+                    return link
+            except OSError:
+                pass
+        elif use_shell_shim and link.is_file():
+            try:
+                if link.read_text(encoding="utf-8") == desired_script:
+                    return link
+            except OSError:
+                pass
+        if link.exists() or link.is_symlink():
+            link.unlink(missing_ok=True)
+        if use_shell_shim:
+            assert desired_script is not None
+            link.write_text(desired_script, encoding="utf-8")
             link.chmod(0o755)
             return link
         link.symlink_to(target)
