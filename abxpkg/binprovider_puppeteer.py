@@ -406,9 +406,21 @@ class PuppeteerProvider(BinProvider):
         ]
         if parsed_candidates:
             return max(parsed_candidates, key=lambda item: item[0])[1]
+        if not candidates:
+            return None
         if len(candidates) == 1:
             return candidates[0][1]
-        return None
+        # Multiple cached builds but none parse as ``SemVer`` (e.g. chromium's
+        # integer build IDs like ``1618539``). Fall back to the newest one
+        # by file mtime so post-install lookups land on the freshly-
+        # downloaded version rather than ``None``.
+        candidates.sort(
+            key=lambda item: (
+                item[1].stat().st_mtime if item[1].exists() else 0,
+                item[0],
+            ),
+        )
+        return candidates[-1][1]
 
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
         bin_dir = self.bin_dir
