@@ -126,6 +126,70 @@ class PuppeteerProvider(BinProvider):
     def INSTALLER_BINARY(self, no_cache: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
+        # Prefer the puppeteer-browsers bootstrapped by an earlier install
+        # under ``<install_root>/npm/node_modules/.bin``. Without this, a
+        # fresh provider copy (e.g. the one Binary.load() builds via
+        # get_provider_with_overrides) can't locate puppeteer-browsers and
+        # ``_list_installed_browsers()`` silently returns empty.
+        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            local_cli = (
+                Path(lib_dir) / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+            )
+        elif self.install_root is not None:
+            local_cli = (
+                self.install_root / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+            )
+        else:
+            local_cli = None
+
+        if (
+            local_cli is not None
+            and local_cli.is_file()
+            and os.access(local_cli, os.X_OK)
+        ):
+            if (
+                not no_cache
+                and self._INSTALLER_BINARY
+                and self._INSTALLER_BINARY.loaded_abspath == local_cli
+                and self._INSTALLER_BINARY.is_valid
+            ):
+                return self._INSTALLER_BINARY
+            if not no_cache:
+                cached = self.load_cached_binary(self.INSTALLER_BIN, local_cli)
+                if cached and cached.loaded_abspath:
+                    self._INSTALLER_BINARY = cached
+                    return cached
+            env_provider = EnvProvider(
+                PATH=str(local_cli.parent),
+                install_root=None,
+                bin_dir=None,
+            )
+            loaded_local = env_provider.load(
+                bin_name=self.INSTALLER_BIN,
+                no_cache=no_cache,
+            )
+            if loaded_local and loaded_local.loaded_abspath:
+                if loaded_local.loaded_version and loaded_local.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded_local.loaded_abspath,
+                        loaded_local.loaded_version,
+                        loaded_local.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded_local.loaded_binprovider.name
+                            if loaded_local.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded_local
+                return self._INSTALLER_BINARY
+
         loaded = super().INSTALLER_BINARY(no_cache=no_cache)
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
