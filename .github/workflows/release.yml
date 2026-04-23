@@ -19,7 +19,8 @@ concurrency:
 
 jobs:
   release-state:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: Default
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6

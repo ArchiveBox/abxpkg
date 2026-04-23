@@ -294,6 +294,15 @@ class GoGetProvider(BinProvider):
         assert bin_dir is not None
         link_path = bin_dir / str(bin_name)
         link_path.parent.mkdir(parents=True, exist_ok=True)
+        # Idempotent refresh: skip when shim already points at target.
+        # Rewriting on every load() bumps mtime and churns the inode,
+        # which invalidates fingerprint caches unnecessarily.
+        if link_path.is_symlink():
+            try:
+                if link_path.readlink() == Path(direct_abspath):
+                    return TypeAdapter(HostBinPath).validate_python(link_path)
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
         link_path.symlink_to(direct_abspath)

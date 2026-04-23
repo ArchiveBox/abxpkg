@@ -183,6 +183,15 @@ class BrewProvider(BinProvider):
                 except Exception:
                     break
                 walk_path = walk_path.parent
+        # Idempotent refresh: skip when shim already points at target.
+        # Rewriting on every load() bumps mtime and churns the inode,
+        # which invalidates fingerprint caches unnecessarily.
+        if link_path.is_symlink():
+            try:
+                if link_path.readlink() == Path(target):
+                    return TypeAdapter(HostBinPath).validate_python(link_path)
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
         link_path.symlink_to(target)
@@ -190,8 +199,13 @@ class BrewProvider(BinProvider):
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from the resolved brew prefix and known runtime brew bin dirs."""
-        if no_cache or (
-            self._INSTALLER_BINARY is None
+        # Rebuild PATH on first use, when the caller forces no_cache, or when
+        # PATH is still empty — the last case covers provider copies that
+        # inherited a resolved ``_INSTALLER_BINARY`` but an unset ``PATH``.
+        if (
+            no_cache
+            or not self.PATH
+            or self._INSTALLER_BINARY is None
             or self._INSTALLER_BINARY.loaded_abspath is None
         ):
             install_root = self.install_root
@@ -391,12 +405,12 @@ class BrewProvider(BinProvider):
         if not self.PATH:
             return None
 
+        # Authoritative lookup: search brew's own Cellar / opt / PATH
+        # entries for the real formula binary. The managed ``bin_dir``
+        # shim is a convenience side-effect of install — never a source
+        # of truth — so we always consult brew's paths first and only
+        # refresh the shim to match the freshly-resolved target.
         linked_bin = self._linked_bin_path(bin_name)
-        if linked_bin is not None:
-            linked_abspath = bin_abspath(bin_name, PATH=str(self.bin_dir))
-            if linked_abspath:
-                return linked_abspath
-
         search_paths = self._brew_search_paths(bin_name, no_cache=no_cache)
         abspath = bin_abspath(bin_name, PATH=search_paths)
         if abspath:

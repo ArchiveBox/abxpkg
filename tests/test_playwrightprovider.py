@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -6,6 +7,31 @@ from pathlib import Path
 import pytest
 
 from abxpkg import Binary, PlaywrightProvider
+
+
+def _resolve_shim_target(shim: Path) -> Path:
+    """Resolve a managed bin_dir shim to its real browser target.
+
+    On Linux the shim is a symlink, so ``.resolve()`` naturally follows
+    it. On macOS the shim is a shell script that ``exec``s the binary
+    inside a ``.app`` bundle (a direct symlink breaks dyld's
+    ``@executable_path``-relative Framework loading), so ``.resolve()``
+    just returns the script path itself. Parse the ``exec <path>`` line
+    to recover the target in that case. We key off ``is_symlink()``
+    rather than comparing ``shim == shim.resolve()`` because macOS
+    ``$TMPDIR`` lives under ``/var/folders/...`` → ``/private/var/...``,
+    so ``resolve()`` always differs from the input even for plain files.
+    """
+    if shim.is_symlink():
+        return shim.resolve()
+    try:
+        script = shim.read_text(encoding="utf-8")
+    except OSError:
+        return shim.resolve()
+    match = re.search(r"exec '([^']+)'", script)
+    if not match:
+        return shim.resolve()
+    return Path(match.group(1)).resolve()
 
 
 @pytest.fixture(scope="module")
@@ -35,15 +61,37 @@ class TestPlaywrightProvider:
         copied_bin_dir = install_root / "bin"
         if not copied_bin_dir.is_dir():
             return
+        seeded_resolved = seeded_playwright_root.resolve()
         for link_path in copied_bin_dir.iterdir():
-            if not link_path.is_symlink():
+            if link_path.is_symlink():
+                link_target = link_path.resolve(strict=False)
+                if seeded_resolved not in link_target.parents:
+                    continue
+                relative_target = link_target.relative_to(seeded_resolved)
+                link_path.unlink()
+                link_path.symlink_to(install_root / relative_target)
                 continue
-            link_target = link_path.resolve(strict=False)
-            if seeded_playwright_root.resolve() not in link_target.parents:
+            # macOS chrome/chromium shims are shell scripts that hardcode
+            # the seeded install_root path; rewrite them so they exec the
+            # copy under this test's install_root instead.
+            if not link_path.is_file():
                 continue
-            relative_target = link_target.relative_to(seeded_playwright_root.resolve())
-            link_path.unlink()
-            link_path.symlink_to(install_root / relative_target)
+            try:
+                script = link_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            match = re.search(r"exec '([^']+)'", script)
+            if not match:
+                continue
+            target_path = Path(match.group(1))
+            if seeded_resolved not in target_path.resolve().parents:
+                continue
+            relative_target = target_path.resolve().relative_to(seeded_resolved)
+            new_target = install_root / relative_target
+            link_path.write_text(
+                script.replace(str(target_path), str(new_target)),
+                encoding="utf-8",
+            )
 
     def test_chromium_install_puts_real_browser_into_managed_bin_dir(
         self,
@@ -70,14 +118,14 @@ class TestPlaywrightProvider:
             assert provider.bin_dir is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath == provider.bin_dir / "chromium"
-            # The symlink resolves into playwright_root (which is also
-            # PLAYWRIGHT_BROWSERS_PATH for this provider).
-            real_target = installed.loaded_abspath.resolve()
-            assert playwright_root.resolve() in real_target.parents
+            # The shim resolves into ``playwright_root/cache`` (the
+            # managed ``PLAYWRIGHT_BROWSERS_PATH`` for this provider).
+            real_target = _resolve_shim_target(installed.loaded_abspath)
+            assert (playwright_root / "cache").resolve() in real_target.parents
             # Playwright lays out chromium builds as chromium-<build>/.
             assert any(
                 child.name.startswith("chromium-")
-                for child in playwright_root.iterdir()
+                for child in (playwright_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -134,7 +182,7 @@ class TestPlaywrightProvider:
             # the effective PLAYWRIGHT_BROWSERS_PATH for this provider).
             assert any(
                 child.name.startswith("chromium-")
-                for child in install_root.iterdir()
+                for child in (install_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -171,7 +219,7 @@ class TestPlaywrightProvider:
             # Browser tree still landed in install_root, not bin_dir.
             assert any(
                 child.name.startswith("chromium-")
-                for child in install_root.iterdir()
+                for child in (install_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -244,9 +292,10 @@ class TestPlaywrightProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.exists()
+            cache_dir = playwright_root / "cache"
             chromium_dirs = [
                 child
-                for child in playwright_root.iterdir()
+                for child in cache_dir.iterdir()
                 if child.is_dir()
                 and child.name.startswith("chromium-")
                 and not child.name.startswith("chromium_headless_shell")
@@ -255,7 +304,7 @@ class TestPlaywrightProvider:
             # ``--no-shell`` should have skipped the headless shell download.
             headless_shell_dirs = [
                 child
-                for child in playwright_root.iterdir()
+                for child in cache_dir.iterdir()
                 if child.is_dir() and child.name.startswith("chromium_headless_shell")
             ]
             assert not headless_shell_dirs, (
@@ -373,17 +422,17 @@ class TestPlaywrightProvider:
             )
             assert updated is not None
             assert updated.loaded_abspath is not None
-            # The symlink resolves to a chromium build that actually
+            # The shim resolves to a chromium build that actually
             # exists on disk after update (whether the build-id moved
             # depends on the current playwright release, but the
             # resolved target must always exist and still live inside
             # ``playwright_root``).
-            updated_target = updated.loaded_abspath.resolve()
+            updated_target = _resolve_shim_target(updated.loaded_abspath)
             assert updated_target.exists()
-            assert playwright_root.resolve() in updated_target.parents
+            assert (playwright_root / "cache").resolve() in updated_target.parents
             assert any(
                 child.name.startswith("chromium-")
-                for child in playwright_root.iterdir()
+                for child in (playwright_root / "cache").iterdir()
                 if child.is_dir()
             )
 
@@ -397,14 +446,15 @@ class TestPlaywrightProvider:
 
             test_machine.exercise_provider_dry_run(provider, bin_name="chromium")
             # dry_run must not have actually downloaded any browsers.
+            cache_dir = playwright_root / "cache"
             browser_dirs = (
                 [
                     p
-                    for p in playwright_root.iterdir()
+                    for p in cache_dir.iterdir()
                     if p.is_dir()
                     and p.name.startswith(("chromium-", "firefox-", "webkit-"))
                 ]
-                if playwright_root.is_dir()
+                if cache_dir.is_dir()
                 else []
             )
             assert not browser_dirs, (

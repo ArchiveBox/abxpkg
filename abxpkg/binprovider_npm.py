@@ -377,6 +377,15 @@ class NpmProvider(BinProvider):
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)
+        # Idempotent refresh: skip when shim already points at target.
+        # Rewriting on every load() bumps mtime and churns the inode,
+        # which invalidates fingerprint caches unnecessarily.
+        if link_path.is_symlink():
+            try:
+                if link_path.readlink() == Path(target):
+                    return TypeAdapter(HostBinPath).validate_python(link_path)
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
         link_path.symlink_to(target)

@@ -28,8 +28,14 @@ class AptProvider(BinProvider):
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""
-        if no_cache or (
-            self._INSTALLER_BINARY is None
+        # Rebuild PATH on first use, when the caller forces no_cache, or when
+        # PATH is still empty — the last case covers the "INSTALLER_BINARY was
+        # resolved out-of-band (hook preflight etc.), so _INSTALLER_BINARY is
+        # non-None but self.PATH was never populated" race.
+        if (
+            no_cache
+            or not self.PATH
+            or self._INSTALLER_BINARY is None
             or self._INSTALLER_BINARY.loaded_abspath is None
         ):
             dpkg_binary = EnvProvider().load("dpkg")

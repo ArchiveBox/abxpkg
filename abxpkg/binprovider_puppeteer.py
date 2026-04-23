@@ -66,32 +66,36 @@ class PuppeteerProvider(BinProvider):
     # Only set in managed mode: setup()/default_abspath_handler() use it to expose stable
     # browser launch shims under ``<install_root>/bin``; global mode leaves it unset.
     bin_dir: Path | None = None
-    # Explicit override for the directory browsers get downloaded into. When
-    # unset, cache_dir defaults to ``<install_root>/cache``; when set, it wins
-    # so callers can point ``PUPPETEER_CACHE_DIR`` at an arbitrary path.
-    browser_cache_dir: Path | None = None
 
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
-        if not self.cache_dir:
-            return {}
-        return {"PUPPETEER_CACHE_DIR": str(self.cache_dir)}
+        # In managed mode we pin ``PUPPETEER_CACHE_DIR`` to
+        # ``<install_root>/cache``. In unmanaged mode we leave the
+        # ambient env (or puppeteer-browsers' own ``~/.cache/puppeteer``
+        # default) untouched.
+        env: dict[str, str] = {}
+        if self.install_root is not None:
+            env["PUPPETEER_CACHE_DIR"] = str(self.install_root / "cache")
+        # @puppeteer/browsers downloads browsers from
+        # storage.googleapis.com. In sandboxed environments the egress
+        # proxy's NO_PROXY often includes ``.googleapis.com`` / ``.google.com``,
+        # which forces the direct connection — which then fails DNS
+        # resolution or times out. Override NO_PROXY / no_proxy to a
+        # safe sandbox allowlist so the download goes through the proxy
+        # instead. Callers that need their own NO_PROXY can still set it
+        # via the CLI override flags; our value only fills in the default.
+        ambient_no_proxy = os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+        if not ambient_no_proxy or (
+            ".googleapis.com" in ambient_no_proxy.lower()
+            or ".google.com" in ambient_no_proxy.lower()
+        ):
+            env["NO_PROXY"] = CLAUDE_SANDBOX_NO_PROXY
+            env["no_proxy"] = CLAUDE_SANDBOX_NO_PROXY
+        return env
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
-
-    @computed_field
-    @property
-    def cache_dir(self) -> Path | None:
-        # Explicit override wins so PUPPETEER_CACHE_DIR can be any path.
-        if self.browser_cache_dir is not None:
-            return self.browser_cache_dir
-        # Otherwise browser downloads live under ``install_root/cache`` when we
-        # manage an install root; global mode leaves cache ownership to the host.
-        if self.install_root is not None:
-            return self.install_root / "cache"
-        return None
 
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
@@ -121,6 +125,70 @@ class PuppeteerProvider(BinProvider):
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        # Prefer the puppeteer-browsers bootstrapped by an earlier install
+        # under ``<install_root>/npm/node_modules/.bin``. Without this, a
+        # fresh provider copy (e.g. the one Binary.load() builds via
+        # get_provider_with_overrides) can't locate puppeteer-browsers and
+        # ``_list_installed_browsers()`` silently returns empty.
+        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            local_cli = (
+                Path(lib_dir) / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+            )
+        elif self.install_root is not None:
+            local_cli = (
+                self.install_root / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+            )
+        else:
+            local_cli = None
+
+        if (
+            local_cli is not None
+            and local_cli.is_file()
+            and os.access(local_cli, os.X_OK)
+        ):
+            if (
+                not no_cache
+                and self._INSTALLER_BINARY
+                and self._INSTALLER_BINARY.loaded_abspath == local_cli
+                and self._INSTALLER_BINARY.is_valid
+            ):
+                return self._INSTALLER_BINARY
+            if not no_cache:
+                cached = self.load_cached_binary(self.INSTALLER_BIN, local_cli)
+                if cached and cached.loaded_abspath:
+                    self._INSTALLER_BINARY = cached
+                    return cached
+            env_provider = EnvProvider(
+                PATH=str(local_cli.parent),
+                install_root=None,
+                bin_dir=None,
+            )
+            loaded_local = env_provider.load(
+                bin_name=self.INSTALLER_BIN,
+                no_cache=no_cache,
+            )
+            if loaded_local and loaded_local.loaded_abspath:
+                if loaded_local.loaded_version and loaded_local.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded_local.loaded_abspath,
+                        loaded_local.loaded_version,
+                        loaded_local.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded_local.loaded_binprovider.name
+                            if loaded_local.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded_local
+                return self._INSTALLER_BINARY
 
         loaded = super().INSTALLER_BINARY(no_cache=no_cache)
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
@@ -211,7 +279,9 @@ class PuppeteerProvider(BinProvider):
                 owner_paths=(
                     self.install_root,
                     self.bin_dir,
-                    self.cache_dir,
+                    self.install_root / "cache"
+                    if self.install_root is not None
+                    else None,
                     self.install_root / "npm"
                     if self.install_root is not None
                     else None,
@@ -247,10 +317,9 @@ class PuppeteerProvider(BinProvider):
 
         if self.install_root is not None:
             self.install_root.mkdir(parents=True, exist_ok=True)
+            (self.install_root / "cache").mkdir(parents=True, exist_ok=True)
         if self.bin_dir is not None:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
-        if self.cache_dir is not None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         cli_binary = self._cli_binary(
             postinstall_scripts=postinstall_scripts,
@@ -301,8 +370,8 @@ class PuppeteerProvider(BinProvider):
             if arg_str.startswith("--path="):
                 continue
             normalized.append(arg_str)
-        if self.cache_dir is not None:
-            normalized.append(f"--path={self.cache_dir}")
+        if self.install_root is not None:
+            normalized.append(f"--path={self.install_root / 'cache'}")
         return normalized
 
     def _list_installed_browsers(
@@ -316,8 +385,8 @@ class PuppeteerProvider(BinProvider):
         if not installer_bin:
             return []
         cmd = ["list"]
-        if self.cache_dir is not None:
-            cmd.append(f"--path={self.cache_dir}")
+        if self.install_root is not None:
+            cmd.append(f"--path={self.install_root / 'cache'}")
         proc = self.exec(
             bin_name=installer_bin,
             cmd=cmd,
@@ -379,7 +448,14 @@ class PuppeteerProvider(BinProvider):
         install_args: Iterable[str] | None = None,
         no_cache: bool = False,
     ) -> Path | None:
-        browser_name = self._browser_name(bin_name, install_args or [bin_name])
+        # Pick up the caller's configured install_args so
+        # ``bin_name=chrome`` + ``install_args=["chromium@latest"]``
+        # resolves to ``browser_name="chromium"`` (matching what
+        # ``puppeteer-browsers list`` reports), instead of falling
+        # back to ``[bin_name]`` which would look for the alias name.
+        if install_args is None:
+            install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
+        browser_name = self._browser_name(bin_name, install_args)
         candidates = [
             (version, path)
             for candidate_browser, version, path in self._list_installed_browsers(
@@ -394,22 +470,54 @@ class PuppeteerProvider(BinProvider):
         ]
         if parsed_candidates:
             return max(parsed_candidates, key=lambda item: item[0])[1]
+        if not candidates:
+            return None
         if len(candidates) == 1:
             return candidates[0][1]
-        return None
+        # Multiple cached builds but none parse as ``SemVer`` (e.g. chromium's
+        # integer build IDs like ``1618539``). Fall back to the newest one
+        # by file mtime so post-install lookups land on the freshly-
+        # downloaded version rather than ``None``.
+        candidates.sort(
+            key=lambda item: (
+                item[1].stat().st_mtime if item[1].exists() else 0,
+                item[0],
+            ),
+        )
+        return candidates[-1][1]
 
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
         bin_dir = self.bin_dir
         assert bin_dir is not None
         link_path = bin_dir / bin_name
         link_path.parent.mkdir(parents=True, exist_ok=True)
+        use_shell_shim = os.name == "posix" and ".app/Contents/MacOS/" in str(target)
+        desired_script = (
+            f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n'
+            if use_shell_shim
+            else None
+        )
+        # Idempotent refresh: leave the shim untouched when it already
+        # points at ``target``. Rewriting on every ``load()`` would bump
+        # the shim's mtime (shell-script case), which breaks callers
+        # that stat the shim to validate a freshly-installed binary.
+        if link_path.is_symlink():
+            try:
+                if os.readlink(link_path) == str(target):
+                    return link_path
+            except OSError:
+                pass
+        elif use_shell_shim and link_path.is_file():
+            try:
+                if link_path.read_text(encoding="utf-8") == desired_script:
+                    return link_path
+            except OSError:
+                pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        if os.name == "posix" and ".app/Contents/MacOS/" in str(target):
-            link_path.write_text(
-                f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n',
-                encoding="utf-8",
-            )
+        if use_shell_shim:
+            assert desired_script is not None
+            link_path.write_text(desired_script, encoding="utf-8")
             link_path.chmod(0o755)
             return link_path
         link_path.symlink_to(target)
@@ -430,15 +538,23 @@ class PuppeteerProvider(BinProvider):
             except Exception:
                 return None
             return None
-        bin_dir = self.bin_dir
-        assert bin_dir is not None
-        link_path = bin_dir / str(bin_name)
-        if link_path.exists() and os.access(link_path, os.X_OK):
-            return link_path
 
+        # Authoritative lookup: ask puppeteer-browsers where the browser
+        # actually lives — never trust the managed ``bin_dir`` shim as a
+        # source of truth, it may point at a browser that was removed
+        # out-of-band. When the CLI reports nothing, we report nothing.
         resolved = self._resolve_installed_browser_path(str(bin_name))
         if not resolved or not resolved.exists():
             return None
+
+        # Refresh the convenience shim under ``bin_dir`` so ``PATH`` users
+        # get a stable entry pointing at the freshly-resolved executable.
+        # In global/unmanaged mode (``install_root=None``) we have no
+        # managed shim dir, so just return the resolved path directly.
+        # When the shim refresh fails (read-only FS etc.) we also fall
+        # back to the resolved path.
+        if self.bin_dir is None:
+            return resolved
         try:
             return self._refresh_symlink(str(bin_name), resolved)
         except OSError:
@@ -449,10 +565,11 @@ class PuppeteerProvider(BinProvider):
         install_output: str,
         browser_name: str,
     ) -> bool:
-        if self.cache_dir is None:
+        if self.install_root is None:
             return False
+        cache_dir = self.install_root / "cache"
         targets: set[Path] = set()
-        browser_cache_dir = self.cache_dir / browser_name
+        browser_cache_dir = cache_dir / browser_name
 
         missing_dir_match = re.search(
             r"browser folder \(([^)]+)\) exists but the executable",
@@ -474,7 +591,7 @@ class PuppeteerProvider(BinProvider):
             targets.update(browser_cache_dir.glob(f"*{build_id}*"))
 
         removed_any = False
-        resolved_cache = self.cache_dir.resolve(strict=False)
+        resolved_cache = cache_dir.resolve(strict=False)
         for target in targets:
             resolved_target = target.resolve(strict=False)
             if not (
@@ -552,27 +669,25 @@ class PuppeteerProvider(BinProvider):
             cwd=self.install_root or ".",
             timeout=self.install_timeout,
         )
-        if (
-            proc.returncode == 0
-            and self.cache_dir is not None
-            and self.cache_dir.exists()
-        ):
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_proc = self.exec(
-                bin_name=sudo_binary.loaded_abspath,
-                cmd=["chown", "-R", f"{uid}:{gid}", str(self.cache_dir)],
-                cwd=self.install_root or ".",
-                timeout=30,
-                quiet=True,
-            )
-            if chown_proc.returncode != 0:
-                log_subprocess_output(
-                    logger,
-                    f"{self.__class__.__name__} sudo chown",
-                    chown_proc.stdout,
-                    chown_proc.stderr,
+        if proc.returncode == 0 and self.install_root is not None:
+            cache_dir = self.install_root / "cache"
+            if cache_dir.exists():
+                uid = os.getuid()
+                gid = os.getgid()
+                chown_proc = self.exec(
+                    bin_name=sudo_binary.loaded_abspath,
+                    cmd=["chown", "-R", f"{uid}:{gid}", str(cache_dir)],
+                    cwd=self.install_root or ".",
+                    timeout=30,
+                    quiet=True,
                 )
+                if chown_proc.returncode != 0:
+                    log_subprocess_output(
+                        logger,
+                        f"{self.__class__.__name__} sudo chown",
+                        chown_proc.stdout,
+                        chown_proc.stderr,
+                    )
         return proc
 
     @remap_kwargs({"packages": "install_args"})
@@ -700,16 +815,38 @@ class PuppeteerProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
+        # Resolve the real browser directory via the CLI directly
+        # (``_resolve_installed_browser_path`` shells out to
+        # ``puppeteer-browsers list``) so we don't round-trip through
+        # ``load()`` → ``default_abspath_handler`` and have it refresh
+        # the managed shim right as we're about to delete it. Honours
+        # managed ``install_root``, ambient ``PUPPETEER_CACHE_DIR``,
+        # and puppeteer-browsers' own default uniformly.
         install_args = list(install_args or self.get_install_args(bin_name))
         browser_name = self._browser_name(bin_name, install_args)
+        # Forward install_args so ``_resolve_installed_browser_path`` uses
+        # the same ``browser_name`` we just derived; otherwise it re-runs
+        # ``get_install_args`` and can pick up a different alias (e.g.
+        # caller-passed ``chromium@latest`` vs provider default ``chrome``),
+        # which would leave the parent.name match below unsatisfied and
+        # silently skip the rmtree.
+        resolved = self._resolve_installed_browser_path(
+            str(bin_name),
+            install_args=install_args,
+        )
+        if resolved is not None:
+            for parent in Path(resolved).resolve().parents:
+                if parent.name == browser_name:
+                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
+                    shutil.rmtree(parent, ignore_errors=True)
+                    break
+
+        # Finally, drop the convenience shim under ``bin_dir``. Doing
+        # this last avoids the "unlink → load() refresh → rmtree →
+        # dangling shim" ordering bug.
         if self.bin_dir is not None:
             bin_path = self.bin_dir / bin_name
             if bin_path.exists() or bin_path.is_symlink():
                 logger.info("$ %s", format_command(["rm", "-f", str(bin_path)]))
             bin_path.unlink(missing_ok=True)
-        if self.cache_dir is not None:
-            browser_dir = self.cache_dir / browser_name
-            if browser_dir.exists():
-                logger.info("$ %s", format_command(["rm", "-rf", str(browser_dir)]))
-                shutil.rmtree(browser_dir, ignore_errors=True)
         return True

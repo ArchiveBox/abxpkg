@@ -32,9 +32,9 @@ class TestPuppeteerProvider:
             assert "@latest" not in installed.name
             assert "@" not in installed.loaded_abspath.name
             bin_dir = provider.bin_dir
-            cache_dir = provider.cache_dir
             assert bin_dir is not None
-            assert cache_dir is not None
+            assert provider.install_root is not None
+            cache_dir = provider.install_root / "cache"
             assert installed.loaded_abspath.parent == bin_dir
             assert installed.loaded_abspath == bin_dir / "chrome"
             assert (cache_dir / "chromium").exists()

@@ -28,20 +28,27 @@ from .semver import SemVer
 
 logger = get_logger(__name__)
 
+CLAUDE_SANDBOX_NO_PROXY = (
+    "localhost,127.0.0.1,169.254.169.254,metadata.google.internal,"
+    ".svc.cluster.local,.local"
+)
+
 
 class PlaywrightProvider(BinProvider):
     """Playwright browser installer provider.
 
     Drives ``playwright install --with-deps <install_args>`` against the
-    ``playwright`` npm package. When ``playwright_root`` is set it
-    doubles as the abxpkg install root AND ``PLAYWRIGHT_BROWSERS_PATH``:
-    browsers land inside it (``chromium-<build>/`` etc.), a dedicated
-    npm prefix is nested under it, and each requested browser is
-    surfaced from ``bin_dir`` so ``load(bin_name)`` finds it directly.
+    ``playwright`` npm package. When ``playwright_root`` is set it acts
+    as the abxpkg install root: a dedicated npm prefix is nested under
+    it, ``bin_dir`` surfaces each requested browser so ``load(bin_name)``
+    finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` is pinned to
+    ``<install_root>/cache`` for every subprocess the provider runs.
     When ``playwright_root`` is left unset, playwright picks its own
-    default browsers path, the npm CLI bootstraps against the host's
-    npm default, and ``load()`` returns the resolved ``executablePath()``
-    directly without creating any install_root/bin_dir symlinks.
+    default browsers path (``$PLAYWRIGHT_BROWSERS_PATH`` from the
+    ambient env, otherwise ``~/.cache/ms-playwright`` on Linux), the
+    npm CLI bootstraps against the host's npm default, and ``load()``
+    returns the resolved ``executablePath()`` directly without
+    creating any install_root/bin_dir symlinks.
 
     ``--with-deps`` installs system packages and requires root on
     Linux, so ``euid`` defaults to ``0``: the base ``BinProvider.exec``
@@ -59,9 +66,8 @@ class PlaywrightProvider(BinProvider):
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
-    # ``playwright_root`` is both the abxpkg install root and the
-    # ``PLAYWRIGHT_BROWSERS_PATH`` we export to the CLI. Leave unset to
-    # let playwright use its own OS-default browsers path.
+    # ``playwright_root`` is the abxpkg-managed provider root dir. Leave
+    # unset to let playwright use its own OS-default browsers path.
     # Default: ABXPKG_PLAYWRIGHT_ROOT > ABXPKG_LIB_DIR/playwright > None.
     install_root: Path | None = Field(
         default_factory=lambda: abxpkg_install_root_default("playwright"),
@@ -79,9 +85,30 @@ class PlaywrightProvider(BinProvider):
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
-        if not self.install_root:
-            return {}
-        return {"PLAYWRIGHT_BROWSERS_PATH": str(self.install_root)}
+        # In managed mode we pin ``PLAYWRIGHT_BROWSERS_PATH`` to
+        # ``<install_root>/cache``. In unmanaged mode we leave the
+        # ambient env (or playwright's own ``~/.cache/ms-playwright``
+        # default) untouched.
+        env: dict[str, str] = {}
+        if self.install_root is not None:
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.install_root / "cache")
+        # ``playwright install`` downloads browsers from
+        # ``cdn.playwright.dev`` (Azure blob storage) and
+        # ``storage.googleapis.com`` depending on the build. In
+        # sandboxed environments the egress proxy's NO_PROXY often
+        # includes ``.googleapis.com`` / ``.google.com``, which forces
+        # the direct connection — which then fails DNS resolution or
+        # times out. Mirror the PuppeteerProvider fix: override
+        # NO_PROXY / no_proxy to a safe sandbox allowlist so the
+        # download goes through the proxy instead.
+        ambient_no_proxy = os.environ.get("NO_PROXY") or os.environ.get("no_proxy")
+        if not ambient_no_proxy or (
+            ".googleapis.com" in ambient_no_proxy.lower()
+            or ".google.com" in ambient_no_proxy.lower()
+        ):
+            env["NO_PROXY"] = CLAUDE_SANDBOX_NO_PROXY
+            env["no_proxy"] = CLAUDE_SANDBOX_NO_PROXY
+        return env
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False
@@ -291,10 +318,20 @@ class PlaywrightProvider(BinProvider):
         env = self.build_exec_env(base_env=(kwargs.pop("env", None) or os.environ))
         env_assignments: list[str] = []
         if self.install_root is not None:
-            env["PLAYWRIGHT_BROWSERS_PATH"] = str(self.install_root)
+            cache_dir = self.install_root / "cache"
+            env["PLAYWRIGHT_BROWSERS_PATH"] = str(cache_dir)
             env_assignments.append(
-                f"PLAYWRIGHT_BROWSERS_PATH={self.install_root}",
+                f"PLAYWRIGHT_BROWSERS_PATH={cache_dir}",
             )
+        # ``NO_PROXY`` / ``no_proxy`` are set by ``ENV`` to rescue
+        # browser downloads in sandboxes whose egress proxy NO_PROXY
+        # blocks ``cdn.playwright.dev`` / ``storage.googleapis.com``.
+        # They must also survive sudo's ``env_reset``, so forward them
+        # through the ``/usr/bin/env KEY=VAL -- ...`` wrapper below.
+        for proxy_key in ("NO_PROXY", "no_proxy"):
+            proxy_value = env.get(proxy_key)
+            if proxy_value:
+                env_assignments.append(f"{proxy_key}={proxy_value}")
         needs_sudo_env_wrapper = os.geteuid() != 0 and self.EUID != os.geteuid()
         if env_assignments and needs_sudo_env_wrapper:
             resolved_bin = bin_name
@@ -524,16 +561,36 @@ class PlaywrightProvider(BinProvider):
         )
         link = self.bin_dir / bin_name
         link.parent.mkdir(parents=True, exist_ok=True)
-        if link.exists() or link.is_symlink():
-            link.unlink(missing_ok=True)
         # On macOS the executable is buried inside a ``.app`` bundle, so
         # write a tiny shell shim instead of a symlink (same pattern as
         # PuppeteerProvider).
-        if os.name == "posix" and ".app/Contents/MacOS/" in str(target):
-            link.write_text(
-                f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n',
-                encoding="utf-8",
-            )
+        use_shell_shim = os.name == "posix" and ".app/Contents/MacOS/" in str(target)
+        desired_script = (
+            f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n'
+            if use_shell_shim
+            else None
+        )
+        # Idempotent refresh: leave the shim untouched when it already
+        # points at ``target``. Rewriting on every ``load()`` would bump
+        # the shim's mtime (shell-script case), which breaks callers
+        # that stat the shim to validate a freshly-installed binary.
+        if link.is_symlink():
+            try:
+                if os.readlink(link) == str(target):
+                    return link
+            except OSError:
+                pass
+        elif use_shell_shim and link.is_file():
+            try:
+                if link.read_text(encoding="utf-8") == desired_script:
+                    return link
+            except OSError:
+                pass
+        if link.exists() or link.is_symlink():
+            link.unlink(missing_ok=True)
+        if use_shell_shim:
+            assert desired_script is not None
+            link.write_text(desired_script, encoding="utf-8")
             link.chmod(0o755)
             return link
         link.symlink_to(target)
@@ -558,24 +615,25 @@ class PlaywrightProvider(BinProvider):
             except Exception:
                 return None
             return None
-        if self.bin_dir is not None:
-            link = self.bin_dir / str(bin_name)
-            if link.exists() and os.access(link, os.X_OK):
-                return link
+        # Authoritative lookup: ask ``playwright-core`` where the browser
+        # actually lives via its ``executablePath()`` API — never trust
+        # the managed ``bin_dir`` shim as a source of truth, it may
+        # point at a browser that was removed out-of-band. When
+        # playwright-core reports nothing, we report nothing.
         resolved = self._playwright_browser_path(
             str(bin_name),
             no_cache=no_cache,
         )
         if not resolved:
             return None
-        # When ``playwright_root`` is pinned, a hit from
-        # ``executablePath()`` that points outside that install_root tree
-        # (e.g. an ambient system install) should not satisfy
-        # ``load()`` — otherwise an unrelated host-wide playwright
-        # install would silently hijack resolution.
+        # When ``install_root`` is pinned, an ``executablePath()`` hit
+        # that points outside our managed cache tree (e.g. an ambient
+        # system install) should not satisfy ``load()`` — otherwise an
+        # unrelated host-wide playwright install would silently hijack
+        # resolution.
         if self.install_root is not None:
-            root_real = self.install_root.resolve(strict=False)
-            if root_real not in resolved.resolve(strict=False).parents:
+            cache_real = (self.install_root / "cache").resolve(strict=False)
+            if cache_real not in resolved.resolve(strict=False).parents:
                 return None
         if self.bin_dir is None:
             return resolved
@@ -719,21 +777,29 @@ class PlaywrightProvider(BinProvider):
         install_args: InstallArgs | None = None,
         **context,
     ) -> bool:
-        # Drop the symlink first (if we're managing one) so ``load()``
-        # stops seeing the tool even if browser dir removal partially
-        # fails.
+        # Resolve the real browser directory via playwright-core's
+        # ``executablePath()`` directly (``_playwright_browser_path``
+        # shells out to the node API) so we don't round-trip through
+        # ``load()`` → ``default_abspath_handler`` and have it refresh
+        # the managed shim right as we're about to delete it. Honours
+        # managed ``install_root``, ambient ``PLAYWRIGHT_BROWSERS_PATH``,
+        # and playwright's own default (``~/.cache/ms-playwright``)
+        # uniformly.
+        resolved = self._playwright_browser_path(str(bin_name), no_cache=True)
+        if resolved is not None:
+            for parent in Path(resolved).resolve().parents:
+                if parent.name.startswith(f"{bin_name}-"):
+                    logger.info("$ %s", format_command(["rm", "-rf", str(parent)]))
+                    shutil.rmtree(parent, ignore_errors=True)
+                    break
+
+        # Finally, drop the convenience shim under ``bin_dir``. Doing
+        # this last avoids the "unlink → load() refresh → rmtree →
+        # dangling shim" ordering bug (playwright's own CLI has no
+        # per-browser uninstall argument, so this rmtree dance is
+        # still the only way to remove a specific browser).
         if self.bin_dir is not None:
             (self.bin_dir / bin_name).unlink(missing_ok=True)
-
-        # ``playwright uninstall`` only removes *unused* browsers from
-        # the entire host, so drop the matching directories ourselves.
-        # Only touch ``playwright_root`` if the caller pinned one — we
-        # don't delete from playwright's own OS-default cache.
-        if self.install_root is not None and self.install_root.is_dir():
-            for entry in self.install_root.iterdir():
-                if entry.is_dir() and entry.name.startswith(f"{bin_name}-"):
-                    logger.info("$ %s", format_command(["rm", "-rf", str(entry)]))
-                    shutil.rmtree(entry, ignore_errors=True)
         return True
 
 
