@@ -132,31 +132,52 @@ jobs:
       with:
         node-version: '22'
 
+    - name: Bootstrap Linuxbrew on Linux
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+        if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        else
+          sudo apt-get update
+          sudo apt-get install -y build-essential file procps
+          sudo mkdir -p /home/linuxbrew
+          sudo chown -R "$(id -un)":"$(id -gn)" /home/linuxbrew
+          curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${RUNNER_TEMP}/install-homebrew.sh"
+          NONINTERACTIVE=1 CI=1 bash "${RUNNER_TEMP}/install-homebrew.sh"
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        fi
+        {
+          echo "HOMEBREW_PREFIX=$HOMEBREW_PREFIX"
+          echo "HOMEBREW_CELLAR=$HOMEBREW_CELLAR"
+          echo "HOMEBREW_REPOSITORY=$HOMEBREW_REPOSITORY"
+        } >> "$GITHUB_ENV"
+        {
+          echo "$HOMEBREW_PREFIX/bin"
+          echo "$HOMEBREW_PREFIX/sbin"
+        } >> "$GITHUB_PATH"
+        brew --version
+
     - name: Setup Yarn (classic + Berry)
       run: |
         npm install -g yarn@1.22.22
         if [ "$(uname -s)" = "Darwin" ]; then
           YARN_BERRY_PREFIX="/opt/homebrew/opt/yarn-berry"
           YARN_BERRY_ALIAS="/opt/homebrew/bin/yarn-berry"
-        elif [ -d /home/linuxbrew/.linuxbrew/opt ]; then
-          YARN_BERRY_PREFIX="/home/linuxbrew/.linuxbrew/opt/yarn-berry"
-          YARN_BERRY_ALIAS="/home/linuxbrew/.linuxbrew/bin/yarn-berry"
+        elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          BREW_PREFIX="$(brew --prefix)"
+          YARN_BERRY_PREFIX="$BREW_PREFIX/opt/yarn-berry"
+          YARN_BERRY_ALIAS="$BREW_PREFIX/bin/yarn-berry"
         else
-          YARN_BERRY_PREFIX="/usr/local/yarn-berry"
-          YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
-          sudo -n mkdir -p "$YARN_BERRY_PREFIX" "$(dirname "$YARN_BERRY_ALIAS")"
+          echo "ERROR: expected Linuxbrew at /home/linuxbrew/.linuxbrew"
+          exit 1
         fi
         YARN_BERRY_ALIAS_DIR="$(dirname "$YARN_BERRY_ALIAS")"
         export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
-        if [ "$YARN_BERRY_PREFIX" = "/usr/local/yarn-berry" ]; then
-          sudo -n env PATH="$PATH" npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-          sudo -n ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
-        else
-          mkdir -p "$YARN_BERRY_ALIAS_DIR"
-          npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-          ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
-        fi
+        mkdir -p "$YARN_BERRY_ALIAS_DIR"
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
         "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         command -v yarn
         yarn --version
@@ -190,7 +211,12 @@ jobs:
         uv pip install pip
         mkdir -p "$PNPM_HOME"
         echo "$PNPM_HOME" >> "$GITHUB_PATH"
-        echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+        if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          BREW_PREFIX="$(brew --prefix)"
+          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$BREW_PREFIX/sbin" >> "$GITHUB_PATH"
+        fi
         if [ -d /nix/var/nix/profiles/default/bin ]; then echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"; fi
 
     - name: Environment diagnostic
@@ -317,31 +343,52 @@ jobs:
       with:
         node-version: '22'
 
+    - name: Bootstrap Linuxbrew on Linux
+      if: ${{ runner.os == 'Linux' }}
+      run: |
+        if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        else
+          sudo apt-get update
+          sudo apt-get install -y build-essential file procps
+          sudo mkdir -p /home/linuxbrew
+          sudo chown -R "$(id -un)":"$(id -gn)" /home/linuxbrew
+          curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${RUNNER_TEMP}/install-homebrew.sh"
+          NONINTERACTIVE=1 CI=1 bash "${RUNNER_TEMP}/install-homebrew.sh"
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+        fi
+        {
+          echo "HOMEBREW_PREFIX=$HOMEBREW_PREFIX"
+          echo "HOMEBREW_CELLAR=$HOMEBREW_CELLAR"
+          echo "HOMEBREW_REPOSITORY=$HOMEBREW_REPOSITORY"
+        } >> "$GITHUB_ENV"
+        {
+          echo "$HOMEBREW_PREFIX/bin"
+          echo "$HOMEBREW_PREFIX/sbin"
+        } >> "$GITHUB_PATH"
+        brew --version
+
     - name: Setup Yarn (classic + Berry)
       run: |
         npm install -g yarn@1.22.22
         if [ "$(uname -s)" = "Darwin" ]; then
           YARN_BERRY_PREFIX="/opt/homebrew/opt/yarn-berry"
           YARN_BERRY_ALIAS="/opt/homebrew/bin/yarn-berry"
-        elif [ -d /home/linuxbrew/.linuxbrew/opt ]; then
-          YARN_BERRY_PREFIX="/home/linuxbrew/.linuxbrew/opt/yarn-berry"
-          YARN_BERRY_ALIAS="/home/linuxbrew/.linuxbrew/bin/yarn-berry"
+        elif [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          BREW_PREFIX="$(brew --prefix)"
+          YARN_BERRY_PREFIX="$BREW_PREFIX/opt/yarn-berry"
+          YARN_BERRY_ALIAS="$BREW_PREFIX/bin/yarn-berry"
         else
-          YARN_BERRY_PREFIX="/usr/local/yarn-berry"
-          YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
-          sudo -n mkdir -p "$YARN_BERRY_PREFIX" "$(dirname "$YARN_BERRY_ALIAS")"
+          echo "ERROR: expected Linuxbrew at /home/linuxbrew/.linuxbrew"
+          exit 1
         fi
         YARN_BERRY_ALIAS_DIR="$(dirname "$YARN_BERRY_ALIAS")"
         export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
-        if [ "$YARN_BERRY_PREFIX" = "/usr/local/yarn-berry" ]; then
-          sudo -n env PATH="$PATH" npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-          sudo -n ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
-        else
-          mkdir -p "$YARN_BERRY_ALIAS_DIR"
-          npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-          ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
-        fi
+        mkdir -p "$YARN_BERRY_ALIAS_DIR"
+        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
         "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         command -v yarn
         yarn --version
@@ -386,7 +433,12 @@ jobs:
         uv pip install pip
         mkdir -p "$PNPM_HOME"
         echo "$PNPM_HOME" >> "$GITHUB_PATH"
-        echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+        if [ -x /home/linuxbrew/.linuxbrew/bin/brew ]; then
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          BREW_PREFIX="$(brew --prefix)"
+          echo "$BREW_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "$BREW_PREFIX/sbin" >> "$GITHUB_PATH"
+        fi
         echo "/nix/var/nix/profiles/default/bin" >> "$GITHUB_PATH"
 
     - name: Inspect Docker
