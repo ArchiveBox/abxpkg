@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -426,6 +427,12 @@ def test_expand_bare_bool_flags_rewrites_debug_before_run():
     ) == ["--debug=True", "run", "python3", "--debug"]
 
 
+def test_expand_bare_bool_flags_rewrites_debug_before_exec():
+    assert cli_module._expand_bare_bool_flags(
+        ["--debug", "exec", "python3", "--debug"],
+    ) == ["--debug=True", "exec", "python3", "--debug"]
+
+
 # ---------------------------------------------------------------------------
 # `abxpkg run` subcommand (real live subprocess-based tests)
 # ---------------------------------------------------------------------------
@@ -814,6 +821,153 @@ def test_run_forwards_variadic_positional_args_to_binary(
     assert proc.stdout.strip() == expected_stdout
 
 
+def test_env_command_emits_quoted_dotenv_lines_for_installable_pip_binary(tmp_path):
+    lib_dir = tmp_path / "abx lib"
+    proc = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        "--binproviders=pip",
+        "env",
+        "--install",
+        "black",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    stdout_lines = proc.stdout.strip().splitlines()
+    assert stdout_lines
+    assert any(
+        line.startswith('VIRTUAL_ENV="') and str(lib_dir / "pip" / "venv") in line
+        for line in stdout_lines
+    ), stdout_lines
+    assert any(
+        line.startswith('PATH="') and str(lib_dir / "pip" / "venv" / "bin") in line
+        for line in stdout_lines
+    ), stdout_lines
+    assert all(not line.startswith("apply_exec_env ") for line in stdout_lines)
+    assert all(not line.startswith("export ") for line in stdout_lines)
+    assert any((lib_dir / "pip").rglob("black"))
+
+
+def test_render_env_assignment_lines_uses_shell_safe_double_quotes():
+    lines = cli_module.render_env_assignment_lines(
+        base_env={},
+        final_env={"TEST_ENV": 'a"b$c`d\\e'},
+    )
+
+    assert lines == ['TEST_ENV="a\\"b\\$c\\`d\\\\e"']
+
+
+def test_render_env_assignment_lines_leaves_safe_values_unquoted():
+    lines = cli_module.render_env_assignment_lines(
+        base_env={},
+        final_env={"TEST_ENV": "localhost,127.0.0.1:/tmp/bin"},
+    )
+
+    assert lines == ["TEST_ENV=localhost,127.0.0.1:/tmp/bin"]
+
+
+def test_render_activate_lines_uses_fish_set_syntax():
+    lines = cli_module.render_activate_lines(
+        base_env={},
+        final_env={"TEST_ENV": "/tmp/abx lib/bin"},
+        shell="fish",
+    )
+
+    assert lines == ['set -x TEST_ENV "/tmp/abx lib/bin"']
+
+
+def test_render_activate_comment_is_shell_specific():
+    assert (
+        cli_module.render_activate_comment(
+            shell="bash",
+            binary_names=("npm", "uv", "pip", "yt-dlp"),
+        )
+        == '# eval "$(abxpkg activate npm uv pip yt-dlp)"'
+    )
+    assert (
+        cli_module.render_activate_comment(
+            shell="zsh",
+            binary_names=("npm", "uv", "pip", "yt-dlp"),
+        )
+        == '# eval "$(abxpkg activate --zsh npm uv pip yt-dlp)"'
+    )
+    assert (
+        cli_module.render_activate_comment(
+            shell="fish",
+            binary_names=("npm", "uv", "pip", "yt-dlp"),
+        )
+        == "# abxpkg activate --fish npm uv pip yt-dlp | source"
+    )
+
+
+def test_parse_activate_shell_rejects_multiple_modes():
+    with pytest.raises(click.BadParameter):
+        cli_module.parse_activate_shell(bash=True, zsh=True, fish=False)
+
+
+def test_activate_command_can_be_evaled_for_installable_pip_binary(tmp_path):
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    command = (
+        f'eval "$({shlex.quote(str(_abxpkg_executable()))} '
+        f"--lib={shlex.quote(str(tmp_path))} "
+        '--binproviders=pip activate --install black)"; '
+        "black --version"
+    )
+    proc = subprocess.run(
+        ["bash", "-lc", command],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip().startswith("black"), proc.stdout
+
+
+def test_activate_command_emits_comment_and_fish_lines(tmp_path):
+    proc = _run_abxpkg_cli(
+        f"--lib={tmp_path / 'abx lib'}",
+        "--binproviders=pip",
+        "activate",
+        "--fish",
+        "--install",
+        "black",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    stdout_lines = proc.stdout.strip().splitlines()
+    assert stdout_lines[0] == "# abxpkg activate --fish black | source"
+    assert any(line.startswith("set -x VIRTUAL_ENV ") for line in stdout_lines[1:])
+    assert any(line.startswith("set -x PATH ") for line in stdout_lines[1:])
+
+
+def test_activate_command_rejects_multiple_shell_modes():
+    result = CliRunner().invoke(
+        cli_module.cli,
+        ["activate", "--bash", "--fish", "python3"],
+    )
+
+    assert result.exit_code != 0
+    assert "choose only one of --bash, --zsh, or --fish" in result.output
+
+
+def test_exec_command_hidden_alias_runs_like_run():
+    proc = _run_abxpkg_cli(
+        "--binproviders=env",
+        "exec",
+        "python3",
+        "-c",
+        "print('abx-exec-ok')",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "abx-exec-ok"
+
+
 # ---------------------------------------------------------------------------
 # `abx` — thin alias for `abxpkg run --install ...` (argv-rewriting wrapper)
 # ---------------------------------------------------------------------------
@@ -1168,6 +1322,7 @@ def test_upgrade_command_is_hidden_from_help():
 
     assert result.exit_code == 0
     assert " add" not in result.output
+    assert "│ exec" not in result.output
     assert " help" not in result.output
     assert " upgrade" not in result.output
     assert " remove" not in result.output

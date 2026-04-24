@@ -109,6 +109,8 @@ abxpkg install yt-dlp
 abxpkg update yt-dlp
 abxpkg uninstall yt-dlp
 abxpkg load yt-dlp
+abxpkg env yt-dlp
+abxpkg activate yt-dlp
 ```
 
 `abxpkg --version` and `abxpkg version` stream the package version first, then a host/env summary line, then one section per selected provider showing its current resolved runtime state (`INSTALLER_BINARY`, `PATH`, `ENV`, `install_root`, `bin_dir`, and any active cached dependency / installed binaries).
@@ -131,9 +133,17 @@ abxpkg --binproviders=pip,brew run pip show black # restrict provider resolution
 abxpkg --binproviders=pip --install run yt-dlp    # load first, then install via selected providers if needed
 abxpkg --binproviders=pip --update  run yt-dlp    # ensure the binary is available, then update before exec
 abxpkg --binproviders=pip --no-cache --install run yt-dlp  # bypass cached/current-state checks during resolution + install
+
+abxpkg env yt-dlp                                 # print dotenv-style KEY=value lines for yt-dlp's runtime env
+abxpkg --binproviders=pip env --install black     # install if needed, then print the runtime env in .env format
+eval "$(abxpkg --binproviders=pip activate black)" # emit bash export lines and apply them to the current shell
+abxpkg activate --fish black | source             # emit fish set -x lines and source them into fish
+eval "$(abxpkg --binproviders=pip activate --zsh black)" # emit zsh export lines
 ```
 
-abxpkg options (e.g. `--binproviders`, `--lib`, `--install`, `--update`, `--no-cache`) must appear before the `run` subcommand; every argument after the binary name is forwarded verbatim to the underlying binary. `run` exits with the child's exit code, passes its `stdout`/`stderr` through unbuffered, and routes any abxpkg install/load logs to `stderr` only — no headers, no footers, no parsing.
+`abxpkg env` resolves binaries the same way as `run`, then prints the runtime env as dotenv-style `KEY=value` lines. `abxpkg activate` emits a short usage comment plus shell-specific activation commands: bash by default, `--zsh` for zsh `export KEY=value`, and `--fish` for fish `set -x KEY VALUE`.
+
+abxpkg options (e.g. `--binproviders`, `--lib`, `--install`, `--update`, `--no-cache`) must appear before the `run` subcommand; every argument after the binary name is forwarded verbatim to the underlying binary. The same install/update flags also apply to `env` / `activate`. `run` exits with the child's exit code, passes its `stdout`/`stderr` through unbuffered, and routes any abxpkg install/load logs to `stderr` only — no headers, no footers, no parsing.
 
 #### `abx`: auto-install-and-run shortcut
 
@@ -279,6 +289,8 @@ curl = Binary(
 `min_version` is enforced after a provider resolves or installs a binary — provider discovery can still succeed, but the final `Binary` is rejected if the loaded version is below the floor. Use `min_version=None` to disable the check.
 
 Pass `no_cache=True` to `load()` / `install()` / `update()` / `uninstall()` when you want to bypass cached/current-state checks. For `install()`, `no_cache=True` skips the initial `load()` check and forces a fresh install path. The equivalent CLI and env controls are `--no-cache` and `ABXPKG_NO_CACHE=1`.
+
+Provider installer binaries also resolve lazily through the active provider chain. If a provider needs `pip`, `npm`, `cargo`, or another installer tool and it is missing, abxpkg will auto-install that dependency using the currently selected providers and the same `ABXPKG_LIB_DIR` / `--lib` / `--global` settings.
 
 #### Advanced Usage
 

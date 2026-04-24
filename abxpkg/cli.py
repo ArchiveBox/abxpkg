@@ -65,6 +65,7 @@ class CliOptions:
 
 
 _NONE_STRINGS = frozenset({"", "none", "null"})
+_ACTIVATE_SHELL_NAMES = frozenset({"bash", "zsh", "fish"})
 
 
 def _none_or_stripped(raw: str | None) -> str | None:
@@ -1277,6 +1278,269 @@ def run_binary_command(
     )
 
 
+def resolve_runtime_binary(
+    binary_name: str,
+    *,
+    options: CliOptions,
+    install_before_run: bool = False,
+    update_before_run: bool = False,
+) -> tuple[Binary, list[BinProvider]]:
+    runtime_binproviders: list[BinProvider] = []
+    binary = build_binary(binary_name, options, dry_run=options.dry_run)
+    runtime_binproviders.extend(binary.binproviders)
+    update_provider_names = [
+        provider_name
+        for provider_name in options.provider_names
+        if provider_name != "env"
+    ]
+
+    try:
+        if update_before_run:
+            loaded_for_update = None
+            try:
+                loaded_for_update = binary.load(no_cache=options.no_cache)
+            except ABXPkgError:
+                loaded_for_update = None
+            if loaded_for_update is not None and update_provider_names:
+                binary = loaded_for_update.update(
+                    binproviders=update_provider_names,
+                    dry_run=options.dry_run,
+                    no_cache=options.no_cache,
+                )
+            else:
+                binary = binary.update(
+                    binproviders=update_provider_names or None,
+                    dry_run=options.dry_run,
+                    no_cache=options.no_cache,
+                )
+                if not binary.is_valid:
+                    binary = binary.install(
+                        dry_run=options.dry_run,
+                        no_cache=options.no_cache,
+                    )
+        elif install_before_run:
+            binary = binary.install(
+                dry_run=options.dry_run,
+                no_cache=options.no_cache,
+            )
+        else:
+            binary = binary.load(no_cache=options.no_cache)
+    except ABXPkgError as err:
+        raise click.ClickException(format_error(err)) from err
+
+    return binary, runtime_binproviders
+
+
+def get_runtime_exec_providers(
+    binary: Binary,
+    runtime_binproviders: Iterable[BinProvider] = (),
+) -> list[BinProvider]:
+    if not binary.is_valid:
+        raise click.ClickException(
+            f"abxpkg: {binary.name}: binary could not be loaded",
+        )
+
+    assert binary.loaded_binprovider is not None
+    return [
+        provider
+        for provider in runtime_binproviders
+        if provider.name != binary.loaded_binprovider.name
+        or provider.install_root != binary.loaded_binprovider.install_root
+        or provider.bin_dir != binary.loaded_binprovider.bin_dir
+    ]
+
+
+def build_runtime_exec_env(
+    binary: Binary,
+    runtime_binproviders: Iterable[BinProvider] = (),
+    *,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    assert binary.loaded_binprovider is not None
+    env = dict(os.environ if base_env is None else base_env)
+    other_runtime_binproviders = get_runtime_exec_providers(
+        binary,
+        runtime_binproviders,
+    )
+    if other_runtime_binproviders:
+        env = BinProvider.build_exec_env(
+            providers=other_runtime_binproviders,
+            base_env=env,
+        )
+    return binary.loaded_binprovider.build_exec_env(
+        providers=[binary.loaded_binprovider],
+        base_env=env,
+    )
+
+
+def _render_env_delta_value(
+    before: str | None,
+    after: str,
+) -> str | None:
+    if before == after:
+        return None
+    if before:
+        if after.endswith(before):
+            prefix = after[: -len(before)]
+            if prefix:
+                return prefix
+        if after.startswith(before):
+            suffix = after[len(before) :]
+            if suffix:
+                return f":{suffix}"
+    return after
+
+
+def render_env_assignment_lines(
+    base_env: dict[str, str],
+    final_env: dict[str, str],
+    *,
+    prefix: str = "",
+) -> list[str]:
+    def render_assignment_value(value: str) -> str:
+        if value and re.fullmatch(r"[A-Za-z0-9_./,:@%+=-]+", value):
+            return value
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("$", "\\$")
+            .replace("`", "\\`")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+        return f'"{escaped}"'
+
+    changed_values: dict[str, str] = {}
+    for key, value in final_env.items():
+        rendered = _render_env_delta_value(base_env.get(key), value)
+        if rendered is not None:
+            changed_values[key] = rendered
+
+    ordered_keys = [
+        *(["VIRTUAL_ENV"] if "VIRTUAL_ENV" in changed_values else []),
+        *(["PATH"] if "PATH" in changed_values else []),
+        *sorted(key for key in changed_values if key not in {"VIRTUAL_ENV", "PATH"}),
+    ]
+    return [
+        f"{prefix}{key}={render_assignment_value(changed_values[key])}"
+        for key in ordered_keys
+    ]
+
+
+def render_activate_lines(
+    base_env: dict[str, str],
+    final_env: dict[str, str],
+    *,
+    shell: str,
+) -> list[str]:
+    assert shell in _ACTIVATE_SHELL_NAMES
+
+    if shell in {"bash", "zsh"}:
+        return render_env_assignment_lines(base_env, final_env, prefix="export ")
+
+    def render_fish_value(value: str) -> str:
+        if value and re.fullmatch(r"[A-Za-z0-9_./,:@%+=-]+", value):
+            return value
+        escaped = (
+            value.replace("\\", "\\\\")
+            .replace('"', '\\"')
+            .replace("$", "\\$")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+        )
+        return f'"{escaped}"'
+
+    changed_values: dict[str, str] = {}
+    for key, value in final_env.items():
+        rendered = _render_env_delta_value(base_env.get(key), value)
+        if rendered is not None:
+            changed_values[key] = rendered
+
+    ordered_keys = [
+        *(["VIRTUAL_ENV"] if "VIRTUAL_ENV" in changed_values else []),
+        *(["PATH"] if "PATH" in changed_values else []),
+        *sorted(key for key in changed_values if key not in {"VIRTUAL_ENV", "PATH"}),
+    ]
+    return [
+        f"set -x {key} {render_fish_value(changed_values[key])}" for key in ordered_keys
+    ]
+
+
+def parse_activate_shell(
+    *,
+    bash: bool,
+    zsh: bool,
+    fish: bool,
+) -> str:
+    selected = [
+        shell_name
+        for shell_name, enabled in (("bash", bash), ("zsh", zsh), ("fish", fish))
+        if enabled
+    ]
+    if len(selected) > 1:
+        raise click.BadParameter("choose only one of --bash, --zsh, or --fish")
+    return selected[0] if selected else "bash"
+
+
+def render_activate_comment(
+    *,
+    shell: str,
+    binary_names: Iterable[str],
+) -> str:
+    command = " ".join(
+        [
+            "abxpkg",
+            "activate",
+            *([f"--{shell}"] if shell != "bash" else []),
+            *(str(binary_name) for binary_name in binary_names),
+        ],
+    )
+    if shell == "fish":
+        return f"# {command} | source"
+    return f'# eval "$({command})"'
+
+
+def build_command_exec_env(
+    binary_names: Iterable[str],
+    *,
+    options: CliOptions,
+    install_before_run: bool = False,
+    update_before_run: bool = False,
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    env = dict(os.environ if base_env is None else base_env)
+    names = tuple(binary_names)
+    if not names:
+        return BinProvider.build_exec_env(
+            providers=build_providers(
+                options.provider_names,
+                dry_run=options.dry_run,
+                install_root=options.install_root,
+                bin_dir=options.bin_dir,
+                euid=options.euid,
+                install_timeout=options.install_timeout,
+                version_timeout=options.version_timeout,
+            ),
+            base_env=env,
+        )
+
+    for binary_name in names:
+        binary, runtime_binproviders = resolve_runtime_binary(
+            binary_name,
+            options=options,
+            install_before_run=install_before_run,
+            update_before_run=update_before_run,
+        )
+        env = build_runtime_exec_env(
+            binary,
+            runtime_binproviders,
+            base_env=env,
+        )
+    return env
+
+
 def clear_lib_dir(lib_dir: Path) -> None:
     if lib_dir.is_symlink() or lib_dir.is_file():
         lib_dir.unlink(missing_ok=True)
@@ -1297,14 +1561,14 @@ def clear_lib_dir(lib_dir: Path) -> None:
     "install_before_run",
     is_flag=True,
     default=False,
-    help="Only used by `run`: load the binary first, and install it if missing.",
+    help="Used by `run`, `env`, and `activate`: load the binary first, and install it if missing.",
 )
 @click.option(
     "--update",
     "update_before_run",
     is_flag=True,
     default=False,
-    help="Only used by `run`: ensure the binary is available, then update it before executing it.",
+    help="Used by `run`, `env`, and `activate`: ensure the binary is available, then update it first.",
 )
 @click.option(
     "--version",
@@ -1500,52 +1764,10 @@ def load_command(
     run_binary_command(binary_name, action="load", options=options)
 
 
-@cli.command(
-    "run",
-    context_settings={
-        "ignore_unknown_options": True,
-        "allow_extra_args": True,
-        "allow_interspersed_args": False,
-        "help_option_names": [],
-    },
-)
-@binary_override_options
-@shared_options
-@click.option(
-    "--install",
-    "command_install_before_run",
-    is_flag=True,
-    default=False,
-    help="Load the binary first, and install it if missing.",
-)
-@click.option(
-    "--update",
-    "command_update_before_run",
-    is_flag=True,
-    default=False,
-    help="Ensure the binary is available, then update it before executing it.",
-)
-@click.option(
-    "--script",
-    "script_mode",
-    is_flag=True,
-    default=False,
-    help="Parse inline /// script metadata from the script file and resolve dependencies before running.",
-)
-@click.argument("binary_name")
-@click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
-@click.pass_context
-def run_command(
+def _run_command_impl(
     ctx: click.Context,
     **shared_kwargs: Any,
 ) -> None:
-    """Run an installed binary, passing all remaining arguments through to it.
-
-    The full shared option surface is accepted on ``run`` itself before the
-    binary name. Everything after the binary name is forwarded verbatim to
-    the underlying binary's argv.
-    """
-
     command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
     command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
     script_mode = bool(shared_kwargs.pop("script_mode"))
@@ -1718,54 +1940,19 @@ def run_command(
         # --script implies --install
         install_before_run = True
 
-    binary = build_binary(
-        binary_name,
-        binary_options,
-        dry_run=run_options.dry_run,
-    )
-    if not script_mode:
-        runtime_binproviders.extend(binary.binproviders)
-    update_provider_names = [
-        provider_name
-        for provider_name in run_options.provider_names
-        if provider_name != "env"
-    ]
-
     try:
-        if update_before_run:
-            loaded_for_update = None
-            try:
-                loaded_for_update = binary.load(no_cache=run_options.no_cache)
-            except ABXPkgError:
-                loaded_for_update = None
-            if loaded_for_update is not None and update_provider_names:
-                binary = loaded_for_update.update(
-                    binproviders=update_provider_names,
-                    dry_run=run_options.dry_run,
-                    no_cache=run_options.no_cache,
-                )
-            else:
-                binary = binary.update(
-                    binproviders=update_provider_names or None,
-                    dry_run=run_options.dry_run,
-                    no_cache=run_options.no_cache,
-                )
-                if not binary.is_valid:
-                    binary = binary.install(
-                        dry_run=run_options.dry_run,
-                        no_cache=run_options.no_cache,
-                    )
-        elif install_before_run:
-            binary = binary.install(
-                dry_run=run_options.dry_run,
-                no_cache=run_options.no_cache,
-            )
-        else:
-            binary = binary.load(no_cache=run_options.no_cache)
-    except ABXPkgError as err:
-        _echo(format_error(err), err=True)
+        binary, resolved_runtime_binproviders = resolve_runtime_binary(
+            binary_name,
+            options=binary_options,
+            install_before_run=install_before_run,
+            update_before_run=update_before_run,
+        )
+    except click.ClickException as err:
+        _echo(str(err), err=True)
         ctx.exit(1)
         return
+    if not script_mode:
+        runtime_binproviders = resolved_runtime_binproviders
 
     if run_options.dry_run:
         # Provider exec honors dry_run and returns a no-op CompletedProcess;
@@ -1785,15 +1972,13 @@ def run_command(
     assert binary.loaded_binprovider is not None
     assert binary.loaded_abspath is not None
     exec_kwargs: dict[str, Any] = {"capture_output": False}
-    if runtime_binproviders:
+    other_runtime_binproviders = get_runtime_exec_providers(
+        binary,
+        runtime_binproviders,
+    )
+    if other_runtime_binproviders:
         exec_kwargs["env"] = BinProvider.build_exec_env(
-            providers=[
-                provider
-                for provider in runtime_binproviders
-                if provider.name != binary.loaded_binprovider.name
-                or provider.install_root != binary.loaded_binprovider.install_root
-                or provider.bin_dir != binary.loaded_binprovider.bin_dir
-            ],
+            providers=other_runtime_binproviders,
             base_env=os.environ.copy(),
         )
     proc = binary.loaded_binprovider.exec(
@@ -1802,6 +1987,224 @@ def run_command(
         **exec_kwargs,
     )
     ctx.exit(proc.returncode)
+
+
+@cli.command(
+    "run",
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+        "help_option_names": [],
+    },
+)
+@binary_override_options
+@shared_options
+@click.option(
+    "--install",
+    "command_install_before_run",
+    is_flag=True,
+    default=False,
+    help="Load the binary first, and install it if missing.",
+)
+@click.option(
+    "--update",
+    "command_update_before_run",
+    is_flag=True,
+    default=False,
+    help="Ensure the binary is available, then update it before executing it.",
+)
+@click.option(
+    "--script",
+    "script_mode",
+    is_flag=True,
+    default=False,
+    help="Parse inline /// script metadata from the script file and resolve dependencies before running.",
+)
+@click.argument("binary_name")
+@click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def run_command(
+    ctx: click.Context,
+    **shared_kwargs: Any,
+) -> None:
+    """Run an installed binary, passing all remaining arguments through to it.
+
+    The full shared option surface is accepted on ``run`` itself before the
+    binary name. Everything after the binary name is forwarded verbatim to
+    the underlying binary's argv.
+    """
+
+    _run_command_impl(ctx, **shared_kwargs)
+
+
+@cli.command(
+    "exec",
+    hidden=True,
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+        "allow_interspersed_args": False,
+        "help_option_names": [],
+    },
+)
+@binary_override_options
+@shared_options
+@click.option(
+    "--install",
+    "command_install_before_run",
+    is_flag=True,
+    default=False,
+)
+@click.option(
+    "--update",
+    "command_update_before_run",
+    is_flag=True,
+    default=False,
+)
+@click.option(
+    "--script",
+    "script_mode",
+    is_flag=True,
+    default=False,
+)
+@click.argument("binary_name")
+@click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
+@click.pass_context
+def exec_command(
+    ctx: click.Context,
+    **shared_kwargs: Any,
+) -> None:
+    _run_command_impl(ctx, **shared_kwargs)
+
+
+@cli.command("env")
+@shared_options
+@click.option(
+    "--install",
+    "command_install_before_run",
+    is_flag=True,
+    default=False,
+    help="Load each binary first, and install it if missing.",
+)
+@click.option(
+    "--update",
+    "command_update_before_run",
+    is_flag=True,
+    default=False,
+    help="Ensure each binary is available, then update it before emitting the env.",
+)
+@click.argument("binary_names", nargs=-1)
+@click.pass_context
+def env_command(
+    ctx: click.Context,
+    binary_names: tuple[str, ...],
+    **shared_kwargs: Any,
+) -> None:
+    """Emit dotenv-style KEY=value lines for the selected binaries or providers."""
+
+    command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
+    command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
+    options = get_command_options(ctx, **shared_kwargs)
+    install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
+        command_install_before_run,
+    )
+    update_before_run = bool(ctx.obj.get("update_before_run", False)) or bool(
+        command_update_before_run,
+    )
+    configure_cli_logging(debug=options.debug)
+
+    base_env = os.environ.copy()
+    final_env = build_command_exec_env(
+        binary_names,
+        options=options,
+        install_before_run=install_before_run,
+        update_before_run=update_before_run,
+        base_env=base_env,
+    )
+    lines = render_env_assignment_lines(base_env, final_env)
+    if lines:
+        _echo("\n".join(lines))
+
+
+@cli.command("activate")
+@shared_options
+@click.option(
+    "--install",
+    "command_install_before_run",
+    is_flag=True,
+    default=False,
+    help="Load each binary first, and install it if missing.",
+)
+@click.option(
+    "--update",
+    "command_update_before_run",
+    is_flag=True,
+    default=False,
+    help="Ensure each binary is available, then update it before emitting the activation script.",
+)
+@click.option(
+    "--bash",
+    "activate_bash",
+    is_flag=True,
+    default=False,
+    help="Emit bash-compatible export lines (default).",
+)
+@click.option(
+    "--zsh",
+    "activate_zsh",
+    is_flag=True,
+    default=False,
+    help="Emit zsh-compatible export lines.",
+)
+@click.option(
+    "--fish",
+    "activate_fish",
+    is_flag=True,
+    default=False,
+    help="Emit fish-compatible set -x lines.",
+)
+@click.argument("binary_names", nargs=-1)
+@click.pass_context
+def activate_command(
+    ctx: click.Context,
+    binary_names: tuple[str, ...],
+    **shared_kwargs: Any,
+) -> None:
+    """Emit shell commands that activate the selected abxpkg runtime env."""
+
+    command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
+    command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
+    activate_bash = bool(shared_kwargs.pop("activate_bash"))
+    activate_zsh = bool(shared_kwargs.pop("activate_zsh"))
+    activate_fish = bool(shared_kwargs.pop("activate_fish"))
+    options = get_command_options(ctx, **shared_kwargs)
+    install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
+        command_install_before_run,
+    )
+    update_before_run = bool(ctx.obj.get("update_before_run", False)) or bool(
+        command_update_before_run,
+    )
+    configure_cli_logging(debug=options.debug)
+    shell = parse_activate_shell(
+        bash=activate_bash,
+        zsh=activate_zsh,
+        fish=activate_fish,
+    )
+
+    base_env = os.environ.copy()
+    final_env = build_command_exec_env(
+        binary_names,
+        options=options,
+        install_before_run=install_before_run,
+        update_before_run=update_before_run,
+        base_env=base_env,
+    )
+    lines = [
+        render_activate_comment(shell=shell, binary_names=binary_names),
+        *render_activate_lines(base_env, final_env, shell=shell),
+    ]
+    _echo("\n".join(lines))
 
 
 # Bool flags that should auto-set to True when passed bare (e.g. `--dry-run`
@@ -1813,10 +2216,11 @@ _BARE_TRUE_BOOL_FLAGS = frozenset(
     {"--dry-run", "--debug", "--postinstall-scripts", "--no-cache"},
 )
 
+_RUN_LIKE_COMMANDS = frozenset({"run", "exec"})
 
 _BINARY_OVERRIDE_FLAGS = frozenset({"--abspath", "--install-args", "--packages"})
 _BINARY_OVERRIDE_COMMANDS = frozenset(
-    {"install", "update", "upgrade", "uninstall", "load", "run"},
+    {"install", "update", "upgrade", "uninstall", "load", *tuple(_RUN_LIKE_COMMANDS)},
 )
 
 
@@ -1883,8 +2287,8 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
     """Translate bare bool flags (``--dry-run``) into their value form
     (``--dry-run=True``) so a single click string option can handle both.
 
-    Crucially, the rewrite stops at the ``run`` subcommand: every token
-    after ``run`` is a child binary arg that must be forwarded verbatim
+    Crucially, the rewrite stops at the run-like subcommands: every token
+    after ``run`` / ``exec`` is a child binary arg that must be forwarded verbatim
     (a bare ``rsync --dry-run /src /dst`` must stay ``--dry-run``, not
     ``--dry-run=True``, because many tools reject the value form).
     """
@@ -1903,7 +2307,7 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
         elif tok in _ABXPKG_GROUP_OPTS_WITH_VALUES:
             skip_next = True
             out.append(tok)
-        elif tok == "run":
+        elif tok in _RUN_LIKE_COMMANDS:
             past_run = True
             out.append(tok)
         elif tok in _BARE_TRUE_BOOL_FLAGS:
