@@ -1,0 +1,37 @@
+.github/workflows/tests.yml
+  9724d42c0d385f04 172-173,178-180,383-384,389-391
+  b613d2e65cc24253 135-159,166-170,214-219,346-370,377-381,436-441
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "109357273234de117a11125586fcb1460eba197a",
+  "prompts": {
+    "9724d42c0d385f04": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe50-75a4-7eb3-871d-6bbcb8efc046",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 22,
+      "accepted_lines": 10,
+      "overriden_lines": 0
+    },
+    "b613d2e65cc24253": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe2e-9b34-7612-a3f7-ae1c1c33ed7c",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 1356,
+      "total_deletions": 16,
+      "accepted_lines": 1348,
+      "overriden_lines": 0
+    }
+  }
+}
