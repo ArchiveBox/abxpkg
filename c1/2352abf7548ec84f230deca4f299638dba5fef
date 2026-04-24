@@ -1,0 +1,23 @@
+.github/workflows/tests.yml
+  b613d2e65cc24253 203-217,430-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "c12352abf7548ec84f230deca4f299638dba5fef",
+  "prompts": {
+    "b613d2e65cc24253": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe2e-9b34-7612-a3f7-ae1c1c33ed7c",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 1321,
+      "total_deletions": 0,
+      "accepted_lines": 1321,
+      "overriden_lines": 0
+    }
+  }
+}
