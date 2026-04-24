@@ -144,13 +144,19 @@ jobs:
         else
           YARN_BERRY_PREFIX="/usr/local/yarn-berry"
           YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
+          sudo -n mkdir -p "$YARN_BERRY_PREFIX" "$(dirname "$YARN_BERRY_ALIAS")"
         fi
         YARN_BERRY_ALIAS_DIR="$(dirname "$YARN_BERRY_ALIAS")"
-        mkdir -p "$YARN_BERRY_ALIAS_DIR"
         export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
-        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        if [ "$YARN_BERRY_PREFIX" = "/usr/local/yarn-berry" ]; then
+          sudo -n env PATH="$PATH" npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+          sudo -n ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        else
+          mkdir -p "$YARN_BERRY_ALIAS_DIR"
+          npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+          ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        fi
         "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         command -v yarn
         yarn --version
@@ -323,13 +329,19 @@ jobs:
         else
           YARN_BERRY_PREFIX="/usr/local/yarn-berry"
           YARN_BERRY_ALIAS="/usr/local/bin/yarn-berry"
+          sudo -n mkdir -p "$YARN_BERRY_PREFIX" "$(dirname "$YARN_BERRY_ALIAS")"
         fi
         YARN_BERRY_ALIAS_DIR="$(dirname "$YARN_BERRY_ALIAS")"
-        mkdir -p "$YARN_BERRY_ALIAS_DIR"
         export PATH="$YARN_BERRY_ALIAS_DIR:$PATH"
         echo "$YARN_BERRY_ALIAS_DIR" >> "$GITHUB_PATH"
-        npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
-        ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        if [ "$YARN_BERRY_PREFIX" = "/usr/local/yarn-berry" ]; then
+          sudo -n env PATH="$PATH" npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+          sudo -n ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        else
+          mkdir -p "$YARN_BERRY_ALIAS_DIR"
+          npm install --prefix "$YARN_BERRY_PREFIX" @yarnpkg/cli-dist@4.13.0
+          ln -sf "$YARN_BERRY_PREFIX/node_modules/.bin/yarn" "$YARN_BERRY_ALIAS"
+        fi
         "$YARN_BERRY_ALIAS" --version | grep -q '^4\.'
         command -v yarn
         yarn --version
