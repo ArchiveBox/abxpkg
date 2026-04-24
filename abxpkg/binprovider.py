@@ -876,7 +876,7 @@ class BinProvider(BaseModel):
                 loaded = Binary(
                     name=self.INSTALLER_BIN,
                     binproviders=manual_installer_providers,
-                ).load(
+                ).install(
                     no_cache=no_cache,
                 )
                 if loaded and loaded.loaded_abspath:
@@ -902,7 +902,7 @@ class BinProvider(BaseModel):
             loaded = Binary(
                 name=self.INSTALLER_BIN,
                 binproviders=installer_providers,
-            ).load(no_cache=no_cache)
+            ).install(no_cache=no_cache)
             if loaded and loaded.loaded_abspath:
                 if loaded.loaded_version and loaded.loaded_sha256:
                     self.write_cached_binary(

@@ -6,6 +6,9 @@ import sys
 import pytest
 
 from abxpkg import (
+    BinName,
+    BinProvider,
+    BinProviderName,
     BunProvider,
     DenoProvider,
     EnvProvider,
@@ -78,6 +81,32 @@ class TestBinProvider:
         assert installer.loaded_abspath is not None
         assert installer.name == installer_bin
         assert installer.loaded_version is not None
+
+    def test_installer_binary_auto_installs_missing_dependency_into_configured_lib(
+        self,
+        monkeypatch,
+    ):
+        class BlackInstallerProvider(BinProvider):
+            name: BinProviderName = "black_bootstrap"
+            INSTALLER_BIN: BinName = "black"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            monkeypatch.setenv("ABXPKG_BINPROVIDERS", "pip")
+            monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmpdir_path / "abxlib"))
+
+            installer = BlackInstallerProvider(
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).INSTALLER_BINARY(no_cache=True)
+
+            assert installer.loaded_binprovider is not None
+            assert installer.loaded_binprovider.name == "pip"
+            assert installer.loaded_abspath is not None
+            assert installer.loaded_abspath.resolve().is_relative_to(
+                (tmpdir_path / "abxlib" / "pip" / "venv" / "bin").resolve(),
+            )
+            assert installer.loaded_version is not None
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
