@@ -99,13 +99,9 @@ jobs:
             group: Default
           os_name: linux
           python_version: '3.11'
-        - os:
-            group: Default
-          os_name: linux
-          python_version: '3.14'
         - os: macOS-latest
           os_name: macOS
-          python_version: '3.13'
+          python_version: '3.14'
         test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
 
     steps:
