@@ -200,6 +200,21 @@ jobs:
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v22
 
+    - name: Sanitize PATH after Nix install
+      shell: bash
+      run: |
+        sanitized_path=""
+        while IFS= read -r path_entry; do
+          [ -n "$path_entry" ] || continue
+          [ -d "$path_entry" ] || continue
+          [ -x "$path_entry" ] || continue
+          case ":$sanitized_path:" in
+            *":$path_entry:"*) ;;
+            *) sanitized_path="${sanitized_path:+$sanitized_path:}$path_entry" ;;
+          esac
+        done < <(printf '%s' "$PATH" | tr ':' '\n')
+        printf 'PATH=%s\n' "$sanitized_path" >> "$GITHUB_ENV"
+
     - name: Setup venv and install pip dependencies
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
@@ -411,6 +426,21 @@ jobs:
 
     - name: Install Nix
       uses: DeterminateSystems/nix-installer-action@v22
+
+    - name: Sanitize PATH after Nix install
+      shell: bash
+      run: |
+        sanitized_path=""
+        while IFS= read -r path_entry; do
+          [ -n "$path_entry" ] || continue
+          [ -d "$path_entry" ] || continue
+          [ -x "$path_entry" ] || continue
+          case ":$sanitized_path:" in
+            *":$path_entry:"*) ;;
+            *) sanitized_path="${sanitized_path:+$sanitized_path:}$path_entry" ;;
+          esac
+        done < <(printf '%s' "$PATH" | tr ':' '\n')
+        printf 'PATH=%s\n' "$sanitized_path" >> "$GITHUB_ENV"
 
     - name: Setup Docker
       if: ${{ matrix.live.needs_docker }}
