@@ -20,18 +20,21 @@ Stop distributing your apps via `curl | sh`! Instead you can bake package instal
 
 
 ```bash
-pip install abxpkg
-
+pip install abxpkg    # uv tool add abxpkg
 abxpkg --version
 ```
 
 ```python
-from abxpkg import Binary, npm
+from abxpkg import Binary, env, npm, brew
 
-curl = Binary(name="curl").load()
-print(curl.abspath, curl.version, curl.exec(cmd=["--version"]))
+prettier = env.load('prettier') or npm.install('prettier') or brew.install('prettier')
+# or equivalent:
+prettier = Binary(name='prettier', binproviders=[env, npm, brew]).install()
 
-npm.install("puppeteer")
+print(prettier.abspath, prettier.version)
+# ~/.cache/abx/lib/npm/bin/prettier 2.2.1
+
+prettier.exec(['--write', '.'])
 ```
 
 > 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
