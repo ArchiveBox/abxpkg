@@ -167,6 +167,17 @@ class CargoProvider(BinProvider):
             cmd=["install", *cargo_install_args, *install_args],
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode != 0
+            and "--locked" in cargo_install_args
+            and "lock file version 4 requires `-Znext-lockfile-bump`" in proc_output
+        ):
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=["install", *cargo_install_args[1:], *install_args],
+                timeout=timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -202,6 +213,22 @@ class CargoProvider(BinProvider):
             ],
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode != 0
+            and "--locked" in cargo_install_args
+            and "lock file version 4 requires `-Znext-lockfile-bump`" in proc_output
+        ):
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "install",
+                    "--force",
+                    *cargo_install_args[1:],
+                    *install_args,
+                ],
+                timeout=timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)

@@ -1043,7 +1043,7 @@ def test_activate_command_rejects_multiple_shell_modes():
     )
 
     assert result.exit_code != 0
-    assert "choose only one of --bash, --zsh, or --fish" in result.output
+    assert "choose only one of --bash, --zsh, or --fish" in click.unstyle(result.output)
 
 
 def test_exec_command_hidden_alias_runs_like_run():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -86,18 +87,27 @@ def _ensure_test_machine_dependencies() -> None:
 class TestMachine:
     def require_tool(self, tool_name: str) -> str:
         tool_path = shutil.which(tool_name)
-        if not tool_path and tool_name == "cargo":
+        if not tool_path:
             proc = subprocess.run(
                 [
                     str(_abxpkg_executable()),
                     "--lib=None",
                     "install",
+                    "--abspath",
                     tool_name,
                 ],
                 capture_output=True,
                 text=True,
+                env={
+                    **os.environ,
+                    "NO_COLOR": "1",
+                    "TERM": "dumb",
+                },
             )
-            tool_path = shutil.which(tool_name)
+            output_lines = [
+                line.strip() for line in proc.stdout.splitlines() if line.strip()
+            ]
+            tool_path = output_lines[-1] if output_lines else shutil.which(tool_name)
             assert proc.returncode == 0 and tool_path, (
                 f"{tool_name} is required on this host for test-machine integration tests, "
                 f"and fallback install via abxpkg failed.\n"
