@@ -1,0 +1,29 @@
+tests/test_cli.py
+  3893da56052d59d0 15,517-531,923-996
+abxpkg/cli.py
+  3893da56052d59d0 1516-1548,1550,1802-1805
+tests/test_cargoprovider.py
+  3893da56052d59d0 143-144,147
+tests/conftest.py
+  3893da56052d59d0 6,14-22,89-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "c6c886a63823005e60cb9705183d32b7b541c300",
+  "prompts": {
+    "3893da56052d59d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe84-7944-7362-b50b-83ba29407f83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 172,
+      "total_deletions": 31,
+      "accepted_lines": 161,
+      "overriden_lines": 0
+    }
+  }
+}
