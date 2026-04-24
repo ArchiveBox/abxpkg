@@ -11,7 +11,6 @@ from abxpkg.binprovider import BinProvider
 class TestCargoProvider:
     def test_install_args_version_flag_wins_over_min_version(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo-root",
@@ -32,7 +31,6 @@ class TestCargoProvider:
 
     def test_install_root_alias_installs_into_the_requested_root(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "cargo-root"
             provider = CargoProvider.model_validate(
@@ -54,7 +52,6 @@ class TestCargoProvider:
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
@@ -68,7 +65,6 @@ class TestCargoProvider:
         test_machine,
     ):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             cargo_root = Path(temp_dir) / "cargo"
             old_provider = CargoProvider(
@@ -103,7 +99,6 @@ class TestCargoProvider:
 
     def test_uninstall_handles_version_pinned_install_args(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
@@ -129,7 +124,6 @@ class TestCargoProvider:
         test_machine,
     ):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = CargoProvider(
@@ -146,9 +140,11 @@ class TestCargoProvider:
                 min_version=SemVer("1.0.0"),
             )
             assert ambient_installed is not None
+            ambient_installer = ambient_provider.INSTALLER_BINARY(no_cache=True)
+            assert ambient_installer.loaded_abspath is not None
 
             cargo_root = temp_dir_path / "cargo"
-            cargo_bin_dir = str(Path(test_machine.require_tool("cargo")).parent)
+            cargo_bin_dir = str(ambient_installer.loaded_abspath.parent)
             provider = CargoProvider(
                 PATH=f"{ambient_provider.bin_dir}:{cargo_bin_dir}",
                 install_root=cargo_root,
@@ -174,7 +170,6 @@ class TestCargoProvider:
         caplog,
     ):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = CargoProvider(
@@ -210,7 +205,6 @@ class TestCargoProvider:
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
                 name="choose",
@@ -231,7 +225,6 @@ class TestCargoProvider:
 
     def test_provider_dry_run_does_not_install_choose(self, test_machine):
         test_machine.require_tool("cargo")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",

@@ -1513,16 +1513,41 @@ def build_command_exec_env(
     env = dict(os.environ if base_env is None else base_env)
     names = tuple(binary_names)
     if not names:
+        providers = build_providers(
+            options.provider_names,
+            dry_run=options.dry_run,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        )
+        exec_env_providers: list[BinProvider] = []
+
+        def append_provider(provider: BinProvider | None) -> None:
+            if provider is None:
+                return
+            if all(existing != provider for existing in exec_env_providers):
+                exec_env_providers.append(provider)
+
+        for provider in providers:
+            append_provider(provider)
+            try:
+                installer_binary = provider.INSTALLER_BINARY(no_cache=options.no_cache)
+            except Exception:
+                installer_binary = None
+            append_provider(
+                installer_binary.loaded_binprovider if installer_binary else None,
+            )
+            try:
+                installed_binaries = provider.installed_binaries()
+            except Exception:
+                installed_binaries = []
+            for binary in installed_binaries:
+                append_provider(binary.loaded_binprovider or provider)
+
         return BinProvider.build_exec_env(
-            providers=build_providers(
-                options.provider_names,
-                dry_run=options.dry_run,
-                install_root=options.install_root,
-                bin_dir=options.bin_dir,
-                euid=options.euid,
-                install_timeout=options.install_timeout,
-                version_timeout=options.version_timeout,
-            ),
+            providers=exec_env_providers,
             base_env=env,
         )
 
@@ -1773,6 +1798,11 @@ def _run_command_impl(
     script_mode = bool(shared_kwargs.pop("script_mode"))
     binary_name = cast(str, shared_kwargs.pop("binary_name"))
     binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
+
+    if binary_name in {"--help", "-h"} and not binary_args:
+        _echo(ctx.get_help())
+        ctx.exit(0)
+        return
 
     run_options = get_command_options(ctx, **shared_kwargs)
     install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(

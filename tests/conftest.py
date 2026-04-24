@@ -3,11 +3,21 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+import sys
 
 import pytest
 
 from abxpkg import AptProvider, Binary, BrewProvider, SemVer
 from abxpkg.exceptions import BinaryLoadError
+
+
+def _abxpkg_executable() -> Path:
+    candidate = Path(sys.executable).parent / "abxpkg"
+    if candidate.exists():
+        return candidate
+    resolved = shutil.which("abxpkg")
+    assert resolved, "abxpkg console script must be installed in the active venv"
+    return Path(resolved)
 
 
 def _brew_formula_is_installed(package: str) -> bool:
@@ -76,6 +86,23 @@ def _ensure_test_machine_dependencies() -> None:
 class TestMachine:
     def require_tool(self, tool_name: str) -> str:
         tool_path = shutil.which(tool_name)
+        if not tool_path and tool_name == "cargo":
+            proc = subprocess.run(
+                [
+                    str(_abxpkg_executable()),
+                    "--lib=None",
+                    "install",
+                    tool_name,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            tool_path = shutil.which(tool_name)
+            assert proc.returncode == 0 and tool_path, (
+                f"{tool_name} is required on this host for test-machine integration tests, "
+                f"and fallback install via abxpkg failed.\n"
+                f"{proc.stderr or proc.stdout}"
+            )
         assert tool_path, (
             f"{tool_name} is required on this host for test-machine integration tests"
         )

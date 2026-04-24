@@ -12,7 +12,7 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abxpkg import EnvProvider, SemVer
+from abxpkg import BinName, BinProviderName, EnvProvider, SemVer
 import abxpkg.cli as cli_module
 
 
@@ -514,6 +514,21 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
     assert proc.stderr == ""
 
 
+def test_run_help_flag_shows_run_subcommand_help():
+    proc = _run_abxpkg_cli("run", "--help")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage: abxpkg run" in proc.stdout
+    assert "Run an installed binary" in proc.stdout
+
+
+def test_exec_help_flag_shows_exec_subcommand_help():
+    proc = _run_abxpkg_cli("exec", "--help")
+
+    assert proc.returncode == 0, proc.stderr
+    assert "Usage: abxpkg exec" in proc.stdout
+
+
 def test_run_propagates_nonzero_exit_code_from_underlying_binary():
     """Exit codes from the underlying binary must flow back unchanged."""
 
@@ -903,6 +918,82 @@ def test_render_activate_comment_is_shell_specific():
 def test_parse_activate_shell_rejects_multiple_modes():
     with pytest.raises(click.BadParameter):
         cli_module.parse_activate_shell(bash=True, zsh=True, fish=False)
+
+
+def test_build_command_exec_env_without_names_includes_installers_and_cached_binaries(
+    monkeypatch,
+    tmp_path,
+):
+    class ExtraEnvProvider(EnvProvider):
+        name: BinProviderName = "extra_env"
+        INSTALLER_BIN: BinName = "python3"
+
+        @property
+        def ENV(self) -> dict[str, str]:
+            return {"EXTRA_ENV": str(tmp_path / "extra")}
+
+    class InstallerEnvProvider(EnvProvider):
+        name: BinProviderName = "installer_env"
+        INSTALLER_BIN: BinName = "python3"
+
+        @property
+        def ENV(self) -> dict[str, str]:
+            return {"INSTALLER_ENV": str(tmp_path / "installer")}
+
+    class CacheOwnerProvider(EnvProvider):
+        name: BinProviderName = "cache_owner"
+        INSTALLER_BIN: BinName = "python3"
+
+    installer_provider = InstallerEnvProvider(
+        install_root=tmp_path / "installer-provider",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    installed_provider = ExtraEnvProvider(
+        install_root=tmp_path / "installed-provider",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    cache_owner = CacheOwnerProvider(
+        install_root=tmp_path / "cache-owner",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+
+    installer_binary = installer_provider.load("python3")
+    installed_binary = installed_provider.load("python3")
+    assert installer_binary is not None
+    assert installer_binary.loaded_binprovider is not None
+    assert installed_binary is not None
+    assert installed_binary.loaded_binprovider is not None
+
+    monkeypatch.setattr(
+        CacheOwnerProvider,
+        "INSTALLER_BINARY",
+        lambda self, no_cache=False: installer_binary,
+    )
+    monkeypatch.setattr(
+        CacheOwnerProvider,
+        "installed_binaries",
+        lambda self: [installed_binary],
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "build_providers",
+        lambda *args, **kwargs: [cache_owner],
+    )
+
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path / "abxlib",
+        provider_names=["cache_owner"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+    )
+    final_env = cli_module.build_command_exec_env((), options=options, base_env={})
+
+    assert final_env["INSTALLER_ENV"] == str(tmp_path / "installer")
+    assert final_env["EXTRA_ENV"] == str(tmp_path / "extra")
 
 
 def test_activate_command_can_be_evaled_for_installable_pip_binary(tmp_path):
