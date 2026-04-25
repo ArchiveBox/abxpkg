@@ -1,0 +1,29 @@
+abxpkg/binprovider_brew.py
+  3893da56052d59d0 10-11,61-71
+abxpkg/binprovider_apt.py
+  3893da56052d59d0 7-8,29-35
+tests/test_cli.py
+  3893da56052d59d0 1693-1726
+abxpkg/binprovider_cargo.py
+  3893da56052d59d0 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "2944eead5232ee23dc613aeb7ecbaa328065eeb0",
+  "prompts": {
+    "3893da56052d59d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe84-7944-7362-b50b-83ba29407f83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 59,
+      "total_deletions": 4,
+      "accepted_lines": 59,
+      "overriden_lines": 0
+    }
+  }
+}
