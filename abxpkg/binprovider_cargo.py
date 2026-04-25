@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from pydantic import Field, model_validator, computed_field
-from typing import Self, cast
+from typing import Self, cast, ClassVar
 
 from .base_types import (
     BinProviderName,
@@ -28,6 +28,12 @@ class CargoProvider(BinProvider):
     name: BinProviderName = "cargo"
     _log_emoji = "🦀"
     INSTALLER_BIN: BinName = "cargo"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "apt",
+        "brew",
+        "nix",
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with cargo_home/bin plus any install_root/bin override.
 
@@ -111,13 +117,20 @@ class CargoProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        if raw_provider_names:
+            preferred_provider_names = selected_provider_names
+        else:
+            installer_binproviders = self.INSTALLER_BINPROVIDERS
+            assert installer_binproviders is not None
+            preferred_provider_names = list(installer_binproviders)
         env_provider = EnvProvider(install_root=None, bin_dir=None)
         installer_providers: list[BinProvider] = [
             env_provider
             if provider_name == "env"
             else PROVIDER_CLASS_BY_NAME[provider_name]()
-            for provider_name in selected_provider_names
+            for provider_name in preferred_provider_names
             if provider_name
+            and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
         ]

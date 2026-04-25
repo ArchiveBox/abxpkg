@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from pydantic import Field, model_validator, computed_field
-from typing import Self
+from typing import Self, ClassVar
 
 from .binary import Binary
 from .base_types import (
@@ -34,6 +34,12 @@ class GemProvider(BinProvider):
     name: BinProviderName = "gem"
     _log_emoji = "💎"
     INSTALLER_BIN: BinName = "gem"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "apt",
+        "brew",
+        "nix",
+    )
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends/appends gem bin_dir depending on whether install_root/bin_dir were overridden.
 
@@ -95,12 +101,19 @@ class GemProvider(BinProvider):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        if raw_provider_names:
+            preferred_provider_names = selected_provider_names
+        else:
+            installer_binproviders = self.INSTALLER_BINPROVIDERS
+            assert installer_binproviders is not None
+            preferred_provider_names = list(installer_binproviders)
         dependency_providers = [
             EnvProvider(install_root=None, bin_dir=None)
             if provider_name == "env"
             else PROVIDER_CLASS_BY_NAME[provider_name]()
-            for provider_name in selected_provider_names
+            for provider_name in preferred_provider_names
             if provider_name
+            and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
         ]

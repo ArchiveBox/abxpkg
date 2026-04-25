@@ -371,10 +371,28 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
                 else:
                     merged_overrides[provider_name] = provider_overrides
 
+    provider_names = options.provider_names
+    if provider_names == list(DEFAULT_PROVIDER_NAMES):
+        for provider_class in PROVIDER_CLASS_BY_NAME.values():
+            if provider_class.model_fields["INSTALLER_BIN"].default != binary_name:
+                continue
+            preferred_provider_names = getattr(
+                provider_class,
+                "INSTALLER_BINPROVIDERS",
+                None,
+            )
+            if preferred_provider_names:
+                provider_names = [
+                    provider_name
+                    for provider_name in preferred_provider_names
+                    if provider_name in options.provider_names
+                ]
+            break
+
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
         "binproviders": build_providers(
-            options.provider_names,
+            provider_names,
             dry_run=dry_run,
             install_root=options.install_root,
             bin_dir=options.bin_dir,

@@ -1663,6 +1663,53 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
     assert binary.overrides == {"pip": {"install_args": ["custom==1.0"]}}
 
 
+@pytest.mark.parametrize("binary_name", ["cargo", "gem"])
+def test_build_binary_uses_installer_provider_preferences_for_default_provider_set(
+    tmp_path,
+    binary_name,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=list(cli_module.DEFAULT_PROVIDER_NAMES),
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+    )
+
+    binary = cli_module.build_binary(binary_name, options, dry_run=False)
+    provider_class = cli_module.PROVIDER_CLASS_BY_NAME[binary_name]
+    assert provider_class.INSTALLER_BINPROVIDERS is not None
+    expected_provider_names = [
+        provider_name
+        for provider_name in provider_class.INSTALLER_BINPROVIDERS
+        if provider_name in cli_module.DEFAULT_PROVIDER_NAMES
+    ]
+
+    assert [
+        provider.name for provider in binary.binproviders
+    ] == expected_provider_names
+
+
+def test_build_binary_preserves_explicit_provider_order_for_installer_binaries(
+    tmp_path,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=["env", "brew", "cargo"],
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+    )
+
+    binary = cli_module.build_binary("cargo", options, dry_run=False)
+
+    assert [provider.name for provider in binary.binproviders] == [
+        "env",
+        "brew",
+        "cargo",
+    ]
+
+
 def test_build_binary_merges_cli_handler_overrides_into_all_selected_providers(
     tmp_path,
 ):

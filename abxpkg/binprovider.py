@@ -17,6 +17,7 @@ from contextvars import ContextVar
 
 from typing import (
     Optional,
+    ClassVar,
     cast,
     final,
     Any,
@@ -359,6 +360,7 @@ class BinProvider(BaseModel):
         repr=False,
     )  # e.g.  '/opt/homebrew/bin:/opt/archivebox/bin'
     INSTALLER_BIN: BinName = "env"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
 
     euid: int | None = None
     install_root: Path | None = None
@@ -841,10 +843,16 @@ class BinProvider(BaseModel):
             if raw_provider_names
             else list(DEFAULT_PROVIDER_NAMES)
         )
+        preferred_provider_names = (
+            selected_provider_names
+            if raw_provider_names or not self.INSTALLER_BINPROVIDERS
+            else list(self.INSTALLER_BINPROVIDERS)
+        )
         installer_provider_names = [
             provider_name
-            for provider_name in selected_provider_names
+            for provider_name in preferred_provider_names
             if provider_name
+            and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
         ]
