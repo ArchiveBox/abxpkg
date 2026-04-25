@@ -34,9 +34,6 @@ logger = get_logger(__name__)
 # ``ABXPKG_NIX_ROOT`` nor ``ABXPKG_LIB_DIR`` is set.
 DEFAULT_NIX_PROFILE = Path("~/.nix-profile").expanduser()
 DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
-# Use a stable per-user private store so ``nix profile`` does not
-# depend on a working system daemon on CI or single-user hosts.
-DEFAULT_PRIVATE_NIX_STORE = Path("~/.local/share/nix/root").expanduser()
 
 
 class NixProvider(BinProvider):
@@ -241,8 +238,6 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
-                "--store",
-                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
@@ -258,6 +253,46 @@ class NixProvider(BinProvider):
             env=env,
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode != 0
+            and os.uname().sysname == "Linux"
+            and Path("/run/systemd/system").is_dir()
+            and (
+                "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
+                in proc_output
+                or "opening a connection to remote store 'daemon' previously failed"
+                in proc_output
+            )
+        ):
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "daemon-reload"],
+                timeout=timeout,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                timeout=timeout,
+            )
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "--access-tokens",
+                    "",
+                    "profile",
+                    "add",
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "--extra-experimental-features",
+                    "flakes",
+                    "--profile",
+                    str(self.install_root),
+                    *install_args,
+                ],
+                env=env,
+                timeout=timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
 
@@ -298,8 +333,6 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
-                "--store",
-                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
@@ -315,6 +348,46 @@ class NixProvider(BinProvider):
             env=env,
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode != 0
+            and os.uname().sysname == "Linux"
+            and Path("/run/systemd/system").is_dir()
+            and (
+                "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
+                in proc_output
+                or "opening a connection to remote store 'daemon' previously failed"
+                in proc_output
+            )
+        ):
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "daemon-reload"],
+                timeout=timeout,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                timeout=timeout,
+            )
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "--access-tokens",
+                    "",
+                    "profile",
+                    "upgrade",
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "--extra-experimental-features",
+                    "flakes",
+                    "--profile",
+                    str(self.install_root),
+                    profile_element,
+                ],
+                env=env,
+                timeout=timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("update", profile_element, proc)
 
@@ -355,8 +428,6 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
-                "--store",
-                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
@@ -372,6 +443,46 @@ class NixProvider(BinProvider):
             env=env,
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode not in (0, 1)
+            and os.uname().sysname == "Linux"
+            and Path("/run/systemd/system").is_dir()
+            and (
+                "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
+                in proc_output
+                or "opening a connection to remote store 'daemon' previously failed"
+                in proc_output
+            )
+        ):
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "daemon-reload"],
+                timeout=timeout,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                timeout=timeout,
+            )
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "--access-tokens",
+                    "",
+                    "profile",
+                    "remove",
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "--extra-experimental-features",
+                    "flakes",
+                    "--profile",
+                    str(self.install_root),
+                    profile_element,
+                ],
+                env=env,
+                timeout=timeout,
+            )
         if proc.returncode not in (0, 1):
             self._raise_proc_error("uninstall", profile_element, proc)
 
