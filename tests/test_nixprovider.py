@@ -1,3 +1,4 @@
+import json
 import tempfile
 from pathlib import Path
 import logging
@@ -43,6 +44,42 @@ class TestNixProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="hello")
+
+    def test_repeated_install_does_not_duplicate_profile_entries(self, test_machine):
+        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NixProvider(
+                install_root=Path(temp_dir) / "nix-profile",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            first = provider.install("hello", no_cache=True)
+            second = provider.install("hello", no_cache=True)
+
+            test_machine.assert_shallow_binary_loaded(first)
+            test_machine.assert_shallow_binary_loaded(second)
+
+            installer_bin = provider.INSTALLER_BINARY(no_cache=True).loaded_abspath
+            assert installer_bin is not None
+            proc = provider.exec(
+                bin_name=installer_bin,
+                cmd=[
+                    "profile",
+                    "list",
+                    "--json",
+                    "--extra-experimental-features",
+                    "nix-command",
+                    "--extra-experimental-features",
+                    "flakes",
+                    "--profile",
+                    str(provider.install_root),
+                ],
+                quiet=True,
+            )
+            assert proc.returncode == 0, proc.stderr or proc.stdout
+            assert set(json.loads(proc.stdout).get("elements", {})) == {"hello"}
 
     def test_provider_direct_min_version_revalidates_final_installed_package(
         self,
@@ -112,7 +149,7 @@ class TestNixProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "hello": {"install_args": ["nixpkgs#hello", "nixpkgs#figlet"]},
+                    "hello": {"install_args": ["hello", "figlet"]},
                 },
             )
 

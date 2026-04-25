@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 __package__ = "abxpkg"
 
+import json
 import os
-import shutil
 
 from pathlib import Path
 
@@ -25,7 +25,7 @@ from .binprovider import (
     log_method_call,
     remap_kwargs,
 )
-from .logging import format_command, format_subprocess_output, get_logger
+from .logging import format_subprocess_output, get_logger
 
 logger = get_logger(__name__)
 
@@ -184,13 +184,6 @@ class NixProvider(BinProvider):
                 preserve_root=True,
             )
         install_root.parent.mkdir(parents=True, exist_ok=True)
-        if (
-            install_root.exists()
-            and install_root.is_dir()
-            and not install_root.is_symlink()
-        ):
-            logger.info("$ %s", format_command(["rm", "-rf", str(install_root)]))
-            shutil.rmtree(install_root)
 
     def _profile_element_name(
         self,
@@ -204,7 +197,7 @@ class NixProvider(BinProvider):
         return element or bin_name
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
-        return [f"nixpkgs#{bin_name}"]
+        return [bin_name]
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
@@ -218,6 +211,14 @@ class NixProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
+        cmd_install_args = list(install_args)
+        if not any(
+            arg in {"-f", "--file", "--expr", "--override-flake", "--inputs-from"}
+            or "#" in arg
+            or arg.startswith(("channel:", "http://", "https://", "github:", "path:"))
+            for arg in cmd_install_args
+        ):
+            cmd_install_args = ["-f", "channel:nixpkgs-unstable", *cmd_install_args]
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         env = {
@@ -234,6 +235,43 @@ class NixProvider(BinProvider):
             )
             if line
         )
+        profile_element = self._profile_element_name(
+            bin_name,
+            install_args=install_args,
+        )
+        list_proc = self.exec(
+            bin_name=installer_bin,
+            cmd=[
+                "--access-tokens",
+                "",
+                "profile",
+                "list",
+                "--json",
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
+                "--profile",
+                str(self.install_root),
+            ],
+            env=env,
+            timeout=timeout,
+            quiet=True,
+        )
+        if (
+            list_proc.returncode == 0
+            and list_proc.stdout.strip()
+            and profile_element in json.loads(list_proc.stdout).get("elements", {})
+        ):
+            return self.default_update_handler(
+                bin_name=bin_name,
+                install_args=install_args,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
+                no_cache=no_cache,
+                timeout=timeout,
+            )
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -248,7 +286,7 @@ class NixProvider(BinProvider):
                 "flakes",
                 "--profile",
                 str(self.install_root),
-                *install_args,
+                *cmd_install_args,
             ],
             env=env,
             timeout=timeout,
@@ -288,7 +326,7 @@ class NixProvider(BinProvider):
                     "flakes",
                     "--profile",
                     str(self.install_root),
-                    *install_args,
+                    *cmd_install_args,
                 ],
                 env=env,
                 timeout=timeout,
@@ -329,6 +367,36 @@ class NixProvider(BinProvider):
             )
             if line
         )
+        list_proc = self.exec(
+            bin_name=installer_bin,
+            cmd=[
+                "--access-tokens",
+                "",
+                "profile",
+                "list",
+                "--json",
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
+                "--profile",
+                str(self.install_root),
+            ],
+            env=env,
+            timeout=timeout,
+            quiet=True,
+        )
+        profile_elements = [profile_element]
+        if list_proc.returncode == 0 and list_proc.stdout.strip():
+            profile_elements = [
+                element_name
+                for element_name in json.loads(list_proc.stdout).get("elements", {})
+                if element_name == profile_element
+                or (
+                    element_name.startswith(f"{profile_element}-")
+                    and element_name.removeprefix(f"{profile_element}-").isdigit()
+                )
+            ] or [profile_element]
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -343,7 +411,7 @@ class NixProvider(BinProvider):
                 "flakes",
                 "--profile",
                 str(self.install_root),
-                profile_element,
+                *profile_elements,
             ],
             env=env,
             timeout=timeout,
@@ -424,6 +492,36 @@ class NixProvider(BinProvider):
             )
             if line
         )
+        list_proc = self.exec(
+            bin_name=installer_bin,
+            cmd=[
+                "--access-tokens",
+                "",
+                "profile",
+                "list",
+                "--json",
+                "--extra-experimental-features",
+                "nix-command",
+                "--extra-experimental-features",
+                "flakes",
+                "--profile",
+                str(self.install_root),
+            ],
+            env=env,
+            timeout=timeout,
+            quiet=True,
+        )
+        profile_elements = [profile_element]
+        if list_proc.returncode == 0 and list_proc.stdout.strip():
+            profile_elements = [
+                element_name
+                for element_name in json.loads(list_proc.stdout).get("elements", {})
+                if element_name == profile_element
+                or (
+                    element_name.startswith(f"{profile_element}-")
+                    and element_name.removeprefix(f"{profile_element}-").isdigit()
+                )
+            ] or [profile_element]
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -438,7 +536,7 @@ class NixProvider(BinProvider):
                 "flakes",
                 "--profile",
                 str(self.install_root),
-                profile_element,
+                *profile_elements,
             ],
             env=env,
             timeout=timeout,
@@ -478,12 +576,12 @@ class NixProvider(BinProvider):
                     "flakes",
                     "--profile",
                     str(self.install_root),
-                    profile_element,
+                    *profile_elements,
                 ],
                 env=env,
                 timeout=timeout,
             )
         if proc.returncode not in (0, 1):
-            self._raise_proc_error("uninstall", profile_element, proc)
+            self._raise_proc_error("uninstall", profile_elements, proc)
 
         return True
