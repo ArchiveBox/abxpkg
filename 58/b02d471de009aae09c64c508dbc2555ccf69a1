@@ -1,0 +1,25 @@
+abxpkg/binprovider_nix.py
+  3893da56052d59d0 4,28,200,214-221,238-274,289,329,370-399,414,495-524,539,579,585
+tests/test_nixprovider.py
+  3893da56052d59d0 1,48-83,152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "58b02d471de009aae09c64c508dbc2555ccf69a1",
+  "prompts": {
+    "3893da56052d59d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe84-7944-7362-b50b-83ba29407f83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 152,
+      "total_deletions": 17,
+      "accepted_lines": 152,
+      "overriden_lines": 0
+    }
+  }
+}
