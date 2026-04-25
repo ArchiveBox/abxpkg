@@ -1,0 +1,23 @@
+tests/test_cargoprovider.py
+  3893da56052d59d0 21,29,76,81,109,116,135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "8af5550def3b26ec4bc9329692ffecbbbccecb02",
+  "prompts": {
+    "3893da56052d59d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe84-7944-7362-b50b-83ba29407f83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 7,
+      "total_deletions": 7,
+      "accepted_lines": 7,
+      "overriden_lines": 0
+    }
+  }
+}
