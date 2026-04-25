@@ -4,7 +4,8 @@ __package__ = "abxpkg"
 import sys
 import time
 
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, model_validator
+from typing import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
@@ -21,10 +22,17 @@ class AptProvider(BinProvider):
     INSTALLER_BIN: BinName = "apt-get"
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() discovers package runtime bin dirs via dpkg and replaces PATH with those dirs.
-
     euid: int | None = (
         0  # Import-time default that forces every apt subprocess through the root/sudo execution path.
     )
+
+    @model_validator(mode="after")
+    def add_package_aliases(self) -> Self:
+        self.overrides["gem"] = {
+            **self.overrides.get("gem", {}),
+            "install_args": ["ruby"],
+        }
+        return self
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""

@@ -7,7 +7,8 @@ import time
 import platform
 from pathlib import Path
 
-from pydantic import Field, TypeAdapter, computed_field
+from pydantic import Field, TypeAdapter, computed_field, model_validator
+from typing import Self
 
 from .base_types import (
     BinProviderName,
@@ -56,6 +57,18 @@ class BrewProvider(BinProvider):
     # Starts unset so setup_PATH() can infer the real brew prefix first, then normalizes
     # to ``<install_root>/bin`` for the shim/link refresh paths used by load().
     bin_dir: Path | None = None
+
+    @model_validator(mode="after")
+    def add_formula_aliases(self) -> Self:
+        self.overrides["cargo"] = {
+            **self.overrides.get("cargo", {}),
+            "install_args": ["rust"],
+        }
+        self.overrides["gem"] = {
+            **self.overrides.get("gem", {}),
+            "install_args": ["ruby"],
+        }
+        return self
 
     @computed_field
     @property

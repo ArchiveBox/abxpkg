@@ -1690,6 +1690,40 @@ def test_build_binary_uses_installer_provider_preferences_for_default_provider_s
     ] == expected_provider_names
 
 
+@pytest.mark.parametrize(
+    ("binary_name", "expected_overrides"),
+    [
+        ("cargo", {"brew": {"install_args": ["rust"]}}),
+        (
+            "gem",
+            {
+                "apt": {"install_args": ["ruby"]},
+                "brew": {"install_args": ["ruby"]},
+            },
+        ),
+    ],
+)
+def test_build_binary_merges_provider_aliases_for_installer_binaries(
+    tmp_path,
+    binary_name,
+    expected_overrides,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=list(cli_module.DEFAULT_PROVIDER_NAMES),
+        dry_run=False,
+        debug=False,
+        no_cache=False,
+    )
+
+    binary = cli_module.build_binary(binary_name, options, dry_run=False)
+
+    for provider_name, expected_override in expected_overrides.items():
+        if provider_name not in cli_module.DEFAULT_PROVIDER_NAMES:
+            continue
+        assert binary.overrides[provider_name] == expected_override
+
+
 def test_build_binary_preserves_explicit_provider_order_for_installer_binaries(
     tmp_path,
 ):

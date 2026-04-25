@@ -30,8 +30,8 @@ class CargoProvider(BinProvider):
     INSTALLER_BIN: BinName = "cargo"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
         "env",
-        "apt",
         "brew",
+        "apt",
         "nix",
     )
 
