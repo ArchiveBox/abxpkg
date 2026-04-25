@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from pydantic import Field, model_validator, computed_field
-from typing import Self
+from typing import Self, cast
 
 from .base_types import (
     BinProviderName,
@@ -16,11 +16,12 @@ from .base_types import (
     abxpkg_install_root_default,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, log_method_call, remap_kwargs
+from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
 from .logging import format_subprocess_output
 
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
+MIN_CARGO_INSTALLER_VERSION = cast(SemVer, SemVer.parse("1.85.0"))
 
 
 class CargoProvider(BinProvider):
@@ -76,6 +77,64 @@ class CargoProvider(BinProvider):
             cargo_bin_dirs.insert(0, install_root / "bin")
         self.PATH = self._merge_PATH(*cargo_bin_dirs, PATH=self.PATH, prepend=True)
         super().setup_PATH(no_cache=no_cache)
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        from . import Binary, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+
+        cached_installer = self._INSTALLER_BINARY
+        if not no_cache and cached_installer and cached_installer.is_valid:
+            cached_version = cached_installer.loaded_version
+            if (
+                cached_version is not None
+                and cached_version >= MIN_CARGO_INSTALLER_VERSION
+            ):
+                return cached_installer
+
+        loaded = None
+        try:
+            loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        except Exception:
+            loaded = None
+
+        if loaded and loaded.loaded_abspath:
+            loaded_version = loaded.loaded_version
+            if (
+                loaded_version is not None
+                and loaded_version >= MIN_CARGO_INSTALLER_VERSION
+            ):
+                self._INSTALLER_BINARY = loaded
+                return loaded
+
+        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        selected_provider_names = (
+            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
+            if raw_provider_names
+            else list(DEFAULT_PROVIDER_NAMES)
+        )
+        env_provider = EnvProvider(install_root=None, bin_dir=None)
+        installer_providers: list[BinProvider] = [
+            env_provider
+            if provider_name == "env"
+            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            for provider_name in selected_provider_names
+            if provider_name
+            and provider_name in PROVIDER_CLASS_BY_NAME
+            and provider_name != self.name
+        ]
+        if not installer_providers:
+            installer_providers = [env_provider]
+
+        upgraded = Binary(
+            name=self.INSTALLER_BIN,
+            min_version=MIN_CARGO_INSTALLER_VERSION,
+            binproviders=installer_providers,
+        ).install(no_cache=no_cache)
+        if upgraded and upgraded.loaded_abspath:
+            self._INSTALLER_BINARY = upgraded
+            return upgraded
+
+        assert loaded is not None
+        return loaded
 
     @log_method_call()
     def setup(

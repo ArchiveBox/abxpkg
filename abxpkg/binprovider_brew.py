@@ -307,9 +307,27 @@ class BrewProvider(BinProvider):
             ],
             timeout=timeout,
         )
+        proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        if (
+            proc.returncode != 0
+            and "The `brew link` step did not complete successfully" in proc_output
+        ):
+            for package in dict.fromkeys(
+                arg
+                for arg in install_args
+                if isinstance(arg, str) and not arg.startswith("-")
+            ):
+                link_proc = self.exec(
+                    bin_name=installer_bin,
+                    cmd=["link", "--overwrite", package],
+                    timeout=timeout,
+                )
+                if link_proc.returncode != 0:
+                    self._raise_proc_error("install", install_args, link_proc)
+            return proc_output
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
-        return format_subprocess_output(proc.stdout, proc.stderr)
+        return proc_output
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(

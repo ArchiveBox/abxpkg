@@ -220,6 +220,20 @@ class NixProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+        }
+        nix_config = env.get("NIX_CONFIG", "").rstrip()
+        env["NIX_CONFIG"] = "\n".join(
+            line
+            for line in (
+                nix_config,
+                "access-tokens = github.com=",
+            )
+            if line
+        )
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -234,6 +248,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 *install_args,
             ],
+            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -258,6 +273,20 @@ class NixProvider(BinProvider):
         )
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+        }
+        nix_config = env.get("NIX_CONFIG", "").rstrip()
+        env["NIX_CONFIG"] = "\n".join(
+            line
+            for line in (
+                nix_config,
+                "access-tokens = github.com=",
+            )
+            if line
+        )
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -272,6 +301,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
+            env=env,
             timeout=timeout,
         )
         if proc.returncode != 0:
@@ -296,6 +326,20 @@ class NixProvider(BinProvider):
         )
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+        }
+        nix_config = env.get("NIX_CONFIG", "").rstrip()
+        env["NIX_CONFIG"] = "\n".join(
+            line
+            for line in (
+                nix_config,
+                "access-tokens = github.com=",
+            )
+            if line
+        )
 
         proc = self.exec(
             bin_name=installer_bin,
@@ -310,6 +354,7 @@ class NixProvider(BinProvider):
                 str(self.install_root),
                 profile_element,
             ],
+            env=env,
             timeout=timeout,
         )
         if proc.returncode not in (0, 1):

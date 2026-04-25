@@ -93,7 +93,6 @@ class TestMachine:
                     str(_abxpkg_executable()),
                     "--lib=None",
                     "install",
-                    "--abspath",
                     tool_name,
                 ],
                 capture_output=True,
@@ -104,10 +103,7 @@ class TestMachine:
                     "TERM": "dumb",
                 },
             )
-            output_lines = [
-                line.strip() for line in proc.stdout.splitlines() if line.strip()
-            ]
-            tool_path = output_lines[-1] if output_lines else shutil.which(tool_name)
+            tool_path = shutil.which(tool_name)
             assert proc.returncode == 0 and tool_path, (
                 f"{tool_name} is required on this host for test-machine integration tests, "
                 f"and fallback install via abxpkg failed.\n"
