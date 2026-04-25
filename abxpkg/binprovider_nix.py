@@ -34,6 +34,9 @@ logger = get_logger(__name__)
 # ``ABXPKG_NIX_ROOT`` nor ``ABXPKG_LIB_DIR`` is set.
 DEFAULT_NIX_PROFILE = Path("~/.nix-profile").expanduser()
 DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
+# Use a stable per-user private store so ``nix profile`` does not
+# depend on a working system daemon on CI or single-user hosts.
+DEFAULT_PRIVATE_NIX_STORE = Path("~/.local/share/nix/root").expanduser()
 
 
 class NixProvider(BinProvider):
@@ -223,7 +226,7 @@ class NixProvider(BinProvider):
         env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN", "NIX_REMOTE"}
         }
         nix_config = env.get("NIX_CONFIG", "").rstrip()
         env["NIX_CONFIG"] = "\n".join(
@@ -238,6 +241,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--store",
+                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
@@ -278,7 +283,7 @@ class NixProvider(BinProvider):
         env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN", "NIX_REMOTE"}
         }
         nix_config = env.get("NIX_CONFIG", "").rstrip()
         env["NIX_CONFIG"] = "\n".join(
@@ -293,6 +298,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--store",
+                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
@@ -333,7 +340,7 @@ class NixProvider(BinProvider):
         env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"GH_TOKEN", "GITHUB_TOKEN"}
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN", "NIX_REMOTE"}
         }
         nix_config = env.get("NIX_CONFIG", "").rstrip()
         env["NIX_CONFIG"] = "\n".join(
@@ -348,6 +355,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--store",
+                str(DEFAULT_PRIVATE_NIX_STORE),
                 "--access-tokens",
                 "",
                 "profile",
