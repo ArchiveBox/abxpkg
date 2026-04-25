@@ -238,6 +238,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--access-tokens",
+                "",
                 "profile",
                 "add",
                 "--extra-experimental-features",
@@ -291,6 +293,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--access-tokens",
+                "",
                 "profile",
                 "upgrade",
                 "--extra-experimental-features",
@@ -344,6 +348,8 @@ class NixProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                "--access-tokens",
+                "",
                 "profile",
                 "remove",
                 "--extra-experimental-features",
