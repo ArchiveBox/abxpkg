@@ -18,7 +18,7 @@ class TestCargoProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "choose": {"install_args": ["choose", "--version", "1.3.0"]},
+                    "choose": {"install_args": ["choose", "--version", "1.3.6"]},
                 },
             )
 
@@ -26,7 +26,7 @@ class TestCargoProvider:
 
             test_machine.assert_shallow_binary_loaded(
                 installed,
-                expected_version=SemVer("1.3.0"),
+                expected_version=SemVer("1.3.6"),
             )
 
     def test_install_root_alias_installs_into_the_requested_root(self, test_machine):
@@ -73,12 +73,12 @@ class TestCargoProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "choose": {"install_args": ["choose", "--version", "1.3.0"]},
+                    "choose": {"install_args": ["choose", "--version", "1.3.6"]},
                 },
             )
             old_installed = old_provider.install("choose")
             assert old_installed is not None
-            assert old_installed.loaded_version == SemVer("1.3.0")
+            assert old_installed.loaded_version == SemVer("1.3.6")
 
             provider = CargoProvider(
                 install_root=cargo_root,
@@ -106,14 +106,14 @@ class TestCargoProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "choose": {"install_args": ["choose", "--version", "1.3.0"]},
+                    "choose": {"install_args": ["choose", "--version", "1.3.6"]},
                 },
             )
 
             installed = provider.install("choose")
             test_machine.assert_shallow_binary_loaded(
                 installed,
-                expected_version=SemVer("1.3.0"),
+                expected_version=SemVer("1.3.6"),
             )
 
             assert provider.uninstall("choose")
@@ -132,7 +132,7 @@ class TestCargoProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "choose": {"install_args": ["choose", "--version", "1.3.0"]},
+                    "choose": {"install_args": ["choose", "--version", "1.3.6"]},
                 },
             )
             ambient_installed = ambient_provider.install(
