@@ -1,0 +1,25 @@
+.github/workflows/tests.yml
+  3893da56052d59d0 201-208,436-443
+abxpkg/binprovider_nix.py
+  3893da56052d59d0 221-225,317-323,325-337,461,463-481,605-623,625
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4c061eb1c59fd2848d56ad579d0e105be0e0471a",
+  "prompts": {
+    "3893da56052d59d0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019dbe84-7944-7362-b50b-83ba29407f83",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Nick Sweeting",
+      "messages": [],
+      "total_additions": 81,
+      "total_deletions": 4,
+      "accepted_lines": 81,
+      "overriden_lines": 0
+    }
+  }
+}
