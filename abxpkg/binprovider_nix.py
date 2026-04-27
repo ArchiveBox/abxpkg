@@ -218,7 +218,11 @@ class NixProvider(BinProvider):
             or arg.startswith(("channel:", "http://", "https://", "github:", "path:"))
             for arg in cmd_install_args
         ):
-            cmd_install_args = ["-f", "channel:nixpkgs-unstable", *cmd_install_args]
+            cmd_install_args = [
+                "-f",
+                "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz",
+                *cmd_install_args,
+            ]
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         env = {
@@ -310,8 +314,27 @@ class NixProvider(BinProvider):
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
             )
             proc = self.exec(
                 bin_name=installer_bin,
@@ -435,8 +458,27 @@ class NixProvider(BinProvider):
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
             )
             proc = self.exec(
                 bin_name=installer_bin,
@@ -560,8 +602,27 @@ class NixProvider(BinProvider):
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "restart", "nix-daemon.socket"],
+                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=["systemctl", "start", "nix-daemon.service"],
+                timeout=timeout,
+                quiet=True,
             )
             proc = self.exec(
                 bin_name=installer_bin,
