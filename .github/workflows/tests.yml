@@ -202,11 +202,24 @@ jobs:
       uses: DeterminateSystems/nix-installer-action@v22
       with:
         planner: linux-multi
+        reinstall: true
         start-daemon: true
 
     - name: Install Nix
       if: runner.os != 'Linux'
       uses: DeterminateSystems/nix-installer-action@v22
+
+    - name: Ensure Nix daemon is running on Linux
+      if: runner.os == 'Linux'
+      run: |
+        sudo systemctl daemon-reload
+        sudo systemctl reset-failed nix-daemon.socket || true
+        sudo systemctl reset-failed nix-daemon.service || true
+        sudo systemctl start nix-daemon.socket
+        sudo systemctl start nix-daemon.service || true
+        sudo systemctl --no-pager --full status nix-daemon.socket
+        sudo systemctl --no-pager --full status nix-daemon.service || true
+        nix --version
 
     - name: Sanitize PATH after Nix install
       shell: bash
