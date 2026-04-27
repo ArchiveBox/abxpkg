@@ -296,9 +296,18 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        systemctl_bin = next(
+            (
+                str(path)
+                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
+                if path.is_file()
+            ),
+            None,
+        )
         if (
             proc.returncode != 0
             and os.uname().sysname == "Linux"
+            and systemctl_bin is not None
             and Path("/run/systemd/system").is_dir()
             and (
                 "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
@@ -309,30 +318,30 @@ class NixProvider(BinProvider):
         ):
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "daemon-reload"],
+                cmd=[systemctl_bin, "daemon-reload"],
                 timeout=timeout,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
-                timeout=timeout,
-                quiet=True,
-            )
-            self.exec(
-                bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.socket"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.service"],
+                cmd=[systemctl_bin, "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=[systemctl_bin, "start", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
@@ -440,9 +449,18 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        systemctl_bin = next(
+            (
+                str(path)
+                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
+                if path.is_file()
+            ),
+            None,
+        )
         if (
             proc.returncode != 0
             and os.uname().sysname == "Linux"
+            and systemctl_bin is not None
             and Path("/run/systemd/system").is_dir()
             and (
                 "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
@@ -453,30 +471,30 @@ class NixProvider(BinProvider):
         ):
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "daemon-reload"],
+                cmd=[systemctl_bin, "daemon-reload"],
                 timeout=timeout,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
-                timeout=timeout,
-                quiet=True,
-            )
-            self.exec(
-                bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.socket"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.service"],
+                cmd=[systemctl_bin, "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=[systemctl_bin, "start", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
@@ -584,9 +602,18 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
+        systemctl_bin = next(
+            (
+                str(path)
+                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
+                if path.is_file()
+            ),
+            None,
+        )
         if (
             proc.returncode not in (0, 1)
             and os.uname().sysname == "Linux"
+            and systemctl_bin is not None
             and Path("/run/systemd/system").is_dir()
             and (
                 "cannot connect to socket at '/nix/var/nix/daemon-socket/socket'"
@@ -597,30 +624,30 @@ class NixProvider(BinProvider):
         ):
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "daemon-reload"],
+                cmd=[systemctl_bin, "daemon-reload"],
                 timeout=timeout,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.socket"],
-                timeout=timeout,
-                quiet=True,
-            )
-            self.exec(
-                bin_name="sudo",
-                cmd=["systemctl", "reset-failed", "nix-daemon.service"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.socket"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.socket"],
+                cmd=[systemctl_bin, "reset-failed", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
             self.exec(
                 bin_name="sudo",
-                cmd=["systemctl", "start", "nix-daemon.service"],
+                cmd=[systemctl_bin, "start", "nix-daemon.socket"],
+                timeout=timeout,
+                quiet=True,
+            )
+            self.exec(
+                bin_name="sudo",
+                cmd=[systemctl_bin, "start", "nix-daemon.service"],
                 timeout=timeout,
                 quiet=True,
             )
