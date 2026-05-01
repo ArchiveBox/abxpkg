@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 __package__ = "abxpkg"
 
+import hashlib
 import os
+import platform
 import subprocess
 import urllib.request
 
@@ -24,7 +26,10 @@ from .logging import format_subprocess_output, get_logger
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 MIN_CARGO_INSTALLER_VERSION = cast(SemVer, SemVer.parse("1.85.0"))
-RUSTUP_INIT_URL = "https://sh.rustup.rs"
+# Canonical rust-lang.org distribution. Each ``rustup-init`` binary has a
+# sibling ``rustup-init.sha256`` file we use to verify the download — we
+# never run a ``curl sh.rustup.rs | sh``-style unverified installer.
+RUSTUP_DIST_BASE = "https://static.rust-lang.org/rustup/dist"
 logger = get_logger(__name__)
 
 
@@ -209,26 +214,92 @@ class CargoProvider(BinProvider):
             return False
         return bool(SemVer.parse(proc.stdout.strip() or proc.stderr.strip()))
 
+    @staticmethod
+    def _rustup_target_triple() -> str | None:
+        """Return the rust-lang.org target triple for the current host, or None.
+
+        Only the four targets we publish CI/dev support for are returned —
+        unknown hosts get None so the rustup fallback is skipped instead of
+        downloading a binary that doesn't match the host ABI.
+        """
+        machine = platform.machine().lower()
+        system = platform.system().lower()
+        arch = {
+            "x86_64": "x86_64",
+            "amd64": "x86_64",
+            "aarch64": "aarch64",
+            "arm64": "aarch64",
+        }.get(machine)
+        if arch is None:
+            return None
+        if system == "linux":
+            return f"{arch}-unknown-linux-gnu"
+        if system == "darwin":
+            return f"{arch}-apple-darwin"
+        return None
+
     def _install_via_rustup(self, no_cache: bool = False) -> Path | None:
-        """Bootstrap rust via rustup-init.sh into CARGO_HOME and return cargo's abspath.
+        """Bootstrap rust via the rustup-init binary into CARGO_HOME and return cargo's abspath.
 
         Used as a last-resort installer when no other BinProvider can produce
         a working ``cargo`` binary. Honors ``$CARGO_HOME`` when set and
         installs a minimal stable profile so this runs in 60-90s on CI.
+
+        The downloaded ``rustup-init`` binary is verified against the
+        ``rustup-init.sha256`` sidecar file published alongside it on
+        ``static.rust-lang.org`` BEFORE we exec it, so a tampered download
+        won't run.
         """
+        triple = self._rustup_target_triple()
+        if triple is None:
+            logger.warning(
+                "Unsupported host for rustup fallback: %s %s",
+                platform.system(),
+                platform.machine(),
+            )
+            return None
+
         cargo_home = DEFAULT_CARGO_HOME
         cargo_home.mkdir(parents=True, exist_ok=True)
-        rustup_init = cargo_home / "rustup-init.sh"
+        binary_url = f"{RUSTUP_DIST_BASE}/{triple}/rustup-init"
+        sha_url = f"{binary_url}.sha256"
         try:
-            with urllib.request.urlopen(RUSTUP_INIT_URL, timeout=30) as response:
-                rustup_init.write_bytes(response.read())
+            with urllib.request.urlopen(binary_url, timeout=60) as response:
+                binary_bytes = response.read()
+            with urllib.request.urlopen(sha_url, timeout=30) as response:
+                sha_text = response.read().decode("utf-8", errors="replace")
         except Exception as err:
             logger.warning(
                 "Failed to download rustup-init from %s: %s",
-                RUSTUP_INIT_URL,
+                binary_url,
                 err,
             )
             return None
+
+        # The sidecar is a single line: "<hex>  rustup-init". Take the first
+        # 64 hex chars and reject anything that isn't a clean SHA-256.
+        expected_sha = (sha_text.strip().split() or [""])[0].lower()
+        if len(expected_sha) != 64 or any(
+            ch not in "0123456789abcdef" for ch in expected_sha
+        ):
+            logger.warning(
+                "rustup-init.sha256 sidecar at %s is malformed: %r",
+                sha_url,
+                sha_text[:120],
+            )
+            return None
+
+        actual_sha = hashlib.sha256(binary_bytes).hexdigest()
+        if actual_sha != expected_sha:
+            logger.warning(
+                "rustup-init SHA-256 mismatch (got %s, expected %s) — refusing to run",
+                actual_sha,
+                expected_sha,
+            )
+            return None
+
+        rustup_init = cargo_home / "rustup-init"
+        rustup_init.write_bytes(binary_bytes)
         rustup_init.chmod(0o755)
 
         env = {
@@ -239,7 +310,6 @@ class CargoProvider(BinProvider):
         try:
             proc = subprocess.run(
                 [
-                    "sh",
                     str(rustup_init),
                     "-y",
                     "--no-modify-path",
