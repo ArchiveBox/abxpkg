@@ -106,7 +106,9 @@ class AptProvider(BinProvider):
             or ""
         ).lower()
         if distro_id in ("ubuntu", "debian"):
-            return distro_id, codename or ("noble" if distro_id == "ubuntu" else "stable")
+            return distro_id, codename or (
+                "noble" if distro_id == "ubuntu" else "stable"
+            )
         # default to ubuntu LTS for derivatives that don't set a codename
         return "ubuntu", codename or "noble"
 

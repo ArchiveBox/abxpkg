@@ -125,7 +125,10 @@ class DenoProvider(BinProvider):
             if arg.startswith("npm:"):
                 spec = arg[4:]
                 pkg = (
-                    "@" + spec[1:].split("/", 1)[0] + "/" + spec[1:].split("/", 1)[1].split("@", 1)[0]
+                    "@"
+                    + spec[1:].split("/", 1)[0]
+                    + "/"
+                    + spec[1:].split("/", 1)[1].split("@", 1)[0]
                     if spec.startswith("@") and "/" in spec
                     else spec.split("@", 1)[0]
                 )
@@ -134,7 +137,10 @@ class DenoProvider(BinProvider):
             if arg.startswith("jsr:"):
                 spec = arg[4:]
                 pkg = (
-                    "@" + spec[1:].split("/", 1)[0] + "/" + spec[1:].split("/", 1)[1].split("@", 1)[0]
+                    "@"
+                    + spec[1:].split("/", 1)[0]
+                    + "/"
+                    + spec[1:].split("/", 1)[1].split("@", 1)[0]
                     if spec.startswith("@") and "/" in spec
                     else spec.split("@", 1)[0]
                 )

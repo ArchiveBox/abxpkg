@@ -314,9 +314,7 @@ class TestBinProvider:
             PipProvider().get_docs_url("pip_search")
             == "https://pypi.org/project/pip_search"
         )
-        assert (
-            UvProvider().get_docs_url("black") == "https://pypi.org/project/black"
-        )
+        assert UvProvider().get_docs_url("black") == "https://pypi.org/project/black"
         assert (
             NpmProvider().get_docs_url("@puppeteer/browsers")
             == "https://www.npmjs.com/package/@puppeteer/browsers"
@@ -328,10 +326,12 @@ class TestBinProvider:
         assert binary.docs_url() == "https://pypi.org/project/pip_search"
 
         # Loaded ShallowBinary uses the provider it was loaded from.
-        loaded = ShallowBinary(
-            name="pip_search",
-            binprovider=PipProvider(),
-            version=SemVer.parse("3.2.1"),
-            abspath=sys.executable,
+        loaded = ShallowBinary.model_validate(
+            {
+                "name": "pip_search",
+                "binprovider": PipProvider(),
+                "version": SemVer.parse("3.2.1"),
+                "abspath": Path(sys.executable),
+            },
         )
         assert loaded.docs_url() == "https://pypi.org/project/pip_search"
