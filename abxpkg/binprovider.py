@@ -2064,15 +2064,6 @@ class BinProvider(BaseModel):
             return None
         return url or None
 
-    @log_method_call(include_result=True)
-    def docs_url(
-        self,
-        bin_name: BinName,
-        quiet: bool = True,
-        no_cache: bool = False,
-    ) -> str | None:
-        return self.get_docs_url(bin_name, quiet=quiet, no_cache=no_cache)
-
     @log_method_call()
     def setup(
         self,
