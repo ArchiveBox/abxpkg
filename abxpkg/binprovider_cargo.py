@@ -213,6 +213,16 @@ class CargoProvider(BinProvider):
             package_specs.append(arg)
         return package_specs or [bin_name]
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        return f"https://crates.io/crates/{package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

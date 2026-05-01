@@ -85,6 +85,43 @@ class AptProvider(BinProvider):
                 self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         super().setup_PATH(no_cache=no_cache)
 
+    @staticmethod
+    def _detect_distro_codename() -> tuple[str, str]:
+        """Return (distro_id, codename) parsed from /etc/os-release with fallbacks."""
+        os_release: dict[str, str] = {}
+        try:
+            with open("/etc/os-release", encoding="utf-8") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or "=" not in line or line.startswith("#"):
+                        continue
+                    key, _, value = line.partition("=")
+                    os_release[key] = value.strip().strip('"').strip("'")
+        except OSError:
+            pass
+        distro_id = (os_release.get("ID") or "").lower()
+        codename = (
+            os_release.get("VERSION_CODENAME")
+            or os_release.get("UBUNTU_CODENAME")
+            or ""
+        ).lower()
+        if distro_id in ("ubuntu", "debian"):
+            return distro_id, codename or ("noble" if distro_id == "ubuntu" else "stable")
+        # default to ubuntu LTS for derivatives that don't set a codename
+        return "ubuntu", codename or "noble"
+
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        distro, codename = self._detect_distro_codename()
+        host = "packages.debian.org" if distro == "debian" else "packages.ubuntu.com"
+        return f"https://{host}/{codename}/{package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

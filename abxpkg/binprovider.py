@@ -296,6 +296,37 @@ class ShallowBinary(BaseModel):
     def loaded_respath(self) -> HostBinPath | None:
         return self.loaded_abspath and self.loaded_abspath.resolve()
 
+    @log_method_call(include_result=True)
+    def docs_url(self, quiet: bool = True) -> str | None:
+        """Return a human-readable info/docs URL for this binary.
+
+        If this binary has been loaded via a specific provider, that provider
+        is asked first. Otherwise (and as a fallback) each candidate provider
+        in ``binproviders`` is tried in order until one returns a non-None URL.
+        """
+        if not self.name:
+            return None
+
+        tried: set[int] = set()
+        candidates: list["BinProvider"] = []
+        if self.loaded_binprovider is not None:
+            candidates.append(self.loaded_binprovider)
+        candidates.extend(self.binproviders)
+
+        for provider in candidates:
+            if id(provider) in tried:
+                continue
+            tried.add(id(provider))
+            try:
+                url = provider.get_docs_url(self.name, quiet=quiet)
+            except Exception:
+                if not quiet:
+                    raise
+                url = None
+            if url:
+                return url
+        return None
+
     # @validate_call
     @log_method_call(include_result=True)
     def exec(
@@ -384,6 +415,7 @@ class BinProvider(BaseModel):
                 "install": "self.default_install_handler",
                 "update": "self.default_update_handler",
                 "uninstall": "self.default_uninstall_handler",
+                "docs_url": "self.default_docs_url_handler",
             },
         },
         repr=False,
@@ -1228,6 +1260,62 @@ class BinProvider(BaseModel):
         # ... install command calculation logic here
         return [bin_name]
 
+    # @validate_call
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> "DocsUrlFuncReturnValue":  # aka str | None
+        """Subclasses override this to return a human-readable info URL for the package.
+
+        Providers that don't have a meaningful docs/info URL (env, bash, custom,
+        etc.) should leave this returning None so callers can fall back to the
+        next provider in the binproviders list.
+        """
+        return None
+
+    def _docs_url_package_name(
+        self,
+        bin_name: BinName,
+        *,
+        allow_leading_at: bool = False,
+    ) -> str | None:
+        """Pick a canonical package name from install_args for URL building.
+
+        Strips version specifiers (``==1.0``, ``>=2,<3``), extras (``foo[all]``),
+        and trailing ``@version`` suffixes (npm-style). Falls back to ``bin_name``
+        if install_args don't yield a usable candidate.
+        """
+        try:
+            install_args = self.get_install_args(bin_name, quiet=True)
+        except Exception:
+            install_args = [str(bin_name)]
+
+        candidates = list(install_args) or [str(bin_name)]
+        for arg in candidates:
+            if not arg or arg.startswith("-"):
+                continue
+            if "://" in arg or arg.startswith((".", "/", "~")):
+                continue
+            name = arg
+            if allow_leading_at and name.startswith("@"):
+                # npm scoped pkg: keep leading @, only trim version after '@' that
+                # appears after the scope/name boundary.
+                _, _, after_slash = name[1:].partition("/")
+                if "@" in after_slash:
+                    pkg, _, _ = after_slash.partition("@")
+                    name = "@" + name[1:].split("/", 1)[0] + "/" + pkg
+            else:
+                name = name.split("@", 1)[0] if "@" in name else name
+            name = name.split("[", 1)[0]
+            for sep in ("==", ">=", "<=", "!=", "~=", ">", "<", ";", " "):
+                if sep in name:
+                    name = name.split(sep, 1)[0]
+            name = name.strip()
+            if name:
+                return name
+        return str(bin_name) or None
+
     def default_packages_handler(
         self,
         bin_name: BinName,
@@ -1955,6 +2043,36 @@ class BinProvider(BaseModel):
     ) -> InstallArgs:
         return self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
 
+    @log_method_call(include_result=True)
+    def get_docs_url(
+        self,
+        bin_name: BinName,
+        quiet: bool = True,
+        no_cache: bool = False,
+    ) -> str | None:
+        try:
+            url = cast(
+                DocsUrlFuncReturnValue,
+                self._call_handler_for_action(
+                    bin_name=bin_name,
+                    handler_type="docs_url",
+                ),
+            )
+        except Exception:
+            if not quiet:
+                raise
+            return None
+        return url or None
+
+    @log_method_call(include_result=True)
+    def docs_url(
+        self,
+        bin_name: BinName,
+        quiet: bool = True,
+        no_cache: bool = False,
+    ) -> str | None:
+        return self.get_docs_url(bin_name, quiet=quiet, no_cache=no_cache)
+
     @log_method_call()
     def setup(
         self,
@@ -2529,6 +2647,7 @@ class EnvProvider(BinProvider):
             "install": "self.install_noop",
             "update": "self.update_noop",
             "uninstall": "self.uninstall_noop",
+            "docs_url": "self.default_docs_url_handler",
         },
         "python": {
             "abspath": "self.python_abspath_handler",
@@ -2874,12 +2993,14 @@ InstallArgsFuncReturnValue = list[str] | tuple[str, ...] | str | InstallArgs | N
 PackagesFuncReturnValue = InstallArgsFuncReturnValue
 InstallFuncReturnValue = str | None
 ActionFuncReturnValue = str | bool | None
+DocsUrlFuncReturnValue = str | None
 ProviderFuncReturnValue = (
     AbspathFuncReturnValue
     | VersionFuncReturnValue
     | InstallArgsFuncReturnValue
     | InstallFuncReturnValue
     | ActionFuncReturnValue
+    | DocsUrlFuncReturnValue
 )
 
 
@@ -2944,12 +3065,23 @@ class ActionFuncWithArgs(Protocol):
     ) -> "ActionFuncReturnValue": ...
 
 
+@runtime_checkable
+class DocsUrlFuncWithArgs(Protocol):
+    def __call__(
+        _self,
+        binprovider: "BinProvider",
+        bin_name: BinName,
+        **context,
+    ) -> "DocsUrlFuncReturnValue": ...
+
+
 AbspathFuncWithNoArgs = Callable[[], AbspathFuncReturnValue]
 VersionFuncWithNoArgs = Callable[[], VersionFuncReturnValue]
 InstallArgsFuncWithNoArgs = Callable[[], InstallArgsFuncReturnValue]
 PackagesFuncWithNoArgs = InstallArgsFuncWithNoArgs
 InstallFuncWithNoArgs = Callable[[], InstallFuncReturnValue]
 ActionFuncWithNoArgs = Callable[[], ActionFuncReturnValue]
+DocsUrlFuncWithNoArgs = Callable[[], DocsUrlFuncReturnValue]
 
 AbspathHandlerValue = (
     SelfMethodName
@@ -2979,6 +3111,12 @@ InstallHandlerValue = (
 ActionHandlerValue = (
     SelfMethodName | ActionFuncWithNoArgs | ActionFuncWithArgs | ActionFuncReturnValue
 )
+DocsUrlHandlerValue = (
+    SelfMethodName
+    | DocsUrlFuncWithNoArgs
+    | DocsUrlFuncWithArgs
+    | DocsUrlFuncReturnValue
+)
 
 HandlerType = Literal[
     "abspath",
@@ -2988,6 +3126,7 @@ HandlerType = Literal[
     "install",
     "update",
     "uninstall",
+    "docs_url",
 ]
 HandlerValue = (
     AbspathHandlerValue
@@ -2995,6 +3134,7 @@ HandlerValue = (
     | InstallArgsHandlerValue
     | InstallHandlerValue
     | ActionHandlerValue
+    | DocsUrlHandlerValue
 )
 HandlerReturnValue = (
     AbspathFuncReturnValue
@@ -3002,6 +3142,7 @@ HandlerReturnValue = (
     | InstallArgsFuncReturnValue
     | InstallFuncReturnValue
     | ActionFuncReturnValue
+    | DocsUrlFuncReturnValue
 )
 
 
@@ -3023,6 +3164,7 @@ class HandlerDict(TypedDict, total=False):
     install: InstallHandlerValue
     update: ActionHandlerValue
     uninstall: ActionHandlerValue
+    docs_url: DocsUrlHandlerValue
 
 
 # Binary.overrides map BinProviderName:ProviderFieldOrHandlerPatch

@@ -306,3 +306,32 @@ class TestBinProvider:
                 timeout=2,
                 quiet=True,
             )
+
+    def test_docs_url_returns_provider_specific_link_for_unloaded_binary(self):
+        from abxpkg import Binary, ShallowBinary
+
+        assert (
+            PipProvider().get_docs_url("pip_search")
+            == "https://pypi.org/project/pip_search"
+        )
+        assert (
+            UvProvider().get_docs_url("black") == "https://pypi.org/project/black"
+        )
+        assert (
+            NpmProvider().get_docs_url("@puppeteer/browsers")
+            == "https://www.npmjs.com/package/@puppeteer/browsers"
+        )
+        assert EnvProvider().get_docs_url("python") is None
+
+        # Binary that's not yet loaded falls back across binproviders.
+        binary = Binary(name="pip_search", binproviders=[EnvProvider(), PipProvider()])
+        assert binary.docs_url() == "https://pypi.org/project/pip_search"
+
+        # Loaded ShallowBinary uses the provider it was loaded from.
+        loaded = ShallowBinary(
+            name="pip_search",
+            binprovider=PipProvider(),
+            version=SemVer.parse("3.2.1"),
+            abspath=sys.executable,
+        )
+        assert loaded.docs_url() == "https://pypi.org/project/pip_search"

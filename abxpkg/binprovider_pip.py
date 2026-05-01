@@ -653,6 +653,16 @@ class PipProvider(BinProvider):
             cache_info["fingerprint_paths"].append(metadata_files[0])
         return cache_info
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._package_name_for_bin(bin_name) or str(bin_name)
+        if not package:
+            return None
+        return f"https://pypi.org/project/{package}"
+
     def default_version_handler(
         self,
         bin_name: BinName,

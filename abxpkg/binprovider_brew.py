@@ -268,6 +268,16 @@ class BrewProvider(BinProvider):
                 self.PATH = TypeAdapter(PATHStr).validate_python(bin_dirs)
         super().setup_PATH(no_cache=no_cache)
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        return f"https://formulae.brew.sh/formula/{package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

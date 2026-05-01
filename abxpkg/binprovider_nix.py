@@ -199,6 +199,19 @@ class NixProvider(BinProvider):
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         return [bin_name]
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        # Nix flake refs like "nixpkgs#foo" -> use the attr after #
+        if "#" in package:
+            package = package.split("#", 1)[-1].split("^", 1)[0]
+        return f"https://search.nixos.org/packages?show={package}&query={package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

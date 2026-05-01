@@ -92,6 +92,36 @@ class DockerProvider(BinProvider):
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         return [f"{bin_name}:latest"]
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        try:
+            install_args = self.get_install_args(str(bin_name), quiet=True)
+        except Exception:
+            install_args = [f"{bin_name}:latest"]
+        ref = next(
+            (str(arg) for arg in install_args if arg and not arg.startswith("-")),
+            f"{bin_name}:latest",
+        )
+        # strip digest and tag
+        image = ref.split("@", 1)[0]
+        if ":" in image.rsplit("/", 1)[-1]:
+            image = image.rsplit(":", 1)[0]
+        # Docker Hub conventions:
+        #   "redis"            -> Official image at /_/redis
+        #   "user/repo"        -> Community image at /r/user/repo
+        #   "ghcr.io/user/x"   -> Not Docker Hub; link to the registry's web UI
+        if "/" not in image:
+            return f"https://hub.docker.com/_/{image}"
+        first, _, rest = image.partition("/")
+        if "." in first or ":" in first:  # custom registry
+            if first == "ghcr.io":
+                return f"https://github.com/{rest}/pkgs/container/{rest.split('/')[-1]}"
+            return f"https://{first}/{rest}"
+        return f"https://hub.docker.com/r/{image}"
+
     @remap_kwargs({"packages": "install_args"})
     def _main_image_ref(
         self,

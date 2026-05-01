@@ -110,6 +110,43 @@ class DenoProvider(BinProvider):
             or [str(bin_name)],
         )
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        try:
+            install_args = self.get_install_args(str(bin_name), quiet=True)
+        except Exception:
+            install_args = [str(bin_name)]
+        for arg in install_args or [str(bin_name)]:
+            if not arg or arg.startswith("-"):
+                continue
+            if arg.startswith("npm:"):
+                spec = arg[4:]
+                pkg = (
+                    "@" + spec[1:].split("/", 1)[0] + "/" + spec[1:].split("/", 1)[1].split("@", 1)[0]
+                    if spec.startswith("@") and "/" in spec
+                    else spec.split("@", 1)[0]
+                )
+                if pkg:
+                    return f"https://www.npmjs.com/package/{pkg}"
+            if arg.startswith("jsr:"):
+                spec = arg[4:]
+                pkg = (
+                    "@" + spec[1:].split("/", 1)[0] + "/" + spec[1:].split("/", 1)[1].split("@", 1)[0]
+                    if spec.startswith("@") and "/" in spec
+                    else spec.split("@", 1)[0]
+                )
+                if pkg:
+                    return f"https://jsr.io/{pkg}"
+            if "://" in arg:
+                return arg
+            pkg = self._docs_url_package_name(bin_name)
+            if pkg:
+                return f"https://deno.land/x/{pkg}"
+        return None
+
     @computed_field
     @property
     def is_valid(self) -> bool:

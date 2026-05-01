@@ -194,6 +194,24 @@ class GoGetProvider(BinProvider):
             )
         return [f"{bin_name}@latest"]
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        try:
+            install_args = self.get_install_args(str(bin_name), quiet=True)
+        except Exception:
+            return None
+        for arg in install_args or []:
+            if not arg or arg.startswith("-"):
+                continue
+            module_path = str(arg).split("@", 1)[0]
+            if not module_path or "/" not in module_path:
+                continue
+            return f"https://pkg.go.dev/{module_path}"
+        return None
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
