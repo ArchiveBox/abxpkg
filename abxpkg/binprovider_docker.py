@@ -117,8 +117,6 @@ class DockerProvider(BinProvider):
             return f"https://hub.docker.com/_/{image}"
         first, _, rest = image.partition("/")
         if "." in first or ":" in first:  # custom registry
-            if first == "ghcr.io":
-                return f"https://github.com/{rest}/pkgs/container/{rest.split('/')[-1]}"
             return f"https://{first}/{rest}"
         return f"https://hub.docker.com/r/{image}"
 

@@ -110,6 +110,14 @@ class DenoProvider(BinProvider):
             or [str(bin_name)],
         )
 
+    @staticmethod
+    def _strip_registry_prefix_pkg(spec: str) -> str:
+        """Strip ``@version`` from an npm/jsr spec, preserving ``@scope/name``."""
+        if spec.startswith("@") and "/" in spec:
+            scope, _, after = spec[1:].partition("/")
+            return "@" + scope + "/" + after.split("@", 1)[0]
+        return spec.split("@", 1)[0]
+
     def default_docs_url_handler(
         self,
         bin_name: BinName,
@@ -119,38 +127,24 @@ class DenoProvider(BinProvider):
             install_args = self.get_install_args(str(bin_name), quiet=True)
         except Exception:
             install_args = [str(bin_name)]
+        # Prefer explicit registry-prefixed specs first, then any URL, and
+        # only fall back to deno.land/x if no specific target was given.
         for arg in install_args or [str(bin_name)]:
             if not arg or arg.startswith("-"):
                 continue
             if arg.startswith("npm:"):
-                spec = arg[4:]
-                pkg = (
-                    "@"
-                    + spec[1:].split("/", 1)[0]
-                    + "/"
-                    + spec[1:].split("/", 1)[1].split("@", 1)[0]
-                    if spec.startswith("@") and "/" in spec
-                    else spec.split("@", 1)[0]
-                )
+                pkg = self._strip_registry_prefix_pkg(arg[4:])
                 if pkg:
                     return f"https://www.npmjs.com/package/{pkg}"
-            if arg.startswith("jsr:"):
-                spec = arg[4:]
-                pkg = (
-                    "@"
-                    + spec[1:].split("/", 1)[0]
-                    + "/"
-                    + spec[1:].split("/", 1)[1].split("@", 1)[0]
-                    if spec.startswith("@") and "/" in spec
-                    else spec.split("@", 1)[0]
-                )
+            elif arg.startswith("jsr:"):
+                pkg = self._strip_registry_prefix_pkg(arg[4:])
                 if pkg:
                     return f"https://jsr.io/{pkg}"
-            if "://" in arg:
+            elif "://" in arg:
                 return arg
-            pkg = self._docs_url_package_name(bin_name)
-            if pkg:
-                return f"https://deno.land/x/{pkg}"
+        fallback = self._docs_url_package_name(bin_name)
+        if fallback:
+            return f"https://deno.land/x/{fallback}"
         return None
 
     @computed_field

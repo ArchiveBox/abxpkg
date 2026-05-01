@@ -64,6 +64,7 @@ class ChromeWebstoreProvider(BinProvider):
             "install": "self.chromewebstore_install_handler",
             "update": "self.chromewebstore_install_handler",
             "uninstall": "self.chromewebstore_uninstall_handler",
+            "docs_url": "self.default_docs_url_handler",
         },
     }
 
