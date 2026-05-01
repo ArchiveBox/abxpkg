@@ -120,6 +120,26 @@ class ChromeWebstoreProvider(BinProvider):
         """Default to ``<webstore_id> --name=<bin_name>`` install args for extensions."""
         return [bin_name, f"--name={bin_name}"]
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        # Prefer the cached webstore_id if we have one (set after install);
+        # otherwise fall back to install_args[0], which is the configured id.
+        cached = self._cached_extension(str(bin_name))
+        webstore_id = str(cached.get("webstore_id") or "").strip()
+        if not webstore_id:
+            try:
+                install_args = list(self.get_install_args(bin_name, quiet=True))
+            except Exception:
+                install_args = []
+            if install_args:
+                webstore_id = str(install_args[0]).strip()
+        if not webstore_id:
+            return None
+        return f"https://chromewebstore.google.com/detail/{webstore_id}"
+
     def _cached_extension(self, bin_name: str) -> dict[str, Any]:
         """Load the persisted extension metadata JSON for a cached extension, if any."""
         bin_dir = self.bin_dir

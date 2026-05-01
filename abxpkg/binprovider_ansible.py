@@ -357,6 +357,23 @@ class AnsibleProvider(BinProvider):
         """Return provider-specific kwargs to splice into the ansible module block."""
         return {}
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        # ansible.builtin.package uses the host's underlying package manager,
+        # so route docs URLs the same way AptProvider does (Ubuntu/Debian/...
+        # detected from /etc/os-release, with a sensible default fallback).
+        from .binprovider_apt import AptProvider
+
+        distro, codename = AptProvider._detect_distro_codename()
+        host = "packages.debian.org" if distro == "debian" else "packages.ubuntu.com"
+        return f"https://{host}/{codename}/{package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
