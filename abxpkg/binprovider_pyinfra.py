@@ -288,11 +288,32 @@ class PyinfraProvider(BinProvider):
         if not package:
             return None
         # pyinfra auto-routes to brew on macOS and apt on Debian/Ubuntu; only
-        # emit URLs for hosts we recognize and return None for everything else
-        # so callers can fall back to the next provider.
-        from .binprovider_apt import AptProvider
-
-        return AptProvider.os_package_docs_url(package)
+        # emit URLs for hosts we recognize and return None for everything
+        # else so callers can fall back to the next provider.
+        if OPERATING_SYSTEM == "darwin":
+            return f"https://formulae.brew.sh/formula/{package}"
+        distro_id, codename = "", ""
+        try:
+            with open("/etc/os-release", encoding="utf-8") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or "=" not in line or line.startswith("#"):
+                        continue
+                    key, _, value = line.partition("=")
+                    value = value.strip().strip('"').strip("'")
+                    if key == "ID":
+                        distro_id = value.lower()
+                    elif (
+                        key in ("VERSION_CODENAME", "UBUNTU_CODENAME") and not codename
+                    ):
+                        codename = value.lower()
+        except OSError:
+            return None
+        if distro_id == "ubuntu":
+            return f"https://packages.ubuntu.com/{codename or 'noble'}/{package}"
+        if distro_id == "debian":
+            return f"https://packages.debian.org/{codename or 'stable'}/{package}"
+        return None
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

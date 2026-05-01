@@ -9,7 +9,7 @@ from typing import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
-from .binprovider import BinProvider, EnvProvider, OPERATING_SYSTEM, remap_kwargs
+from .binprovider import BinProvider, EnvProvider, remap_kwargs
 from .logging import format_subprocess_output
 
 _LAST_UPDATE_CHECK = None
@@ -86,8 +86,8 @@ class AptProvider(BinProvider):
         super().setup_PATH(no_cache=no_cache)
 
     @staticmethod
-    def _read_os_release() -> tuple[str, str]:
-        """Return raw (distro_id, codename) parsed from /etc/os-release ('' if missing)."""
+    def _detect_distro_codename() -> tuple[str, str]:
+        """Return (distro_id, codename) parsed from /etc/os-release with apt fallbacks."""
         os_release: dict[str, str] = {}
         try:
             with open("/etc/os-release", encoding="utf-8") as fh:
@@ -105,39 +105,12 @@ class AptProvider(BinProvider):
             or os_release.get("UBUNTU_CODENAME")
             or ""
         ).lower()
-        return distro_id, codename
-
-    @staticmethod
-    def _detect_distro_codename() -> tuple[str, str]:
-        """Return (distro_id, codename) for apt usage, defaulting to ubuntu/noble."""
-        distro_id, codename = AptProvider._read_os_release()
         if distro_id in ("ubuntu", "debian"):
             return distro_id, codename or (
                 "noble" if distro_id == "ubuntu" else "stable"
             )
         # apt is debian-derived; fall back to ubuntu LTS for derivatives.
         return "ubuntu", codename or "noble"
-
-    @staticmethod
-    def os_package_docs_url(package: str) -> str | None:
-        """Return a docs URL for an OS-level package, or None if the host isn't recognized.
-
-        Used by meta-installers (ansible, pyinfra) that drive whatever package
-        manager the host happens to have. Only returns a URL when we can
-        confidently route it (Homebrew on macOS, packages.ubuntu.com /
-        packages.debian.org on Ubuntu/Debian); other hosts get None so the
-        caller can fall back to the next provider.
-        """
-        if not package:
-            return None
-        if OPERATING_SYSTEM == "darwin":
-            return f"https://formulae.brew.sh/formula/{package}"
-        distro_id, codename = AptProvider._read_os_release()
-        if distro_id == "ubuntu":
-            return f"https://packages.ubuntu.com/{codename or 'noble'}/{package}"
-        if distro_id == "debian":
-            return f"https://packages.debian.org/{codename or 'stable'}/{package}"
-        return None
 
     def default_docs_url_handler(
         self,
