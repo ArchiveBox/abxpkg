@@ -287,13 +287,12 @@ class PyinfraProvider(BinProvider):
         package = self._docs_url_package_name(bin_name)
         if not package:
             return None
-        # pyinfra auto-routes to the host's package manager (brew/apt/etc),
-        # so route docs URLs the same way AptProvider does.
+        # pyinfra auto-routes to brew on macOS and apt on Debian/Ubuntu; only
+        # emit URLs for hosts we recognize and return None for everything else
+        # so callers can fall back to the next provider.
         from .binprovider_apt import AptProvider
 
-        distro, codename = AptProvider._detect_distro_codename()
-        host = "packages.debian.org" if distro == "debian" else "packages.ubuntu.com"
-        return f"https://{host}/{codename}/{package}"
+        return AptProvider.os_package_docs_url(package)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

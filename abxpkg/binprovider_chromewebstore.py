@@ -120,24 +120,41 @@ class ChromeWebstoreProvider(BinProvider):
         """Default to ``<webstore_id> --name=<bin_name>`` install args for extensions."""
         return [bin_name, f"--name={bin_name}"]
 
+    @staticmethod
+    def _docs_url_name_slug(name: str) -> str:
+        """Slugify an extension name into the URL-safe form used by the Web Store."""
+        cleaned = "".join(ch.lower() if ch.isalnum() else "-" for ch in name.strip())
+        # collapse runs of hyphens and trim leading/trailing ones
+        while "--" in cleaned:
+            cleaned = cleaned.replace("--", "-")
+        return cleaned.strip("-")
+
     def default_docs_url_handler(
         self,
         bin_name: BinName,
         **context,
     ) -> str | None:
-        # Prefer the cached webstore_id if we have one (set after install);
-        # otherwise fall back to install_args[0], which is the configured id.
+        # Prefer the cached webstore_id/extension_name if we have them (set
+        # after install); otherwise fall back to install_args, which is the
+        # configured ``[<webstore_id>, --name=<extension_name>]`` pair.
         cached = self._cached_extension(str(bin_name))
-        webstore_id = str(cached.get("webstore_id") or "").strip()
-        if not webstore_id:
-            try:
-                install_args = list(self.get_install_args(bin_name, quiet=True))
-            except Exception:
-                install_args = []
-            if install_args:
-                webstore_id = str(install_args[0]).strip()
+        try:
+            install_args = list(self.get_install_args(bin_name, quiet=True))
+        except Exception:
+            install_args = []
+        webstore_id = str(
+            cached.get("webstore_id") or (install_args[0] if install_args else ""),
+        ).strip()
         if not webstore_id:
             return None
+        extension_name = str(
+            cached.get("name")
+            or cached.get("extension_name")
+            or self._extension_name(str(bin_name), install_args),
+        )
+        slug = self._docs_url_name_slug(extension_name)
+        if slug and slug != webstore_id:
+            return f"https://chromewebstore.google.com/detail/{slug}/{webstore_id}"
         return f"https://chromewebstore.google.com/detail/{webstore_id}"
 
     def _cached_extension(self, bin_name: str) -> dict[str, Any]:

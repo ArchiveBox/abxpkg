@@ -365,14 +365,13 @@ class AnsibleProvider(BinProvider):
         package = self._docs_url_package_name(bin_name)
         if not package:
             return None
-        # ansible.builtin.package uses the host's underlying package manager,
-        # so route docs URLs the same way AptProvider does (Ubuntu/Debian/...
-        # detected from /etc/os-release, with a sensible default fallback).
+        # ansible.builtin.package routes to whatever package manager the host
+        # actually has, so the docs URL has to follow. We only emit one for
+        # hosts we can confidently route (Homebrew on macOS, Ubuntu/Debian
+        # apt) — anything else returns None so the caller falls through.
         from .binprovider_apt import AptProvider
 
-        distro, codename = AptProvider._detect_distro_codename()
-        host = "packages.debian.org" if distro == "debian" else "packages.ubuntu.com"
-        return f"https://{host}/{codename}/{package}"
+        return AptProvider.os_package_docs_url(package)
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
