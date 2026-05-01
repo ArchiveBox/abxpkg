@@ -2,6 +2,8 @@
 __package__ = "abxpkg"
 
 import os
+import subprocess
+import urllib.request
 
 from pathlib import Path
 
@@ -17,11 +19,13 @@ from .base_types import (
 )
 from .semver import SemVer
 from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
-from .logging import format_subprocess_output
+from .logging import format_subprocess_output, get_logger
 
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 MIN_CARGO_INSTALLER_VERSION = cast(SemVer, SemVer.parse("1.85.0"))
+RUSTUP_INIT_URL = "https://sh.rustup.rs"
+logger = get_logger(__name__)
 
 
 class CargoProvider(BinProvider):
@@ -93,6 +97,7 @@ class CargoProvider(BinProvider):
             if (
                 cached_version is not None
                 and cached_version >= MIN_CARGO_INSTALLER_VERSION
+                and self._cargo_executes(cached_installer.loaded_abspath)
             ):
                 return cached_installer
 
@@ -107,9 +112,14 @@ class CargoProvider(BinProvider):
             if (
                 loaded_version is not None
                 and loaded_version >= MIN_CARGO_INSTALLER_VERSION
+                and self._cargo_executes(loaded.loaded_abspath)
             ):
                 self._INSTALLER_BINARY = loaded
                 return loaded
+            # Discovered binary doesn't actually run (e.g. linuxbrew's cargo
+            # missing libllhttp.so on a stale CI image). Drop it so the
+            # install path below kicks in instead of returning a broken bin.
+            loaded = None
 
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
@@ -137,17 +147,130 @@ class CargoProvider(BinProvider):
         if not installer_providers:
             installer_providers = [env_provider]
 
-        upgraded = Binary(
-            name=self.INSTALLER_BIN,
-            min_version=MIN_CARGO_INSTALLER_VERSION,
-            binproviders=installer_providers,
-        ).install(no_cache=no_cache)
-        if upgraded and upgraded.loaded_abspath:
+        try:
+            upgraded = Binary(
+                name=self.INSTALLER_BIN,
+                min_version=MIN_CARGO_INSTALLER_VERSION,
+                binproviders=installer_providers,
+            ).install(no_cache=no_cache)
+        except Exception:
+            upgraded = None
+        if (
+            upgraded
+            and upgraded.loaded_abspath
+            and self._cargo_executes(upgraded.loaded_abspath)
+        ):
             self._INSTALLER_BINARY = upgraded
             return upgraded
 
-        assert loaded is not None
-        return loaded
+        # Last-resort fallback: bootstrap a hermetic rust toolchain via the
+        # canonical rustup-init installer. This bypasses any broken/partial
+        # system rust installs (e.g. linuxbrew's cargo missing libllhttp.so
+        # on a stale CI image) and never depends on root/sudo.
+        rustup_cargo = self._install_via_rustup(no_cache=no_cache)
+        if rustup_cargo is not None:
+            rustup_loaded = EnvProvider(
+                install_root=None,
+                bin_dir=None,
+                PATH=str(rustup_cargo.parent),
+            ).load(self.INSTALLER_BIN, no_cache=no_cache)
+            if rustup_loaded and rustup_loaded.loaded_abspath:
+                self._INSTALLER_BINARY = rustup_loaded
+                return rustup_loaded
+
+        from .exceptions import BinProviderUnavailableError
+
+        raise BinProviderUnavailableError(
+            self.__class__.__name__,
+            self.INSTALLER_BIN,
+        )
+
+    def _cargo_executes(self, abspath) -> bool:
+        """Return True iff ``<abspath> --version`` exits cleanly with parseable output.
+
+        Guards against partially broken cargo installs where the binary exists
+        on PATH but won't actually run (e.g. brew's cargo dynamically linked
+        to a libllhttp that's been removed). The base BinProvider load() does
+        a version probe, but providers can persist cache entries that bypass
+        it; this is a final, no-cache executable check.
+        """
+        if abspath is None:
+            return False
+        try:
+            proc = subprocess.run(
+                [str(abspath), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=self.version_timeout,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if proc.returncode != 0:
+            return False
+        return bool(SemVer.parse(proc.stdout.strip() or proc.stderr.strip()))
+
+    def _install_via_rustup(self, no_cache: bool = False) -> Path | None:
+        """Bootstrap rust via rustup-init.sh into CARGO_HOME and return cargo's abspath.
+
+        Used as a last-resort installer when no other BinProvider can produce
+        a working ``cargo`` binary. Honors ``$CARGO_HOME`` when set and
+        installs a minimal stable profile so this runs in 60-90s on CI.
+        """
+        cargo_home = DEFAULT_CARGO_HOME
+        cargo_home.mkdir(parents=True, exist_ok=True)
+        rustup_init = cargo_home / "rustup-init.sh"
+        try:
+            with urllib.request.urlopen(RUSTUP_INIT_URL, timeout=30) as response:
+                rustup_init.write_bytes(response.read())
+        except Exception as err:
+            logger.warning(
+                "Failed to download rustup-init from %s: %s",
+                RUSTUP_INIT_URL,
+                err,
+            )
+            return None
+        rustup_init.chmod(0o755)
+
+        env = {
+            **os.environ,
+            "CARGO_HOME": str(cargo_home),
+            "RUSTUP_HOME": str(cargo_home / ".rustup"),
+        }
+        try:
+            proc = subprocess.run(
+                [
+                    "sh",
+                    str(rustup_init),
+                    "-y",
+                    "--no-modify-path",
+                    "--default-toolchain",
+                    "stable",
+                    "--profile",
+                    "minimal",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=max(self.install_timeout, 600),
+                env=env,
+            )
+        except (OSError, subprocess.SubprocessError) as err:
+            logger.warning("rustup-init failed to run: %s", err)
+            return None
+        finally:
+            rustup_init.unlink(missing_ok=True)
+
+        if proc.returncode != 0:
+            logger.warning(
+                "rustup-init exited with %s: %s",
+                proc.returncode,
+                format_subprocess_output(proc.stdout, proc.stderr),
+            )
+            return None
+
+        cargo_path = cargo_home / "bin" / "cargo"
+        if cargo_path.is_file() and self._cargo_executes(cargo_path):
+            return cargo_path
+        return None
 
     @log_method_call()
     def setup(
