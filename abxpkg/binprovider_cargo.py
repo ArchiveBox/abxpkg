@@ -339,10 +339,18 @@ class CargoProvider(BinProvider):
         rustup_init.write_bytes(binary_bytes)
         rustup_init.chmod(0o755)
 
+        # Use the standard layout (CARGO_HOME=~/.cargo, RUSTUP_HOME=~/.rustup)
+        # so the cargo proxy at ``$CARGO_HOME/bin/cargo`` can find its
+        # toolchains via the default ``RUSTUP_HOME`` lookup when subsequent
+        # invocations don't pass the env var. A non-standard
+        # ``RUSTUP_HOME=$CARGO_HOME/.rustup`` makes rustup-init succeed, but
+        # any later ``cargo --version`` without that override fails with
+        # "rustup could not choose a version of cargo to run".
+        rustup_home = Path(os.environ.get("RUSTUP_HOME") or "~/.rustup").expanduser()
         env = {
             **os.environ,
             "CARGO_HOME": str(cargo_home),
-            "RUSTUP_HOME": str(cargo_home / ".rustup"),
+            "RUSTUP_HOME": str(rustup_home),
         }
         try:
             proc = subprocess.run(
