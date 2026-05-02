@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 __package__ = "abxpkg"
 
-import hashlib
 import os
-import platform
 import subprocess
-import sys
-import urllib.request
 
 from pathlib import Path
 
@@ -22,31 +18,11 @@ from .base_types import (
 )
 from .semver import SemVer
 from .binprovider import BinProvider, EnvProvider, log_method_call, remap_kwargs
-from .logging import format_subprocess_output, get_logger
+from .logging import format_subprocess_output
 
 
 DEFAULT_CARGO_HOME = Path(os.environ.get("CARGO_HOME", "~/.cargo")).expanduser()
 MIN_CARGO_INSTALLER_VERSION = cast(SemVer, SemVer.parse("1.85.0"))
-# Canonical rust-lang.org distribution. Each ``rustup-init`` binary has a
-# sibling ``rustup-init.sha256`` file we use to verify the download — we
-# never run a ``curl sh.rustup.rs | sh``-style unverified installer.
-RUSTUP_DIST_BASE = "https://static.rust-lang.org/rustup/dist"
-logger = get_logger(__name__)
-
-
-def _rustup_warn(message: str, *args) -> None:
-    """Emit a rustup-fallback diagnostic that survives subprocess contexts.
-
-    abxpkg's parent logger has a NullHandler attached, which swallows
-    warnings before they reach the root logger — fine for normal use,
-    but it hides the rustup-init bootstrap diagnostics from subprocess
-    callers (e.g. ``test_central_lib_dir``'s install script) that don't
-    configure handlers themselves. Mirror to stderr so the install
-    chain's failure mode is observable in any context.
-    """
-    formatted = (message % args) if args else message
-    logger.warning("%s", formatted)
-    print(f"[abxpkg.cargo] {formatted}", file=sys.stderr, flush=True)
 
 
 class CargoProvider(BinProvider):
@@ -184,33 +160,6 @@ class CargoProvider(BinProvider):
             self._INSTALLER_BINARY = upgraded
             return upgraded
 
-        # Last-resort fallback: bootstrap a hermetic rust toolchain via the
-        # canonical rustup-init installer. This bypasses any broken/partial
-        # system rust installs (e.g. linuxbrew's cargo missing libllhttp.so
-        # on a stale CI image) and never depends on root/sudo.
-        _rustup_warn(
-            "%s: no working cargo from env/brew/apt/nix; falling back to rustup-init",
-            self.__class__.__name__,
-        )
-        try:
-            rustup_cargo = self._install_via_rustup(no_cache=no_cache)
-        except Exception as err:
-            _rustup_warn(
-                "%s: rustup-init fallback raised %r",
-                self.__class__.__name__,
-                err,
-            )
-            rustup_cargo = None
-        if rustup_cargo is not None:
-            rustup_loaded = EnvProvider(
-                install_root=None,
-                bin_dir=None,
-                PATH=str(rustup_cargo.parent),
-            ).load(self.INSTALLER_BIN, no_cache=no_cache)
-            if rustup_loaded and rustup_loaded.loaded_abspath:
-                self._INSTALLER_BINARY = rustup_loaded
-                return rustup_loaded
-
         from .exceptions import BinProviderUnavailableError
 
         raise BinProviderUnavailableError(
@@ -241,221 +190,6 @@ class CargoProvider(BinProvider):
         if proc.returncode != 0:
             return False
         return bool(SemVer.parse(proc.stdout.strip() or proc.stderr.strip()))
-
-    @staticmethod
-    def _rustup_target_triple() -> str | None:
-        """Return the rust-lang.org target triple for the current host, or None.
-
-        Only the four targets we publish CI/dev support for are returned —
-        unknown hosts get None so the rustup fallback is skipped instead of
-        downloading a binary that doesn't match the host ABI.
-        """
-        machine = platform.machine().lower()
-        system = platform.system().lower()
-        arch = {
-            "x86_64": "x86_64",
-            "amd64": "x86_64",
-            "aarch64": "aarch64",
-            "arm64": "aarch64",
-        }.get(machine)
-        if arch is None:
-            return None
-        if system == "linux":
-            return f"{arch}-unknown-linux-gnu"
-        if system == "darwin":
-            return f"{arch}-apple-darwin"
-        return None
-
-    def _install_via_rustup(self, no_cache: bool = False) -> Path | None:
-        """Bootstrap rust via the rustup-init binary into CARGO_HOME and return cargo's abspath.
-
-        Used as a last-resort installer when no other BinProvider can produce
-        a working ``cargo`` binary. Honors ``$CARGO_HOME`` when set and
-        installs a minimal stable profile so this runs in 60-90s on CI.
-
-        The downloaded ``rustup-init`` binary is verified against the
-        ``rustup-init.sha256`` sidecar file published alongside it on
-        ``static.rust-lang.org`` BEFORE we exec it, so a tampered download
-        won't run.
-        """
-        triple = self._rustup_target_triple()
-        if triple is None:
-            _rustup_warn(
-                "Unsupported host for rustup fallback: %s %s",
-                platform.system(),
-                platform.machine(),
-            )
-            return None
-
-        cargo_home = DEFAULT_CARGO_HOME
-        try:
-            cargo_home.mkdir(parents=True, exist_ok=True)
-        except OSError as err:
-            _rustup_warn("rustup fallback: cannot create %s: %s", cargo_home, err)
-            return None
-
-        binary_url = f"{RUSTUP_DIST_BASE}/{triple}/rustup-init"
-        sha_url = f"{binary_url}.sha256"
-        _rustup_warn(
-            "rustup fallback: downloading verified rustup-init from %s",
-            binary_url,
-        )
-        try:
-            with urllib.request.urlopen(binary_url, timeout=60) as response:
-                binary_bytes = response.read()
-            with urllib.request.urlopen(sha_url, timeout=30) as response:
-                sha_text = response.read().decode("utf-8", errors="replace")
-        except Exception as err:
-            _rustup_warn(
-                "Failed to download rustup-init from %s: %s",
-                binary_url,
-                err,
-            )
-            return None
-
-        # The sidecar is a single line: "<hex>  rustup-init". Take the first
-        # 64 hex chars and reject anything that isn't a clean SHA-256.
-        expected_sha = (sha_text.strip().split() or [""])[0].lower()
-        if len(expected_sha) != 64 or any(
-            ch not in "0123456789abcdef" for ch in expected_sha
-        ):
-            _rustup_warn(
-                "rustup-init.sha256 sidecar at %s is malformed: %r",
-                sha_url,
-                sha_text[:120],
-            )
-            return None
-
-        actual_sha = hashlib.sha256(binary_bytes).hexdigest()
-        if actual_sha != expected_sha:
-            _rustup_warn(
-                "rustup-init SHA-256 mismatch (got %s, expected %s) — refusing to run",
-                actual_sha,
-                expected_sha,
-            )
-            return None
-
-        rustup_init = cargo_home / "rustup-init"
-        rustup_init.write_bytes(binary_bytes)
-        rustup_init.chmod(0o755)
-
-        # Use the standard layout (CARGO_HOME=~/.cargo, RUSTUP_HOME=~/.rustup)
-        # so the cargo proxy at ``$CARGO_HOME/bin/cargo`` can find its
-        # toolchains via the default ``RUSTUP_HOME`` lookup when subsequent
-        # invocations don't pass the env var. A non-standard
-        # ``RUSTUP_HOME=$CARGO_HOME/.rustup`` makes rustup-init succeed, but
-        # any later ``cargo --version`` without that override fails with
-        # "rustup could not choose a version of cargo to run".
-        rustup_home = Path(os.environ.get("RUSTUP_HOME") or "~/.rustup").expanduser()
-        env = {
-            **os.environ,
-            "CARGO_HOME": str(cargo_home),
-            "RUSTUP_HOME": str(rustup_home),
-        }
-        try:
-            proc = subprocess.run(
-                [
-                    str(rustup_init),
-                    "-y",
-                    "--no-modify-path",
-                    "--default-toolchain",
-                    "stable",
-                    "--profile",
-                    "minimal",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=max(self.install_timeout, 600),
-                env=env,
-            )
-        except (OSError, subprocess.SubprocessError) as err:
-            _rustup_warn("rustup-init failed to run: %s", err)
-            return None
-        finally:
-            rustup_init.unlink(missing_ok=True)
-
-        if proc.returncode != 0:
-            _rustup_warn(
-                "rustup-init exited with %s: %s",
-                proc.returncode,
-                format_subprocess_output(proc.stdout, proc.stderr),
-            )
-            return None
-
-        # When ``$CARGO_HOME``/``$RUSTUP_HOME`` already contained a
-        # rustup proxy from a prior partial install, rustup-init exits
-        # 0 without installing the toolchain or setting a default —
-        # leaving ``cargo --version`` failing with "rustup could not
-        # choose a version of cargo to run". Force-install the stable
-        # toolchain and set it as default so the proxy has a target.
-        rustup_path = cargo_home / "bin" / "rustup"
-        if rustup_path.is_file():
-            for cmd in (
-                [
-                    str(rustup_path),
-                    "toolchain",
-                    "install",
-                    "stable",
-                    "--profile",
-                    "minimal",
-                ],
-                [str(rustup_path), "default", "stable"],
-            ):
-                try:
-                    fixup = subprocess.run(
-                        cmd,
-                        capture_output=True,
-                        text=True,
-                        timeout=max(self.install_timeout, 600),
-                        env=env,
-                    )
-                except (OSError, subprocess.SubprocessError) as err:
-                    _rustup_warn("rustup fixup %s failed to run: %s", cmd, err)
-                    return None
-                if fixup.returncode != 0:
-                    _rustup_warn(
-                        "rustup fixup %s exited with %s: %s",
-                        cmd,
-                        fixup.returncode,
-                        format_subprocess_output(fixup.stdout, fixup.stderr),
-                    )
-                    return None
-
-        cargo_path = cargo_home / "bin" / "cargo"
-        if not cargo_path.is_file():
-            _rustup_warn(
-                "rustup-init exited 0 but %s was not produced; output=%s",
-                cargo_path,
-                format_subprocess_output(proc.stdout, proc.stderr),
-            )
-            return None
-        if not self._cargo_executes(cargo_path):
-            try:
-                version_proc = subprocess.run(
-                    [str(cargo_path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=self.version_timeout,
-                )
-                version_output = format_subprocess_output(
-                    version_proc.stdout,
-                    version_proc.stderr,
-                )
-                version_rc = version_proc.returncode
-            except Exception as err:
-                version_output = f"<exec failed: {err!r}>"
-                version_rc = "?"
-            _rustup_warn(
-                "rustup-init produced %s but it does not run cleanly "
-                "(rc=%s, output=%s); rustup-init log was: %s",
-                cargo_path,
-                version_rc,
-                version_output,
-                format_subprocess_output(proc.stdout, proc.stderr),
-            )
-            return None
-        _rustup_warn("rustup-init successfully bootstrapped %s", cargo_path)
-        return cargo_path
 
     @log_method_call()
     def setup(

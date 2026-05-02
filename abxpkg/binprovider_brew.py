@@ -2,6 +2,7 @@
 __package__ = "abxpkg"
 
 import os
+import subprocess
 import sys
 import time
 import platform
@@ -350,7 +351,64 @@ class BrewProvider(BinProvider):
             return proc_output
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
+
+        # If brew said "already installed" but the resulting binary doesn't
+        # actually run (e.g. an upstream uninstall removed a shared library
+        # the formula was linked against — happens on stale CI runners
+        # where ``brew install rust`` is a no-op even though
+        # ``cargo --version`` exits 127 with "libllhttp.so not found"),
+        # automatically ``brew reinstall`` to relink against the current
+        # set of dependencies. Only run the reinstall when both signals
+        # match so a healthy already-installed package is just a fast path.
+        if (
+            "already installed" in proc_output.lower()
+            and not self._installed_binary_executes(bin_name)
+        ):
+            for package in dict.fromkeys(
+                arg
+                for arg in install_args
+                if isinstance(arg, str) and not arg.startswith("-")
+            ):
+                reinstall_proc = self.exec(
+                    bin_name=installer_bin,
+                    cmd=["reinstall", package],
+                    timeout=timeout,
+                )
+                if reinstall_proc.returncode != 0:
+                    self._raise_proc_error(
+                        "install",
+                        install_args,
+                        reinstall_proc,
+                    )
         return proc_output
+
+    def _installed_binary_executes(self, bin_name: str) -> bool:
+        """Return True iff ``<brew-installed bin_name> --version`` exits cleanly.
+
+        Used to detect the case where ``brew install`` reports the package
+        is already installed but the on-disk binary is broken (e.g. its
+        dynamic-link dependencies got purged by a separate uninstall).
+        Looks up the binary in brew's PATH first, falling back to a bare
+        ``shutil.which`` so it works during the initial install before
+        ``setup_PATH`` populates ``self.PATH``.
+        """
+        from shutil import which as shutil_which
+
+        candidate = bin_abspath(bin_name, PATH=self.PATH) or shutil_which(bin_name)
+        if not candidate:
+            # No binary on disk to test — defer the call (the post-install
+            # load() will still validate the install via the version probe).
+            return True
+        try:
+            proc = subprocess.run(
+                [str(candidate), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=self.version_timeout,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return proc.returncode == 0
 
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
