@@ -880,18 +880,17 @@ class BinProvider(BaseModel):
             if raw_provider_names or not self.INSTALLER_BINPROVIDERS
             else list(self.INSTALLER_BINPROVIDERS)
         )
-        # When ``env`` isn't in the user-selected provider list, drop any
-        # cross-provider whose own INSTALLER_BIN bootstrap chain would
-        # include ``self`` — adding it back here would deadlock (e.g.
-        # ``--binproviders=apt,npm`` has apt resolve apt-get via
-        # ``npm.install`` while npm simultaneously resolves npm via
-        # ``apt.install``). When env IS in the selected list (the default
-        # provider configuration), the cycle never materializes because
-        # ``Binary([env, ...]).install`` finds the installer on the host
-        # PATH before any cross-provider attempt runs, so we skip the
-        # filter entirely to preserve legitimate cross-provider bootstraps
-        # like ``cargo`` installed via ``brew``.
-        env_in_selected = "env" in selected_provider_names
+        # Drop a cross-provider candidate iff that candidate's *own*
+        # explicit INSTALLER_BINPROVIDERS list names ``self`` — that's a
+        # genuine mutual-bootstrap cycle (e.g. a hypothetical brew with
+        # INSTALLER_BINPROVIDERS=("cargo",) trying to bootstrap brew via
+        # cargo while cargo's own chain bootstraps cargo via brew).
+        # Candidates with INSTALLER_BINPROVIDERS=None fall back to the
+        # ambient PATH via env first and don't actually recurse, so we
+        # keep them — over-filtering here would break legitimate
+        # cross-provider bootstraps like ``cargo`` installed via ``brew``
+        # (especially under ``ABXPKG_BINPROVIDERS=...`` configurations
+        # that exclude env).
         installer_provider_names = [
             provider_name
             for provider_name in preferred_provider_names
@@ -899,11 +898,8 @@ class BinProvider(BaseModel):
             and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
-            and (
-                provider_name == "env"
-                or env_in_selected
-                or self.name not in selected_provider_names
-            )
+            and self.name
+            not in (PROVIDER_CLASS_BY_NAME[provider_name].INSTALLER_BINPROVIDERS or ())
         ]
         installer_providers: list[BinProvider] = [
             env_provider
