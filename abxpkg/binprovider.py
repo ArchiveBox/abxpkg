@@ -880,6 +880,18 @@ class BinProvider(BaseModel):
             if raw_provider_names or not self.INSTALLER_BINPROVIDERS
             else list(self.INSTALLER_BINPROVIDERS)
         )
+        # When ``env`` isn't in the user-selected provider list, drop any
+        # cross-provider whose own INSTALLER_BIN bootstrap chain would
+        # include ``self`` — adding it back here would deadlock (e.g.
+        # ``--binproviders=apt,npm`` has apt resolve apt-get via
+        # ``npm.install`` while npm simultaneously resolves npm via
+        # ``apt.install``). When env IS in the selected list (the default
+        # provider configuration), the cycle never materializes because
+        # ``Binary([env, ...]).install`` finds the installer on the host
+        # PATH before any cross-provider attempt runs, so we skip the
+        # filter entirely to preserve legitimate cross-provider bootstraps
+        # like ``cargo`` installed via ``brew``.
+        env_in_selected = "env" in selected_provider_names
         installer_provider_names = [
             provider_name
             for provider_name in preferred_provider_names
@@ -887,6 +899,11 @@ class BinProvider(BaseModel):
             and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
+            and (
+                provider_name == "env"
+                or env_in_selected
+                or self.name not in selected_provider_names
+            )
         ]
         installer_providers: list[BinProvider] = [
             env_provider

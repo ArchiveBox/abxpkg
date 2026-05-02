@@ -65,6 +65,17 @@ class AptProvider(BinProvider):
             if not dpkg_abspath or not apt_abspath:
                 self.PATH = ""
             else:
+                # Seed self.PATH with apt-get's bin_dir before calling
+                # self.exec(dpkg -L bash). self.exec's build_exec_env
+                # re-enters self.setup_PATH; without a non-empty PATH,
+                # the ``not self.PATH`` guard at the top of this method
+                # would fire on every recursive entry and infinitely
+                # loop. The bin_dir is correct as a baseline value —
+                # the dpkg-discovered runtime bin dirs get prepended
+                # onto it just below.
+                self.PATH = TypeAdapter(PATHStr).validate_python(
+                    str(apt_abspath.parent),
+                )
                 PATH = self.PATH
                 dpkg_install_dirs = (
                     self.exec(
