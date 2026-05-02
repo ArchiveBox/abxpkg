@@ -367,9 +367,28 @@ class CargoProvider(BinProvider):
             )
             return None
         if not self._cargo_executes(cargo_path):
+            try:
+                version_proc = subprocess.run(
+                    [str(cargo_path), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.version_timeout,
+                )
+                version_output = format_subprocess_output(
+                    version_proc.stdout,
+                    version_proc.stderr,
+                )
+                version_rc = version_proc.returncode
+            except Exception as err:
+                version_output = f"<exec failed: {err!r}>"
+                version_rc = "?"
             logger.warning(
-                "rustup-init produced %s but it does not run cleanly",
+                "rustup-init produced %s but it does not run cleanly "
+                "(rc=%s, output=%s); rustup-init log was: %s",
                 cargo_path,
+                version_rc,
+                version_output,
+                format_subprocess_output(proc.stdout, proc.stderr),
             )
             return None
         logger.warning("rustup-init successfully bootstrapped %s", cargo_path)
