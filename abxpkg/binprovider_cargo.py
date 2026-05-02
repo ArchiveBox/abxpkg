@@ -358,6 +358,45 @@ class CargoProvider(BinProvider):
             )
             return None
 
+        # When ``$CARGO_HOME``/``$RUSTUP_HOME`` already contained a
+        # rustup proxy from a prior partial install, rustup-init exits
+        # 0 without installing the toolchain or setting a default —
+        # leaving ``cargo --version`` failing with "rustup could not
+        # choose a version of cargo to run". Force-install the stable
+        # toolchain and set it as default so the proxy has a target.
+        rustup_path = cargo_home / "bin" / "rustup"
+        if rustup_path.is_file():
+            for cmd in (
+                [
+                    str(rustup_path),
+                    "toolchain",
+                    "install",
+                    "stable",
+                    "--profile",
+                    "minimal",
+                ],
+                [str(rustup_path), "default", "stable"],
+            ):
+                try:
+                    fixup = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=max(self.install_timeout, 600),
+                        env=env,
+                    )
+                except (OSError, subprocess.SubprocessError) as err:
+                    logger.warning("rustup fixup %s failed to run: %s", cmd, err)
+                    return None
+                if fixup.returncode != 0:
+                    logger.warning(
+                        "rustup fixup %s exited with %s: %s",
+                        cmd,
+                        fixup.returncode,
+                        format_subprocess_output(fixup.stdout, fixup.stderr),
+                    )
+                    return None
+
         cargo_path = cargo_home / "bin" / "cargo"
         if not cargo_path.is_file():
             logger.warning(
