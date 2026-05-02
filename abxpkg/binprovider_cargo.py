@@ -359,9 +359,21 @@ class CargoProvider(BinProvider):
             return None
 
         cargo_path = cargo_home / "bin" / "cargo"
-        if cargo_path.is_file() and self._cargo_executes(cargo_path):
-            return cargo_path
-        return None
+        if not cargo_path.is_file():
+            logger.warning(
+                "rustup-init exited 0 but %s was not produced; output=%s",
+                cargo_path,
+                format_subprocess_output(proc.stdout, proc.stderr),
+            )
+            return None
+        if not self._cargo_executes(cargo_path):
+            logger.warning(
+                "rustup-init produced %s but it does not run cleanly",
+                cargo_path,
+            )
+            return None
+        logger.warning("rustup-init successfully bootstrapped %s", cargo_path)
+        return cargo_path
 
     @log_method_call()
     def setup(
