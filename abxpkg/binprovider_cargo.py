@@ -5,6 +5,7 @@ import hashlib
 import os
 import platform
 import subprocess
+import sys
 import urllib.request
 
 from pathlib import Path
@@ -31,6 +32,21 @@ MIN_CARGO_INSTALLER_VERSION = cast(SemVer, SemVer.parse("1.85.0"))
 # never run a ``curl sh.rustup.rs | sh``-style unverified installer.
 RUSTUP_DIST_BASE = "https://static.rust-lang.org/rustup/dist"
 logger = get_logger(__name__)
+
+
+def _rustup_warn(message: str, *args) -> None:
+    """Emit a rustup-fallback diagnostic that survives subprocess contexts.
+
+    abxpkg's parent logger has a NullHandler attached, which swallows
+    warnings before they reach the root logger — fine for normal use,
+    but it hides the rustup-init bootstrap diagnostics from subprocess
+    callers (e.g. ``test_central_lib_dir``'s install script) that don't
+    configure handlers themselves. Mirror to stderr so the install
+    chain's failure mode is observable in any context.
+    """
+    formatted = (message % args) if args else message
+    logger.warning("%s", formatted)
+    print(f"[abxpkg.cargo] {formatted}", file=sys.stderr, flush=True)
 
 
 class CargoProvider(BinProvider):
@@ -172,14 +188,14 @@ class CargoProvider(BinProvider):
         # canonical rustup-init installer. This bypasses any broken/partial
         # system rust installs (e.g. linuxbrew's cargo missing libllhttp.so
         # on a stale CI image) and never depends on root/sudo.
-        logger.warning(
+        _rustup_warn(
             "%s: no working cargo from env/brew/apt/nix; falling back to rustup-init",
             self.__class__.__name__,
         )
         try:
             rustup_cargo = self._install_via_rustup(no_cache=no_cache)
         except Exception as err:
-            logger.warning(
+            _rustup_warn(
                 "%s: rustup-init fallback raised %r",
                 self.__class__.__name__,
                 err,
@@ -264,7 +280,7 @@ class CargoProvider(BinProvider):
         """
         triple = self._rustup_target_triple()
         if triple is None:
-            logger.warning(
+            _rustup_warn(
                 "Unsupported host for rustup fallback: %s %s",
                 platform.system(),
                 platform.machine(),
@@ -275,12 +291,12 @@ class CargoProvider(BinProvider):
         try:
             cargo_home.mkdir(parents=True, exist_ok=True)
         except OSError as err:
-            logger.warning("rustup fallback: cannot create %s: %s", cargo_home, err)
+            _rustup_warn("rustup fallback: cannot create %s: %s", cargo_home, err)
             return None
 
         binary_url = f"{RUSTUP_DIST_BASE}/{triple}/rustup-init"
         sha_url = f"{binary_url}.sha256"
-        logger.warning(
+        _rustup_warn(
             "rustup fallback: downloading verified rustup-init from %s",
             binary_url,
         )
@@ -290,7 +306,7 @@ class CargoProvider(BinProvider):
             with urllib.request.urlopen(sha_url, timeout=30) as response:
                 sha_text = response.read().decode("utf-8", errors="replace")
         except Exception as err:
-            logger.warning(
+            _rustup_warn(
                 "Failed to download rustup-init from %s: %s",
                 binary_url,
                 err,
@@ -303,7 +319,7 @@ class CargoProvider(BinProvider):
         if len(expected_sha) != 64 or any(
             ch not in "0123456789abcdef" for ch in expected_sha
         ):
-            logger.warning(
+            _rustup_warn(
                 "rustup-init.sha256 sidecar at %s is malformed: %r",
                 sha_url,
                 sha_text[:120],
@@ -312,7 +328,7 @@ class CargoProvider(BinProvider):
 
         actual_sha = hashlib.sha256(binary_bytes).hexdigest()
         if actual_sha != expected_sha:
-            logger.warning(
+            _rustup_warn(
                 "rustup-init SHA-256 mismatch (got %s, expected %s) — refusing to run",
                 actual_sha,
                 expected_sha,
@@ -345,13 +361,13 @@ class CargoProvider(BinProvider):
                 env=env,
             )
         except (OSError, subprocess.SubprocessError) as err:
-            logger.warning("rustup-init failed to run: %s", err)
+            _rustup_warn("rustup-init failed to run: %s", err)
             return None
         finally:
             rustup_init.unlink(missing_ok=True)
 
         if proc.returncode != 0:
-            logger.warning(
+            _rustup_warn(
                 "rustup-init exited with %s: %s",
                 proc.returncode,
                 format_subprocess_output(proc.stdout, proc.stderr),
@@ -386,10 +402,10 @@ class CargoProvider(BinProvider):
                         env=env,
                     )
                 except (OSError, subprocess.SubprocessError) as err:
-                    logger.warning("rustup fixup %s failed to run: %s", cmd, err)
+                    _rustup_warn("rustup fixup %s failed to run: %s", cmd, err)
                     return None
                 if fixup.returncode != 0:
-                    logger.warning(
+                    _rustup_warn(
                         "rustup fixup %s exited with %s: %s",
                         cmd,
                         fixup.returncode,
@@ -399,7 +415,7 @@ class CargoProvider(BinProvider):
 
         cargo_path = cargo_home / "bin" / "cargo"
         if not cargo_path.is_file():
-            logger.warning(
+            _rustup_warn(
                 "rustup-init exited 0 but %s was not produced; output=%s",
                 cargo_path,
                 format_subprocess_output(proc.stdout, proc.stderr),
@@ -421,7 +437,7 @@ class CargoProvider(BinProvider):
             except Exception as err:
                 version_output = f"<exec failed: {err!r}>"
                 version_rc = "?"
-            logger.warning(
+            _rustup_warn(
                 "rustup-init produced %s but it does not run cleanly "
                 "(rc=%s, output=%s); rustup-init log was: %s",
                 cargo_path,
@@ -430,7 +446,7 @@ class CargoProvider(BinProvider):
                 format_subprocess_output(proc.stdout, proc.stderr),
             )
             return None
-        logger.warning("rustup-init successfully bootstrapped %s", cargo_path)
+        _rustup_warn("rustup-init successfully bootstrapped %s", cargo_path)
         return cargo_path
 
     @log_method_call()
