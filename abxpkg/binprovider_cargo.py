@@ -172,7 +172,19 @@ class CargoProvider(BinProvider):
         # canonical rustup-init installer. This bypasses any broken/partial
         # system rust installs (e.g. linuxbrew's cargo missing libllhttp.so
         # on a stale CI image) and never depends on root/sudo.
-        rustup_cargo = self._install_via_rustup(no_cache=no_cache)
+        logger.warning(
+            "%s: no working cargo from env/brew/apt/nix; falling back to rustup-init",
+            self.__class__.__name__,
+        )
+        try:
+            rustup_cargo = self._install_via_rustup(no_cache=no_cache)
+        except Exception as err:
+            logger.warning(
+                "%s: rustup-init fallback raised %r",
+                self.__class__.__name__,
+                err,
+            )
+            rustup_cargo = None
         if rustup_cargo is not None:
             rustup_loaded = EnvProvider(
                 install_root=None,
@@ -260,9 +272,18 @@ class CargoProvider(BinProvider):
             return None
 
         cargo_home = DEFAULT_CARGO_HOME
-        cargo_home.mkdir(parents=True, exist_ok=True)
+        try:
+            cargo_home.mkdir(parents=True, exist_ok=True)
+        except OSError as err:
+            logger.warning("rustup fallback: cannot create %s: %s", cargo_home, err)
+            return None
+
         binary_url = f"{RUSTUP_DIST_BASE}/{triple}/rustup-init"
         sha_url = f"{binary_url}.sha256"
+        logger.warning(
+            "rustup fallback: downloading verified rustup-init from %s",
+            binary_url,
+        )
         try:
             with urllib.request.urlopen(binary_url, timeout=60) as response:
                 binary_bytes = response.read()
