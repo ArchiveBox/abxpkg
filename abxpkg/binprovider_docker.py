@@ -207,6 +207,58 @@ class DockerProvider(BinProvider):
             )
         )
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search Docker Hub for images whose name matches bin_name (substring)."""
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so docker's auto-install logic
+        # kicks in if env's docker is missing/broken.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        # ``docker search --format '{{json .}}' <q>`` emits one JSON object per match.
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["search", "--limit", "25", "--format", "{{json .}}", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            return []
+        results: list = []
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            image_name = entry.get("Name", "")
+            description = entry.get("Description", "") or image_name
+            if not image_name or str(bin_name).lower() not in image_name.lower():
+                continue
+            # ``Name`` from docker search is the full ``namespace/image``
+            # ref; the leaf is what we use as ``Binary.name`` so shim and
+            # metadata file writes (which use the bin_name as filename)
+            # don't fail on slashes. Full ref is preserved in install_args.
+            leaf_name = image_name.rsplit("/", 1)[-1]
+            results.append(
+                Binary(
+                    name=leaf_name,
+                    description=f"{image_name} - {description}".strip(" -"),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [f"{image_name}:latest"]}},
+                ),
+            )
+        return results
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

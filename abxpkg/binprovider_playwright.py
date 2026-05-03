@@ -642,6 +642,44 @@ class PlaywrightProvider(BinProvider):
         except OSError:
             return resolved
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Match bin_name against playwright's fixed list of supported browsers.
+
+        Playwright doesn't have a package index — only a small hardcoded set
+        of browsers it knows how to install — so we match the query as a
+        substring against that set and return a Binary per match.
+        """
+        from .binary import Binary
+
+        supported = (
+            "chromium",
+            "chromium-headless-shell",
+            "chrome",
+            "chrome-beta",
+            "msedge",
+            "msedge-beta",
+            "msedge-dev",
+            "firefox",
+            "webkit",
+        )
+        return [
+            Binary(
+                name=browser,
+                description=f"playwright browser ({browser})",
+                binproviders=[self],
+                overrides={self.name: {"install_args": [browser]}},
+            )
+            for browser in supported
+            if str(bin_name) in browser
+        ]
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

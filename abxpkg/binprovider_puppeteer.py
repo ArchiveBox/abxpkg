@@ -690,6 +690,45 @@ class PuppeteerProvider(BinProvider):
                     )
         return proc
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Match bin_name against @puppeteer/browsers's fixed list of supported browsers.
+
+        Like playwright, puppeteer-browsers exposes a closed enum of browser
+        targets rather than a real package index, so we match the query as a
+        substring against that enum.
+        """
+        from .binary import Binary
+
+        supported = (
+            "chrome",
+            "chrome-beta",
+            "chrome-canary",
+            "chrome-dev",
+            "chrome-headless-shell",
+            "chromedriver",
+            "chromium",
+            "firefox",
+            "firefox-beta",
+            "firefox-nightly",
+        )
+        return [
+            Binary(
+                name=browser,
+                description=f"puppeteer browser ({browser})",
+                binproviders=[self],
+                overrides={self.name: {"install_args": [browser]}},
+            )
+            for browser in supported
+            if str(bin_name) in browser
+        ]
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

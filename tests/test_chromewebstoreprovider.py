@@ -187,3 +187,27 @@ class TestChromeWebstoreProvider:
             assert removed.loaded_version is None
             assert removed.loaded_sha256 is None
             test_machine.assert_binary_missing(binary)
+
+    def test_search_finds_real_chromewebstore_extension_by_id(self):
+        # Search resolves a 32-char Chrome Web Store extension ID into
+        # its canonical name by scraping the public detail page's
+        # ``<title>`` tag. The Binary's ``.name`` is the stable webstore
+        # ID (BinName-safe); the human extension name lives in
+        # ``description`` and the ``--name=`` install_arg. Non-ID
+        # queries return [] because the Web Store doesn't expose a JSON
+        # search API for keyword lookups.
+        results = ChromeWebstoreProvider().search(UBLOCK_WEBSTORE_ID)
+        assert results, "chromewebstore search by id should resolve uBlock Origin"
+        assert len(results) == 1
+        match = results[0]
+        assert match.name == UBLOCK_WEBSTORE_ID
+        assert "ublock" in match.description.lower()
+        assert match.overrides == {
+            "chromewebstore": {
+                "install_args": [
+                    UBLOCK_WEBSTORE_ID,
+                    f"--name={match.description.split(' (')[0]}",
+                ],
+            },
+        }
+        assert ChromeWebstoreProvider().search("not-an-id") == []

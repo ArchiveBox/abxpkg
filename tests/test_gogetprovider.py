@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
 import logging
+from typing import cast
 
 import pytest
 
@@ -363,3 +364,48 @@ class TestGoGetProvider:
                 },
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="shfmt")
+
+    def test_search_finds_real_go_module_and_install_works(self, test_machine):
+        test_machine.require_tool("go")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = GoGetProvider(
+                install_root=Path(temp_dir) / "go",
+                bin_dir=Path(temp_dir) / "go/bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            # ``shfmt`` is the canonical "go-installable CLI" example —
+            # the parent module is the unit ``go list -m -versions``
+            # accepts, and the actual installable command lives at
+            # ``mvdan.cc/sh/v3/cmd/shfmt`` and produces a ``shfmt`` binary
+            # that responds to ``--version``.
+            module = "mvdan.cc/sh/v3"
+            results = provider.search(module)
+            assert len(results) == 1
+            match = results[0]
+            assert match.name == "v3"  # leaf of module path
+            install_args = cast(
+                list[str],
+                match.overrides.get("goget", {}).get("install_args", []),
+            )
+            install_arg = install_args[0]
+            assert install_arg.startswith(module + "@v")
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            # Repoint install_args at the installable CLI inside the module
+            # so .install() actually produces the ``shfmt`` binary.
+            shfmt_binary = match.model_copy(
+                update={
+                    "name": "shfmt",
+                    "overrides": {
+                        "goget": {
+                            "install_args": [
+                                f"mvdan.cc/sh/v3/cmd/shfmt@{install_arg.split('@')[1]}",
+                            ],
+                        },
+                    },
+                },
+            )
+            installed = shfmt_binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "shfmt"

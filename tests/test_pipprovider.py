@@ -454,3 +454,21 @@ class TestPipProvider:
                 min_release_age=0,
             )
             test_machine.assert_shallow_binary_loaded(installed)
+
+    def test_search_finds_real_pypi_package_and_install_works(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PipProvider(
+                install_root=Path(temp_dir) / "venv",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("black")
+            assert len(results) == 1
+            match = results[0]
+            assert match.name == "black"
+            assert match.overrides == {"pip": {"install_args": ["black"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "black"

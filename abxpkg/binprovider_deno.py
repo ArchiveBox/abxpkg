@@ -2,8 +2,11 @@
 
 __package__ = "abxpkg"
 
+import json
 import os
 import sys
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Self
 
@@ -218,6 +221,53 @@ class DenoProvider(BinProvider):
         if self.bin_dir:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search the npm registry directly (deno install -g supports npm: specifiers).
+
+        # same npm-registry-search implementation copy-pasted across
+        # YarnProvider, BunProvider, DenoProvider — each provider owns
+        # its own copy so they stay isolated and don't import shared
+        # helpers per repo policy.
+        """
+        from .binary import Binary
+
+        # Deno can install from JSR or npm; we hit the npm registry's search
+        # endpoint here so the resulting Binary uses ``npm:<name>`` install_args.
+        url = (
+            "https://registry.npmjs.org/-/v1/search?text="
+            + urllib.parse.quote(str(bin_name))
+            + "&size=25"
+        )
+        with urllib.request.urlopen(
+            url,
+            timeout=timeout or self.version_timeout,
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        results: list = []
+        for entry in data.get("objects", []):
+            pkg = entry.get("package", {})
+            pkg_name = pkg.get("name", "")
+            if not pkg_name or str(bin_name).lower() not in pkg_name.lower():
+                continue
+            version_str = pkg.get("version", "")
+            description = pkg.get("description", "") or pkg_name
+            results.append(
+                Binary(
+                    name=pkg_name,
+                    description=f"{version_str} - {description}".strip(" -"),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [f"npm:{pkg_name}"]}},
+                ),
+            )
+        return results
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

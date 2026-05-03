@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 __package__ = "abxpkg"
+import json
 import os
 import shutil
 import re
 import sys
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 from typing import Self
 from platformdirs import user_cache_path
@@ -344,6 +348,44 @@ class UvProvider(BinProvider):
             if len(parts) == 2 and parts[0] == package_name:
                 return SemVer.parse(parts[1])
         return None
+
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Resolve the latest published version for an exact PyPI package name via the PyPI JSON API.
+
+        ``uv`` has no ``uv search`` subcommand and ``uv pip`` no longer
+        ships ``index versions``, so we hit the same PyPI JSON endpoint
+        ``uv pip install`` uses to resolve versions.
+        """
+        from .binary import Binary
+
+        url = f"https://pypi.org/pypi/{urllib.parse.quote(str(bin_name))}/json"
+        try:
+            with urllib.request.urlopen(
+                url,
+                timeout=timeout or self.version_timeout,
+            ) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError:
+            return []
+        info = data.get("info", {}) or {}
+        pkg_name = info.get("name", str(bin_name))
+        version_str = info.get("version", "")
+        summary = info.get("summary", "") or pkg_name
+        return [
+            Binary(
+                name=pkg_name,
+                description=f"{version_str} - {summary}".strip(" -"),
+                binproviders=[self],
+                overrides={self.name: {"install_args": [pkg_name]}},
+            ),
+        ]
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

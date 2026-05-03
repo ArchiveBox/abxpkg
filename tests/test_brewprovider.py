@@ -221,3 +221,19 @@ class TestBrewProvider:
             provider,
             bin_name=test_machine.pick_missing_brew_formula(),
         )
+
+    def test_search_finds_real_brew_formula_and_install_works(self, test_machine):
+        test_machine.require_tool("brew")
+        provider = BrewProvider(postinstall_scripts=True, min_release_age=0)
+        results = provider.search("jq")
+        assert results, "brew search jq should return matches"
+        names = [r.name for r in results]
+        assert "jq" in names
+        match = next(r for r in results if r.name == "jq")
+        assert match.overrides == {"brew": {"install_args": ["jq"]}}
+        assert match.loaded_abspath is None
+        assert match.loaded_version is None
+        provider.uninstall("jq", quiet=True, no_cache=True)
+        installed = match.install()
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert installed.name == "jq"

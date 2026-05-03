@@ -302,3 +302,22 @@ class TestNpmProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
+
+    def test_search_finds_real_npm_package_and_install_works(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NpmProvider(
+                install_root=Path(temp_dir) / "npm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("zx")
+            assert results, "npm search zx should return registry matches"
+            names = [r.name for r in results]
+            assert "zx" in names
+            match = next(r for r in results if r.name == "zx")
+            assert match.overrides == {"npm": {"install_args": ["zx"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "zx"

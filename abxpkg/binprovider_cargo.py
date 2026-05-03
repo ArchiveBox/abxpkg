@@ -265,6 +265,46 @@ class CargoProvider(BinProvider):
             return None
         return f"https://crates.io/crates/{package}"
 
+    def default_search_handler(
+        self,
+        bin_name: str,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search crates.io for crates whose name matches bin_name."""
+        from .binary import Binary
+
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        # ``cargo search`` returns lines like:
+        #   <crate> = "<version>"      # <description>
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["search", "--limit", "25", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        results: list = []
+        for line in proc.stdout.splitlines():
+            if "=" not in line or '"' not in line:
+                continue
+            crate_name = line.split("=", 1)[0].strip()
+            version_str = line.split('"', 2)[1] if '"' in line else ""
+            description = line.split("# ", 1)[1].strip() if "# " in line else ""
+            if not crate_name or str(bin_name) not in crate_name:
+                continue
+            results.append(
+                Binary(
+                    name=crate_name,
+                    description=f"{version_str} - {description}".strip(" -"),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [crate_name]}},
+                ),
+            )
+        return results
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

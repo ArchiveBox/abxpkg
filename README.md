@@ -35,6 +35,10 @@ print(prettier.abspath, prettier.version)
 # ~/.cache/abx/lib/npm/bin/prettier 2.2.1
 
 prettier.exec(['--write', '.'])
+
+# Search a provider's package index for matches:
+matches = npm.search('puppeteer')   # -> list[Binary] with name + install_args populated
+puppeteer = matches[0].install() if matches else None    # install the top match via npm
 ```
 
 > 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
@@ -111,6 +115,9 @@ abxpkg uninstall yt-dlp
 abxpkg load yt-dlp
 abxpkg env yt-dlp
 abxpkg activate yt-dlp
+
+abxpkg search chromium                          # search all providers in parallel
+abxpkg --binproviders=apt,npm,brew search node  # restrict to specific providers
 ```
 
 `abxpkg --version` and `abxpkg version` stream the package version first, then a host/env summary line, then one section per selected provider showing its current resolved runtime state (`INSTALLER_BINARY`, `PATH`, `ENV`, `install_root`, `bin_dir`, and any active cached dependency / installed binaries).

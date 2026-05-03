@@ -232,3 +232,23 @@ class TestCargoProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="choose")
+
+    def test_search_finds_real_crates_io_match_and_install_works(self, test_machine):
+        test_machine.require_tool("cargo")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = CargoProvider(
+                install_root=Path(temp_dir) / "cargo",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("choose")
+            assert results, "cargo search choose should return matches"
+            names = [r.name for r in results]
+            assert "choose" in names
+            match = next(r for r in results if r.name == "choose")
+            assert match.overrides == {"cargo": {"install_args": ["choose"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "choose"

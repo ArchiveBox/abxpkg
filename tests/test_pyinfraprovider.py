@@ -186,3 +186,10 @@ class TestPyinfraProvider:
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
         test_machine.exercise_provider_dry_run(provider, bin_name=package)
+
+    def test_search_returns_empty_for_pyinfra_provider(self):
+        # PyinfraProvider delegates installs to pyinfra's own operations
+        # (apt, brew, ...). It has no package index of its own to search,
+        # so search is intentionally an empty list.
+        assert PyinfraProvider().search("python") == []
+        assert PyinfraProvider().search("nonexistent-binary-xyz") == []
