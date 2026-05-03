@@ -188,3 +188,9 @@ class TestEnvProvider:
             assert env_provider.has_cached_binary("black") is False
 
             assert pip_provider.uninstall("black") is True
+
+    def test_search_returns_empty_for_env_provider(self):
+        # EnvProvider has no package index — it just exposes ambient PATH —
+        # so search must be an empty list rather than a crash or fallback.
+        assert EnvProvider().search("python") == []
+        assert EnvProvider().search("nonexistent-binary-xyz") == []

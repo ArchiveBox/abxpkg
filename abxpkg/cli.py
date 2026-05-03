@@ -23,6 +23,7 @@ from rich.theme import Theme
 from . import ALL_PROVIDER_NAMES, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
 from .base_types import DEFAULT_LIB_DIR
 from .binprovider import DEFAULT_ENV_PATH, BinProvider, HandlerDict, env_flag_is_true
+from .semver import SemVer
 from .config import load_derived_cache
 from .exceptions import ABXPkgError
 from .logging import (
@@ -1805,6 +1806,59 @@ def load_command(
     # etc. still apply.
     options = replace(options, dry_run=False)
     run_binary_command(binary_name, action="load", options=options)
+
+
+@cli.command("search")
+@click.argument("binary_name")
+@click.pass_context
+@shared_options
+def search_command(
+    ctx: click.Context,
+    binary_name: str,
+    **shared_kwargs: Any,
+) -> None:
+    """Search every selected provider's package index in parallel for binary_name."""
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    options = get_command_options(ctx, **shared_kwargs)
+    options = replace(options, dry_run=False)
+    configure_cli_logging(debug=options.debug)
+    providers = build_providers(
+        options.provider_names,
+        dry_run=False,
+        install_root=options.install_root,
+        bin_dir=options.bin_dir,
+        euid=options.euid,
+        install_timeout=options.install_timeout,
+        version_timeout=options.version_timeout,
+    )
+    min_version_str = options.min_version
+    min_version = SemVer.parse(min_version_str) if min_version_str else None
+
+    def _search(provider: BinProvider) -> tuple[str, list[Binary]]:
+        try:
+            return provider.name, list(
+                provider.search(
+                    binary_name,
+                    min_version=min_version,
+                    min_release_age=options.min_release_age,
+                    no_cache=options.no_cache,
+                ),
+            )
+        except Exception as err:
+            logger.debug("%s search for %s failed: %s", provider.name, binary_name, err)
+            return provider.name, []
+
+    with ThreadPoolExecutor(max_workers=max(1, len(providers))) as pool:
+        results = list(pool.map(_search, providers))
+
+    for provider_name, matches in results:
+        if not matches:
+            continue
+        _echo(f"[{provider_name}]")
+        for match in matches:
+            _echo(f"  {match.name}    {match.description}".rstrip())
 
 
 def _run_command_impl(

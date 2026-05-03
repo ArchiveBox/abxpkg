@@ -481,6 +481,49 @@ class BrewProvider(BinProvider):
 
         return True
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search homebrew formulae for packages whose name matches bin_name (substring)."""
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so brew's auto-install logic
+        # kicks in if env's brew is missing/broken. The deadlock filter
+        # in ``BinProvider.INSTALLER_BINARY`` keeps this safe under
+        # restrictive ``--binproviders`` configs.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        # ``brew search --formula <text>`` returns one matching formula name per line.
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["search", "--formula", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        results: list = []
+        for line in proc.stdout.splitlines():
+            pkg_name = line.strip().rstrip(" *")
+            if (
+                not pkg_name
+                or str(bin_name) not in pkg_name
+                or pkg_name.startswith("=")
+            ):
+                continue
+            results.append(
+                Binary(
+                    name=pkg_name,
+                    description=f"{pkg_name} ({self.name} formula)",
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [pkg_name]}},
+                ),
+            )
+        return results
+
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,

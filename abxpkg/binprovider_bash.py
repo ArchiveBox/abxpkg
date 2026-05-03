@@ -59,6 +59,7 @@ class BashProvider(EnvProvider):
             "update": "self.default_update_handler",
             "uninstall": "self.default_uninstall_handler",
             "docs_url": "self.default_docs_url_handler",
+            "search": "self.default_search_handler",
         },
     }
 

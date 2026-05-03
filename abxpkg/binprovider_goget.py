@@ -56,6 +56,7 @@ class GoGetProvider(BinProvider):
             "update": "self.default_update_handler",
             "uninstall": "self.default_uninstall_handler",
             "docs_url": "self.default_docs_url_handler",
+            "search": "self.default_search_handler",
         },
         "go": {
             "version": ["go", "version"],
@@ -217,6 +218,58 @@ class GoGetProvider(BinProvider):
                 continue
             return f"https://pkg.go.dev/{module_path}"
         return None
+
+    def default_search_handler(
+        self,
+        bin_name: str,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Resolve the latest tagged version for an exact Go module path.
+
+        Go has no native package-name search; ``go list -m -versions <path>``
+        is the closest underlying API and only works for exact module paths
+        like ``github.com/foo/bar``.
+        """
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so goget's auto-install logic
+        # kicks in if env's go is missing/broken. (``go`` is special:
+        # it doesn't accept ``--version`` — the override on this
+        # provider's ``"go": {"version": ["go", "version"]}`` map is
+        # what makes ``self.INSTALLER_BINARY`` resolve cleanly.)
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["list", "-m", "-versions", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0 or not proc.stdout.strip():
+            return []
+        # Output: "<module-path> v0.1 v0.2 v1.0 ..."
+        parts = proc.stdout.split()
+        module_path = parts[0]
+        latest_version = parts[-1] if len(parts) > 1 else ""
+        install_arg = (
+            f"{module_path}@{latest_version}" if latest_version else module_path
+        )
+        # ``go install`` writes the binary under its leaf name (e.g.
+        # ``github.com/spf13/cobra-cli`` → ``cobra-cli``). Use the leaf as
+        # the Binary name so a follow-up ``.install()`` loads the actual
+        # produced binary, but keep the full module path in install_args.
+        binary_name = module_path.rsplit("/", 1)[-1]
+        return [
+            Binary(
+                name=binary_name,
+                description=f"{latest_version} - {module_path}".strip(" -"),
+                binproviders=[self],
+                overrides={self.name: {"install_args": [install_arg]}},
+            ),
+        ]
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

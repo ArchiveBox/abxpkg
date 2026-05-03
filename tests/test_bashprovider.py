@@ -137,3 +137,9 @@ class TestBashProvider:
             )
 
             test_machine.exercise_binary_lifecycle(binary)
+
+    def test_search_returns_empty_for_bash_provider(self):
+        # BashProvider has no package index — packages are installed via
+        # arbitrary user-provided shell scripts — so search returns [].
+        assert BashProvider().search("zx") == []
+        assert BashProvider().search("nonexistent-binary-xyz") == []

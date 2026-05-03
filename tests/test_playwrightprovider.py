@@ -461,3 +461,24 @@ class TestPlaywrightProvider:
                 f"dry_run should not have created any browser dirs, got: "
                 f"{[p.name for p in browser_dirs]}"
             )
+
+    def test_search_finds_real_playwright_browser_and_install_works(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PlaywrightProvider(
+                install_root=Path(temp_dir) / "playwright",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("chromium")
+            assert results, (
+                "playwright search 'chromium' should return supported browsers"
+            )
+            names = [r.name for r in results]
+            assert "chromium" in names
+            match = next(r for r in results if r.name == "chromium")
+            assert match.overrides == {"playwright": {"install_args": ["chromium"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "chromium"

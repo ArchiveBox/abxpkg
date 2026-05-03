@@ -406,6 +406,52 @@ class PipProvider(BinProvider):
         flags.append(f"--uploaded-prior-to={cutoff}")
         return flags
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Resolve the latest published version for an exact PyPI package name.
+
+        ``pip search`` was deprecated, so we use ``pip index versions <name>``
+        which performs an exact-name lookup against the configured index. No
+        substring/prefix matching: PyPI itself doesn't expose one without
+        scraping.
+        """
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so pip's auto-install logic
+        # kicks in if env's pip is missing/broken.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["index", "versions", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            return []
+        # Output:
+        #   <name> (<latest>)
+        #   Available versions: <v1>, <v2>, ...
+        first_line = proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else ""
+        if "(" not in first_line or ")" not in first_line:
+            return []
+        pkg_name = first_line.split("(", 1)[0].strip()
+        version_str = first_line.split("(", 1)[1].rsplit(")", 1)[0].strip()
+        return [
+            Binary(
+                name=pkg_name,
+                description=f"{version_str} - PyPI package",
+                binproviders=[self],
+                overrides={self.name: {"install_args": [pkg_name]}},
+            ),
+        ]
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

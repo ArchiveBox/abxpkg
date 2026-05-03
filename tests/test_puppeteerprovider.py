@@ -199,3 +199,26 @@ class TestPuppeteerProvider:
             )
 
             test_machine.exercise_binary_lifecycle(binary)
+
+    def test_search_finds_real_puppeteer_browser_and_install_works(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PuppeteerProvider(
+                install_root=Path(temp_dir) / "puppeteer",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("chrome-headless-shell")
+            assert results, "puppeteer search should match its hardcoded browser list"
+            names = [r.name for r in results]
+            assert "chrome-headless-shell" in names
+            match = next(r for r in results if r.name == "chrome-headless-shell")
+            assert match.overrides == {
+                "puppeteer": {"install_args": ["chrome-headless-shell"]},
+            }
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "chrome-headless-shell"

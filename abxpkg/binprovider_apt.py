@@ -9,7 +9,7 @@ from typing import Self
 
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
 from .semver import SemVer
-from .binprovider import BinProvider, EnvProvider, remap_kwargs
+from .binprovider import BinProvider, EnvProvider, ShallowBinary, remap_kwargs
 from .logging import format_subprocess_output
 
 _LAST_UPDATE_CHECK = None
@@ -246,6 +246,46 @@ class AptProvider(BinProvider):
             format_subprocess_output(proc.stdout, proc.stderr)
             or f"Updated {install_args} successfully."
         )
+
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list[ShallowBinary]:
+        """Search apt's package index for packages whose name matches bin_name (substring)."""
+        from .binary import Binary
+
+        # ``apt-cache search --names-only`` returns lines like ``<name> - <description>``.
+        # Routing through ``self.exec`` lets apt's setup_PATH/INSTALLER_BINARY
+        # auto-recover from a missing/broken apt-get on the ambient PATH
+        # (e.g. CI runners where the linuxbrew copy is unusable). The
+        # deadlock filter in ``BinProvider.INSTALLER_BINARY`` keeps it
+        # safe under restrictive ``--binproviders`` configs.
+        self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        proc = self.exec(
+            bin_name="apt-cache",
+            cmd=["search", "--names-only", str(bin_name)],
+            quiet=True,
+            timeout=timeout,
+        )
+        results: list[ShallowBinary] = []
+        for line in proc.stdout.splitlines():
+            pkg_name, _, description = line.partition(" - ")
+            pkg_name = pkg_name.strip()
+            if not pkg_name or str(bin_name) not in pkg_name:
+                continue
+            results.append(
+                Binary(
+                    name=pkg_name,
+                    description=description.strip(),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [pkg_name]}},
+                ),
+            )
+        return results
 
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(

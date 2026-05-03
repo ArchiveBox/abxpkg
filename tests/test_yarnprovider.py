@@ -509,3 +509,24 @@ class TestYarnProvider:
             assert failing_provider.supports_min_release_age("install")
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()
+
+    def test_search_finds_real_npm_package_via_registry(self):
+        # yarn 4+ removed ``yarn search`` so YarnProvider.search hits the
+        # npm registry HTTP API directly. This test only exercises that
+        # search path — it doesn't install anything because installing
+        # via yarn requires the host's yarn workspace setup, which is
+        # exercised by the other test_*_lifecycle tests in this file.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = YarnProvider(
+                install_root=Path(temp_dir) / "yarn",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("zx")
+            assert results, "yarn search zx (via npm registry) should return matches"
+            names = [r.name for r in results]
+            assert "zx" in names
+            match = next(r for r in results if r.name == "zx")
+            assert match.overrides == {"yarn": {"install_args": ["zx"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None

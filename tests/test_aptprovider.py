@@ -70,6 +70,24 @@ class TestAptProvider:
             bin_name=test_machine.pick_missing_apt_package(),
         )
 
+    def test_search_finds_real_apt_package_and_install_works(self, test_machine):
+        test_machine.require_tool("apt-get")
+        provider = AptProvider(postinstall_scripts=True, min_release_age=0)
+        results = provider.search("wget")
+        assert results, "apt-cache search wget should return matches"
+        names = [r.name for r in results]
+        assert "wget" in names
+        wget_match = next(r for r in results if r.name == "wget")
+        assert wget_match.overrides == {"apt": {"install_args": ["wget"]}}
+        # The returned Binary is non-loaded — it has no abspath/version yet.
+        assert wget_match.loaded_abspath is None
+        assert wget_match.loaded_version is None
+        # ...but installing it must produce a real, valid binary on disk.
+        provider.uninstall("wget", quiet=True, no_cache=True)
+        installed = wget_match.install()
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert installed.name == "wget"
+
     def test_helper_install_args_used_by_native_apt_backend(self, test_machine):
         test_machine.require_tool("apt-get")
 

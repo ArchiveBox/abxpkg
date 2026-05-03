@@ -25,12 +25,16 @@ from typing import (
     Protocol,
     runtime_checkable,
     TypeVar,
+    TYPE_CHECKING,
 )
 from collections.abc import Callable, Iterable, Mapping
 
 from typing_extensions import TypedDict
 from typing import Self
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from .binary import Binary
 
 from pydantic_core import ValidationError
 from pydantic import (
@@ -416,6 +420,7 @@ class BinProvider(BaseModel):
                 "update": "self.default_update_handler",
                 "uninstall": "self.default_uninstall_handler",
                 "docs_url": "self.default_docs_url_handler",
+                "search": "self.default_search_handler",
             },
         },
         repr=False,
@@ -1398,6 +1403,17 @@ class BinProvider(BaseModel):
     ) -> "ActionFuncReturnValue":
         self.INSTALLER_BINARY(no_cache=no_cache)
         return False
+
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> "SearchFuncReturnValue":
+        """Default search handler. Providers without a real search backend return []."""
+        return []
 
     @log_method_call()
     def invalidate_cache(self, bin_name: BinName) -> None:
@@ -2556,6 +2572,86 @@ class BinProvider(BaseModel):
 
     @final
     @log_method_call(include_result=True)
+    def search(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        no_cache: bool = False,
+        timeout: int | None = None,
+    ) -> "list[Binary]":
+        """Search this provider's package index for matches of bin_name.
+
+        Returns a list of non-loaded Binary objects (one per matching package),
+        each with binproviders=[self] and overrides set so binary.install()
+        will install the matched package via this provider. Empty list when
+        the provider has no search backend or finds no matches.
+        """
+        from .binary import Binary
+
+        try:
+            results = cast(
+                SearchFuncReturnValue,
+                self._call_handler_for_action(
+                    bin_name=bin_name,
+                    handler_type="search",
+                    min_version=min_version,
+                    min_release_age=min_release_age,
+                    # Use ``install_timeout`` rather than ``version_timeout``
+                    # because search hits remote indexes (apt repos,
+                    # nix flake registry, npm registry, PyPI, etc.) and
+                    # the 10s ``version_timeout`` default is too tight
+                    # for first-pull of e.g. the nixpkgs flake.
+                    timeout=timeout or self.install_timeout,
+                    no_cache=no_cache,
+                ),
+            )
+        except Exception as err:
+            logger.debug(
+                "%s failed to search for %s: %s",
+                self.name,
+                bin_name,
+                err,
+            )
+            return []
+
+        if not results:
+            return []
+        # Each handler returns Binary objects directly so per-provider
+        # logic can hydrate name/install_args/description from real
+        # search output without indirection.
+        binaries: list[Binary] = [
+            result for result in results if isinstance(result, Binary)
+        ]
+        if min_version is None:
+            return binaries
+        # Filter by ``min_version`` centrally — handlers stash the
+        # discovered package version somewhere in ``description`` (by
+        # convention, the leading token, but we scan all whitespace-
+        # separated tokens so handlers that put the version after a
+        # module/image ref don't bypass the filter). Drop entries whose
+        # discovered version falls below the floor; keep entries with
+        # no parseable version (treat as version-unknown rather than
+        # version-too-low) so providers without per-result version
+        # output don't get over-filtered.
+        filtered: list[Binary] = []
+        for binary in binaries:
+            discovered = next(
+                (
+                    parsed
+                    for token in binary.description.split()
+                    for parsed in (SemVer.parse(token.strip("(),")),)
+                    if parsed is not None
+                ),
+                None,
+            )
+            if discovered is not None and discovered < min_version:
+                continue
+            filtered.append(binary)
+        return filtered
+
+    @final
+    @log_method_call(include_result=True)
     @validate_call
     def load(
         self,
@@ -2563,10 +2659,54 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
-        installed_abspath = self.get_abspath(bin_name, quiet=quiet, no_cache=no_cache)
-        if not installed_abspath:
+        # When we have a managed ``bin_dir``, that's the only path we
+        # ever load from — iterating ``get_abspaths`` would silently
+        # surface ambient PATH candidates that this provider didn't
+        # install, breaking install_root isolation. For ambient-only
+        # providers (``bin_dir is None``, e.g.
+        # ``EnvProvider(bin_dir=None)``), walk every ``get_abspaths``
+        # candidate so a broken-on-PATH binary (e.g. linuxbrew cargo
+        # with a stale ``libllhttp.so``) doesn't shadow a working one.
+        if self.bin_dir is None:
+            candidates = self.get_abspaths(bin_name, no_cache=no_cache)
+        else:
+            primary_abspath = self.get_abspath(
+                bin_name,
+                quiet=quiet,
+                no_cache=no_cache,
+            )
+            candidates = [primary_abspath] if primary_abspath else []
+        if not candidates:
             return None
+        for candidate_abspath in candidates:
+            result = self._try_load_at_abspath(
+                bin_name,
+                candidate_abspath,
+                quiet=quiet,
+                no_cache=no_cache,
+            )
+            if result is not None:
+                logger.info(
+                    format_loaded_binary(
+                        "☑️ Loaded",
+                        candidate_abspath,
+                        result.loaded_version,
+                        self,
+                        str(bin_name),
+                    ),
+                    extra={"abx_cli_duplicate_stdout": True},
+                )
+                return result
+        return None
 
+    def _try_load_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool = True,
+        no_cache: bool = False,
+    ) -> ShallowBinary | None:
         result = (
             None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
         )
@@ -2616,17 +2756,6 @@ class BinProvider(BaseModel):
                     "binproviders": [self],
                 },
             )
-
-        logger.info(
-            format_loaded_binary(
-                "☑️ Loaded",
-                installed_abspath,
-                result.loaded_version,
-                self,
-                str(bin_name),
-            ),
-            extra={"abx_cli_duplicate_stdout": True},
-        )
         return result
 
 
@@ -2652,6 +2781,7 @@ class EnvProvider(BinProvider):
             "update": "self.update_noop",
             "uninstall": "self.uninstall_noop",
             "docs_url": "self.default_docs_url_handler",
+            "search": "self.default_search_handler",
         },
         "python": {
             "abspath": "self.python_abspath_handler",
@@ -2998,6 +3128,7 @@ PackagesFuncReturnValue = InstallArgsFuncReturnValue
 InstallFuncReturnValue = str | None
 ActionFuncReturnValue = str | bool | None
 DocsUrlFuncReturnValue = str | None
+SearchFuncReturnValue = list[ShallowBinary] | tuple[ShallowBinary, ...] | None
 ProviderFuncReturnValue = (
     AbspathFuncReturnValue
     | VersionFuncReturnValue
@@ -3005,6 +3136,7 @@ ProviderFuncReturnValue = (
     | InstallFuncReturnValue
     | ActionFuncReturnValue
     | DocsUrlFuncReturnValue
+    | SearchFuncReturnValue
 )
 
 
@@ -3079,6 +3211,18 @@ class DocsUrlFuncWithArgs(Protocol):
     ) -> "DocsUrlFuncReturnValue": ...
 
 
+@runtime_checkable
+class SearchFuncWithArgs(Protocol):
+    def __call__(
+        _self,
+        binprovider: "BinProvider",
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        **context: Any,
+    ) -> "SearchFuncReturnValue": ...
+
+
 AbspathFuncWithNoArgs = Callable[[], AbspathFuncReturnValue]
 VersionFuncWithNoArgs = Callable[[], VersionFuncReturnValue]
 InstallArgsFuncWithNoArgs = Callable[[], InstallArgsFuncReturnValue]
@@ -3086,6 +3230,7 @@ PackagesFuncWithNoArgs = InstallArgsFuncWithNoArgs
 InstallFuncWithNoArgs = Callable[[], InstallFuncReturnValue]
 ActionFuncWithNoArgs = Callable[[], ActionFuncReturnValue]
 DocsUrlFuncWithNoArgs = Callable[[], DocsUrlFuncReturnValue]
+SearchFuncWithNoArgs = Callable[[], SearchFuncReturnValue]
 
 AbspathHandlerValue = (
     SelfMethodName
@@ -3121,6 +3266,9 @@ DocsUrlHandlerValue = (
     | DocsUrlFuncWithArgs
     | DocsUrlFuncReturnValue
 )
+SearchHandlerValue = (
+    SelfMethodName | SearchFuncWithNoArgs | SearchFuncWithArgs | SearchFuncReturnValue
+)
 
 HandlerType = Literal[
     "abspath",
@@ -3131,6 +3279,7 @@ HandlerType = Literal[
     "update",
     "uninstall",
     "docs_url",
+    "search",
 ]
 HandlerValue = (
     AbspathHandlerValue
@@ -3139,6 +3288,7 @@ HandlerValue = (
     | InstallHandlerValue
     | ActionHandlerValue
     | DocsUrlHandlerValue
+    | SearchHandlerValue
 )
 HandlerReturnValue = (
     AbspathFuncReturnValue
@@ -3147,6 +3297,7 @@ HandlerReturnValue = (
     | InstallFuncReturnValue
     | ActionFuncReturnValue
     | DocsUrlFuncReturnValue
+    | SearchFuncReturnValue
 )
 
 
@@ -3169,6 +3320,7 @@ class HandlerDict(TypedDict, total=False):
     update: ActionHandlerValue
     uninstall: ActionHandlerValue
     docs_url: DocsUrlHandlerValue
+    search: SearchHandlerValue
 
 
 # Binary.overrides map BinProviderName:ProviderFieldOrHandlerPatch

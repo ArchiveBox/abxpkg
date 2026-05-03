@@ -212,6 +212,90 @@ class NixProvider(BinProvider):
             package = package.split("#", 1)[-1].split("^", 1)[0]
         return f"https://search.nixos.org/packages?show={package}&query={package}"
 
+    def default_search_handler(
+        self,
+        bin_name: str,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search nixpkgs for attributes whose name matches bin_name (substring)."""
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so nix's auto-install logic
+        # kicks in if env's nix is missing/broken.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        # ``nix search`` against a flake (e.g. ``nixpkgs#``) evaluates
+        # the entire flake via the daemon and runs OOM on small CI
+        # runners (rc=-9 / SIGKILL on the GitHub-hosted x86_64 hosts).
+        # Direct ``nix eval nixpkgs#<bin_name>`` only evaluates the
+        # single requested attribute path, so it's bounded in memory
+        # and finishes in ~seconds even on the cold flake-fetch run.
+        # Filter env exactly like ``default_install_handler`` does
+        # (drop GH/GITHUB tokens + NIX_REMOTE).
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"GH_TOKEN", "GITHUB_TOKEN", "NIX_REMOTE"}
+        }
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=[
+                "eval",
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "--json",
+                "--apply",
+                "p: { pname = p.pname or p.name or null; "
+                "version = p.version or null; "
+                "description = (p.meta or {}).description or null; }",
+                f"nixpkgs#{bin_name}",
+            ],
+            env=env,
+            quiet=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            # ``nix eval`` exits non-zero when the requested attribute
+            # path doesn't exist in the flake — exact-match miss is a
+            # legitimate "no result" outcome, not a failure to log. Only
+            # warn when the failure mode looks genuinely broken
+            # (daemon socket, network, registry) so CI logs surface the
+            # real cause instead of every legit miss.
+            stderr_text = (proc.stderr or "").lower()
+            looks_like_attribute_miss = (
+                "does not provide attribute" in stderr_text
+                or "missing attribute" in stderr_text
+                or "evaluation aborted" in stderr_text
+            )
+            if not looks_like_attribute_miss:
+                logger.warning(
+                    "nix search failed for %r (rc=%s):\n%s",
+                    str(bin_name),
+                    proc.returncode,
+                    format_subprocess_output(proc.stdout, proc.stderr),
+                )
+            return []
+        try:
+            info = json.loads(proc.stdout) or {}
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(info, dict):
+            return []
+        pname = info.get("pname") or str(bin_name)
+        version_str = info.get("version") or ""
+        description = info.get("description") or pname
+        return [
+            Binary(
+                name=pname,
+                description=f"{version_str} - {description}".strip(" -"),
+                binproviders=[self],
+                overrides={self.name: {"install_args": [f"nixpkgs#{bin_name}"]}},
+            ),
+        ]
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

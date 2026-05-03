@@ -4,7 +4,9 @@ __package__ = "abxpkg"
 
 import json
 import os
+import re
 import shutil
+import urllib.request
 from pathlib import Path
 from typing import Any, Self
 
@@ -65,6 +67,7 @@ class ChromeWebstoreProvider(BinProvider):
             "update": "self.chromewebstore_install_handler",
             "uninstall": "self.chromewebstore_uninstall_handler",
             "docs_url": "self.default_docs_url_handler",
+            "search": "self.chromewebstore_search_handler",
         },
     }
 
@@ -156,6 +159,58 @@ class ChromeWebstoreProvider(BinProvider):
         if slug and slug != webstore_id:
             return f"https://chromewebstore.google.com/detail/{slug}/{webstore_id}"
         return f"https://chromewebstore.google.com/detail/{webstore_id}"
+
+    def chromewebstore_search_handler(
+        self,
+        bin_name: BinName,
+        min_version=None,
+        min_release_age=None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Resolve a Chrome Web Store extension by its 32-char ID.
+
+        The Web Store has no JSON search API, but the public detail page
+        ``https://chromewebstore.google.com/detail/<id>`` always returns
+        the canonical extension name in its ``<title>`` tag, so we hit
+        that to translate an extension ID into a human-readable name.
+        Non-ID queries return an empty list — ID-based lookup is the
+        only thing the Web Store reliably exposes.
+        """
+        from .binary import Binary
+
+        query = str(bin_name).strip()
+        if not re.fullmatch(r"[a-p]{32}", query):
+            return []
+        url = f"https://chromewebstore.google.com/detail/{query}"
+        try:
+            with urllib.request.urlopen(
+                url,
+                timeout=timeout or self.version_timeout,
+            ) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+        except Exception:
+            return []
+        match = re.search(r"<title>([^<]+?)\s*-\s*Chrome Web Store</title>", html)
+        if not match:
+            return []
+        extension_name = match.group(1).strip()
+        # Use the stable webstore ID as ``Binary.name`` (BinName accepts
+        # only filename-safe chars/length); the human title goes in
+        # ``description`` and the ``--name=`` install_arg so install
+        # writes shims/metadata under the title-derived alias.
+        return [
+            Binary(
+                name=query,
+                description=f"{extension_name} ({query})",
+                binproviders=[self],
+                overrides={
+                    self.name: {
+                        "install_args": [query, f"--name={extension_name}"],
+                    },
+                },
+            ),
+        ]
 
     def _cached_extension(self, bin_name: str) -> dict[str, Any]:
         """Load the persisted extension metadata JSON for a cached extension, if any."""

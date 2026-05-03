@@ -255,3 +255,24 @@ class TestGemProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="cowsay")
+
+    def test_search_finds_real_rubygem_and_install_works(self, test_machine):
+        test_machine.require_tool("gem")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = GemProvider(
+                install_root=Path(temp_dir) / "gem-home",
+                bin_dir=Path(temp_dir) / "gem-home/bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("lolcat")
+            assert results, "gem search lolcat should return rubygems matches"
+            names = [r.name for r in results]
+            assert "lolcat" in names
+            match = next(r for r in results if r.name == "lolcat")
+            assert match.overrides == {"gem": {"install_args": ["lolcat"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "lolcat"

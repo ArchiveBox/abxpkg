@@ -232,3 +232,23 @@ class TestNixProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="hello")
+
+    def test_search_finds_real_nixpkgs_attr_and_install_works(self, test_machine):
+        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = NixProvider(
+                install_root=Path(temp_dir) / "nix-profile",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("hello")
+            assert results, "nix search nixpkgs hello should return matches"
+            names = [r.name for r in results]
+            assert "hello" in names
+            match = next(r for r in results if r.name == "hello")
+            assert match.overrides == {"nix": {"install_args": ["nixpkgs#hello"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "hello"

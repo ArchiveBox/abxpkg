@@ -401,6 +401,48 @@ class NpmProvider(BinProvider):
         link_path.symlink_to(target)
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search the npm registry via ``npm search ... --json``."""
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so npm's auto-install logic
+        # kicks in if env's npm is missing/broken.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["search", str(bin_name), "--json", "--searchlimit=25"],
+            quiet=True,
+            timeout=timeout,
+        )
+        try:
+            entries = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return []
+        results: list = []
+        for entry in entries:
+            pkg_name = entry.get("name", "")
+            if not pkg_name or str(bin_name).lower() not in pkg_name.lower():
+                continue
+            version_str = entry.get("version", "")
+            description = entry.get("description", "") or pkg_name
+            results.append(
+                Binary(
+                    name=pkg_name,
+                    description=f"{version_str} - {description}".strip(" -"),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [pkg_name]}},
+                ),
+            )
+        return results
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

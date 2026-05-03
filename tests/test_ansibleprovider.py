@@ -206,3 +206,10 @@ class TestAnsibleProvider:
         del test_machine_dependencies
         provider, package = _ansible_provider_for_host(test_machine)
         test_machine.exercise_provider_dry_run(provider, bin_name=package)
+
+    def test_search_returns_empty_for_ansible_provider(self):
+        # AnsibleProvider delegates installs to ansible's own package
+        # modules (apt, yum, brew, ...). It has no package index of its
+        # own to search, so search is intentionally an empty list.
+        assert AnsibleProvider().search("python") == []
+        assert AnsibleProvider().search("nonexistent-binary-xyz") == []

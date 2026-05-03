@@ -355,3 +355,23 @@ class TestDockerProvider:
                 },
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="shellcheck")
+
+    def test_search_finds_real_docker_image_and_install_works(self, test_machine):
+        test_machine.require_docker_daemon()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = DockerProvider(
+                bin_dir=Path(temp_dir) / "docker/bin",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("alpine")
+            assert results, "docker search alpine should return Docker Hub matches"
+            names = [r.name for r in results]
+            assert "alpine" in names
+            match = next(r for r in results if r.name == "alpine")
+            assert match.overrides == {"docker": {"install_args": ["alpine:latest"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "alpine"

@@ -212,6 +212,48 @@ class GemProvider(BinProvider):
             return None
         return f"https://rubygems.org/gems/{package}"
 
+    def default_search_handler(
+        self,
+        bin_name: str,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search rubygems.org for gems whose name matches bin_name (substring)."""
+        from .binary import Binary
+
+        # Use ``self.INSTALLER_BINARY`` so gem's auto-install logic
+        # kicks in if env's gem is missing/broken.
+        installer = self.INSTALLER_BINARY(no_cache=bool(context.get("no_cache", False)))
+        assert installer and installer.loaded_abspath
+        # ``gem search`` interprets the query as a regex and returns:
+        #   <gem> (<version> [<platform>], ...)
+        proc = self.exec(
+            bin_name=installer.loaded_abspath,
+            cmd=["search", str(bin_name), "--remote", "--no-prerelease"],
+            quiet=True,
+            timeout=timeout,
+        )
+        results: list = []
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line or "(" not in line or not line.endswith(")"):
+                continue
+            gem_name = line.split("(", 1)[0].strip()
+            version_str = line.split("(", 1)[1].rsplit(")", 1)[0].split(",")[0].strip()
+            if not gem_name or str(bin_name) not in gem_name:
+                continue
+            results.append(
+                Binary(
+                    name=gem_name,
+                    description=f"{version_str} ({self.name})",
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [gem_name]}},
+                ),
+            )
+        return results
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

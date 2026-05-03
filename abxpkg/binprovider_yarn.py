@@ -5,6 +5,8 @@ __package__ = "abxpkg"
 import json
 import os
 import sys
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import Self
 
@@ -360,6 +362,54 @@ class YarnProvider(BinProvider):
                     (existing.rstrip("\n") + "\n" if existing else "")
                     + "nodeLinker: node-modules\n",
                 )
+
+    def default_search_handler(
+        self,
+        bin_name: BinName,
+        min_version: SemVer | None = None,
+        min_release_age: float | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> list:
+        """Search the npm registry directly (yarn 4+ removed the search command).
+
+        # same npm-registry-search implementation copy-pasted across
+        # YarnProvider, BunProvider, DenoProvider — each provider owns
+        # its own copy so they stay isolated and don't import shared
+        # helpers per repo policy.
+        """
+        from .binary import Binary
+
+        # Yarn shares the npm public registry, so the underlying API is the
+        # registry's own search endpoint. Berry/yarn-classic both ship without
+        # a generic ``yarn search`` command, so we hit the registry directly.
+        url = (
+            "https://registry.npmjs.org/-/v1/search?text="
+            + urllib.parse.quote(str(bin_name))
+            + "&size=25"
+        )
+        with urllib.request.urlopen(
+            url,
+            timeout=timeout or self.version_timeout,
+        ) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        results: list = []
+        for entry in data.get("objects", []):
+            pkg = entry.get("package", {})
+            pkg_name = pkg.get("name", "")
+            if not pkg_name or str(bin_name).lower() not in pkg_name.lower():
+                continue
+            version_str = pkg.get("version", "")
+            description = pkg.get("description", "") or pkg_name
+            results.append(
+                Binary(
+                    name=pkg_name,
+                    description=f"{version_str} - {description}".strip(" -"),
+                    binproviders=[self],
+                    overrides={self.name: {"install_args": [pkg_name]}},
+                ),
+            )
+        return results
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

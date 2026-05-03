@@ -360,3 +360,22 @@ class TestBunProvider:
             assert failing_provider.supports_min_release_age("install") is True
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()
+
+    def test_search_finds_real_npm_package_and_install_works(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = BunProvider(
+                install_root=Path(temp_dir) / "bun",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            results = provider.search("zx")
+            assert results, "bun search zx (via npm registry) should return matches"
+            names = [r.name for r in results]
+            assert "zx" in names
+            match = next(r for r in results if r.name == "zx")
+            assert match.overrides == {"bun": {"install_args": ["zx"]}}
+            assert match.loaded_abspath is None
+            assert match.loaded_version is None
+            installed = match.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.name == "zx"
