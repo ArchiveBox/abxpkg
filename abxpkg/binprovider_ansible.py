@@ -357,6 +357,43 @@ class AnsibleProvider(BinProvider):
         """Return provider-specific kwargs to splice into the ansible module block."""
         return {}
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        # ansible.builtin.package routes to whatever package manager the host
+        # actually has, so the docs URL has to follow. Only emit a URL for
+        # hosts we recognize; anything else returns None so the caller can
+        # fall back to the next provider.
+        if OPERATING_SYSTEM == "darwin":
+            return f"https://formulae.brew.sh/formula/{package}"
+        distro_id, codename = "", ""
+        try:
+            with open("/etc/os-release", encoding="utf-8") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or "=" not in line or line.startswith("#"):
+                        continue
+                    key, _, value = line.partition("=")
+                    value = value.strip().strip('"').strip("'")
+                    if key == "ID":
+                        distro_id = value.lower()
+                    elif (
+                        key in ("VERSION_CODENAME", "UBUNTU_CODENAME") and not codename
+                    ):
+                        codename = value.lower()
+        except OSError:
+            return None
+        if distro_id == "ubuntu":
+            return f"https://packages.ubuntu.com/{codename or 'noble'}/{package}"
+        if distro_id == "debian":
+            return f"https://packages.debian.org/{codename or 'stable'}/{package}"
+        return None
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,

@@ -605,6 +605,16 @@ class UvProvider(BinProvider):
                 return TypeAdapter(HostBinPath).validate_python(candidate)
         return None
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._package_name_for_bin(str(bin_name), **context) or str(bin_name)
+        if not package:
+            return None
+        return f"https://pypi.org/project/{package}"
+
     def default_version_handler(
         self,
         bin_name: BinName,

@@ -169,6 +169,16 @@ class NpmProvider(BinProvider):
             or [str(bin_name)],
         )
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name, allow_leading_at=True)
+        if not package:
+            return None
+        return f"https://www.npmjs.com/package/{package}"
+
     @computed_field
     @property
     def is_valid(self) -> bool:

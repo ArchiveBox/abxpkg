@@ -2,6 +2,7 @@
 __package__ = "abxpkg"
 
 import os
+import subprocess
 
 from pathlib import Path
 
@@ -93,6 +94,7 @@ class CargoProvider(BinProvider):
             if (
                 cached_version is not None
                 and cached_version >= MIN_CARGO_INSTALLER_VERSION
+                and self._cargo_executes(cached_installer.loaded_abspath)
             ):
                 return cached_installer
 
@@ -107,9 +109,14 @@ class CargoProvider(BinProvider):
             if (
                 loaded_version is not None
                 and loaded_version >= MIN_CARGO_INSTALLER_VERSION
+                and self._cargo_executes(loaded.loaded_abspath)
             ):
                 self._INSTALLER_BINARY = loaded
                 return loaded
+            # Discovered binary doesn't actually run (e.g. linuxbrew's cargo
+            # missing libllhttp.so on a stale CI image). Drop it so the
+            # install path below kicks in instead of returning a broken bin.
+            loaded = None
 
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
@@ -137,17 +144,52 @@ class CargoProvider(BinProvider):
         if not installer_providers:
             installer_providers = [env_provider]
 
-        upgraded = Binary(
-            name=self.INSTALLER_BIN,
-            min_version=MIN_CARGO_INSTALLER_VERSION,
-            binproviders=installer_providers,
-        ).install(no_cache=no_cache)
-        if upgraded and upgraded.loaded_abspath:
+        try:
+            upgraded = Binary(
+                name=self.INSTALLER_BIN,
+                min_version=MIN_CARGO_INSTALLER_VERSION,
+                binproviders=installer_providers,
+            ).install(no_cache=no_cache)
+        except Exception:
+            upgraded = None
+        if (
+            upgraded
+            and upgraded.loaded_abspath
+            and self._cargo_executes(upgraded.loaded_abspath)
+        ):
             self._INSTALLER_BINARY = upgraded
             return upgraded
 
-        assert loaded is not None
-        return loaded
+        from .exceptions import BinProviderUnavailableError
+
+        raise BinProviderUnavailableError(
+            self.__class__.__name__,
+            self.INSTALLER_BIN,
+        )
+
+    def _cargo_executes(self, abspath) -> bool:
+        """Return True iff ``<abspath> --version`` exits cleanly with parseable output.
+
+        Guards against partially broken cargo installs where the binary exists
+        on PATH but won't actually run (e.g. brew's cargo dynamically linked
+        to a libllhttp that's been removed). The base BinProvider load() does
+        a version probe, but providers can persist cache entries that bypass
+        it; this is a final, no-cache executable check.
+        """
+        if abspath is None:
+            return False
+        try:
+            proc = subprocess.run(
+                [str(abspath), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=self.version_timeout,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if proc.returncode != 0:
+            return False
+        return bool(SemVer.parse(proc.stdout.strip() or proc.stderr.strip()))
 
     @log_method_call()
     def setup(
@@ -212,6 +254,16 @@ class CargoProvider(BinProvider):
                 continue
             package_specs.append(arg)
         return package_specs or [bin_name]
+
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        return f"https://crates.io/crates/{package}"
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

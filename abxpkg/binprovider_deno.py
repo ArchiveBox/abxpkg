@@ -110,6 +110,43 @@ class DenoProvider(BinProvider):
             or [str(bin_name)],
         )
 
+    @staticmethod
+    def _strip_registry_prefix_pkg(spec: str) -> str:
+        """Strip ``@version`` from an npm/jsr spec, preserving ``@scope/name``."""
+        if spec.startswith("@") and "/" in spec:
+            scope, _, after = spec[1:].partition("/")
+            return "@" + scope + "/" + after.split("@", 1)[0]
+        return spec.split("@", 1)[0]
+
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        try:
+            install_args = self.get_install_args(str(bin_name), quiet=True)
+        except Exception:
+            install_args = [str(bin_name)]
+        # Prefer explicit registry-prefixed specs first, then any URL, and
+        # only fall back to deno.land/x if no specific target was given.
+        for arg in install_args or [str(bin_name)]:
+            if not arg or arg.startswith("-"):
+                continue
+            if arg.startswith("npm:"):
+                pkg = self._strip_registry_prefix_pkg(arg[4:])
+                if pkg:
+                    return f"https://www.npmjs.com/package/{pkg}"
+            elif arg.startswith("jsr:"):
+                pkg = self._strip_registry_prefix_pkg(arg[4:])
+                if pkg:
+                    return f"https://jsr.io/{pkg}"
+            elif "://" in arg:
+                return arg
+        fallback = self._docs_url_package_name(bin_name)
+        if fallback:
+            return f"https://deno.land/x/{fallback}"
+        return None
+
     @computed_field
     @property
     def is_valid(self) -> bool:

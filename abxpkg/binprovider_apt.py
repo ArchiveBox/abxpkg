@@ -65,6 +65,17 @@ class AptProvider(BinProvider):
             if not dpkg_abspath or not apt_abspath:
                 self.PATH = ""
             else:
+                # Seed self.PATH with apt-get's bin_dir before calling
+                # self.exec(dpkg -L bash). self.exec's build_exec_env
+                # re-enters self.setup_PATH; without a non-empty PATH,
+                # the ``not self.PATH`` guard at the top of this method
+                # would fire on every recursive entry and infinitely
+                # loop. The bin_dir is correct as a baseline value —
+                # the dpkg-discovered runtime bin dirs get prepended
+                # onto it just below.
+                self.PATH = TypeAdapter(PATHStr).validate_python(
+                    str(apt_abspath.parent),
+                )
                 PATH = self.PATH
                 dpkg_install_dirs = (
                     self.exec(
@@ -84,6 +95,45 @@ class AptProvider(BinProvider):
                         PATH = ":".join([str(bin_dir), *PATH.split(":")])
                 self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         super().setup_PATH(no_cache=no_cache)
+
+    @staticmethod
+    def _detect_distro_codename() -> tuple[str, str]:
+        """Return (distro_id, codename) parsed from /etc/os-release with apt fallbacks."""
+        os_release: dict[str, str] = {}
+        try:
+            with open("/etc/os-release", encoding="utf-8") as fh:
+                for raw in fh:
+                    line = raw.strip()
+                    if not line or "=" not in line or line.startswith("#"):
+                        continue
+                    key, _, value = line.partition("=")
+                    os_release[key] = value.strip().strip('"').strip("'")
+        except OSError:
+            pass
+        distro_id = (os_release.get("ID") or "").lower()
+        codename = (
+            os_release.get("VERSION_CODENAME")
+            or os_release.get("UBUNTU_CODENAME")
+            or ""
+        ).lower()
+        if distro_id in ("ubuntu", "debian"):
+            return distro_id, codename or (
+                "noble" if distro_id == "ubuntu" else "stable"
+            )
+        # apt is debian-derived; fall back to ubuntu LTS for derivatives.
+        return "ubuntu", codename or "noble"
+
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        distro, codename = self._detect_distro_codename()
+        host = "packages.debian.org" if distro == "debian" else "packages.ubuntu.com"
+        return f"https://{host}/{codename}/{package}"
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

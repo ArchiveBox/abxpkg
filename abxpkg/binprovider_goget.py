@@ -55,6 +55,7 @@ class GoGetProvider(BinProvider):
             "install": "self.default_install_handler",
             "update": "self.default_update_handler",
             "uninstall": "self.default_uninstall_handler",
+            "docs_url": "self.default_docs_url_handler",
         },
         "go": {
             "version": ["go", "version"],
@@ -193,6 +194,29 @@ class GoGetProvider(BinProvider):
                 f"{self.__class__.__name__} requires install_args with a full Go module path for {bin_name!r}, e.g. overrides={{'{bin_name}': {{'install_args': ['example.com/module/cmd/{bin_name}@latest']}}}}",
             )
         return [f"{bin_name}@latest"]
+
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        try:
+            install_args = self.get_install_args(str(bin_name), quiet=True)
+        except Exception:
+            return None
+        for arg in install_args or []:
+            if not arg or arg.startswith("-"):
+                continue
+            if arg.startswith(("./", "../", "/")):
+                continue  # local path target — pkg.go.dev can't resolve it
+            module_path = str(arg).split("@", 1)[0]
+            # Go module paths must look like a domain followed by a path,
+            # e.g. ``example.com/foo`` — both a ``/`` and a ``.`` in the host.
+            host = module_path.split("/", 1)[0]
+            if "/" not in module_path or "." not in host:
+                continue
+            return f"https://pkg.go.dev/{module_path}"
+        return None
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

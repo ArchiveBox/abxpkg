@@ -202,6 +202,16 @@ class GemProvider(BinProvider):
 
             wrapper_path.write_text(wrapper_text, encoding="utf-8")
 
+    def default_docs_url_handler(
+        self,
+        bin_name: BinName,
+        **context,
+    ) -> str | None:
+        package = self._docs_url_package_name(bin_name)
+        if not package:
+            return None
+        return f"https://rubygems.org/gems/{package}"
+
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
