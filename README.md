@@ -682,8 +682,9 @@ This type represents a provider of binaries, e.g. a package manager like `apt` /
 Every provider exposes the same lifecycle surface:
 
 - `load()` / `install()` / `update()` / `uninstall()`
+- `search()` to discover installable package matches from a provider index
 - `get_install_args()` to resolve package names / formulae / image refs / module specs
-- `get_abspath()` / `get_abspaths()` / `get_version()` / `get_sha256()`
+- `get_abspath()` / `get_abspaths()` / `get_version()` / `get_sha256()` / `get_docs_url()`
 
 Shared base defaults come from [`abxpkg/binprovider.py`](./abxpkg/binprovider.py) and apply unless a concrete provider overrides them:
 
@@ -719,6 +720,8 @@ provider = PipProvider(install_root=Path("/tmp/venv")).get_provider_with_overrid
             "install_args": ["black==24.4.2"],
             "version": "self.default_version_handler",
             "abspath": "self.default_abspath_handler",
+            "docs_url": "self.default_docs_url_handler",
+            "search": "self.default_search_handler",
         },
     },
     dry_run=True,
@@ -727,7 +730,7 @@ provider = PipProvider(install_root=Path("/tmp/venv")).get_provider_with_overrid
 ```
 
 - `install_args` / `packages`: package-manager arguments for that provider. `packages` is the legacy alias.
-- `abspath`, `version`, `install`, `update`, `uninstall`: literal values, callables, or `"self.method_name"` references that replace the provider handler for a specific binary.
+- `abspath`, `version`, `install`, `update`, `uninstall`, `docs_url`, `search`: literal values, callables, or `"self.method_name"` references that replace the provider handler for a specific binary.
 - `PATH`, `INSTALLER_BIN`, `euid`, `install_root`, `bin_dir`, `dry_run`, `postinstall_scripts`, `min_release_age`, `install_timeout`, `version_timeout`: shared provider field patches applied to the copied provider instance before handler resolution.
 
 Providers with isolated install locations also expose a shared constructor surface:
