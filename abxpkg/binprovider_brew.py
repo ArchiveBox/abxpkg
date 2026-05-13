@@ -9,7 +9,7 @@ import platform
 from pathlib import Path
 
 from pydantic import Field, TypeAdapter, computed_field, model_validator
-from typing import Self
+from typing import ClassVar, Self
 
 from .base_types import (
     BinProviderName,
@@ -42,6 +42,7 @@ class BrewProvider(BinProvider):
     name: BinProviderName = "brew"
     _log_emoji = "🍺"
     INSTALLER_BIN: BinName = "brew"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"  # Seeded with common brew bin roots; setup_PATH() lazily normalizes it to the resolved brew/runtime bin dirs.
     postinstall_scripts: bool | None = Field(

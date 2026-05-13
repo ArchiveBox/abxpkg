@@ -400,6 +400,8 @@ class TestMachine:
 
         after = provider.load(bin_name, quiet=True, no_cache=True)
         if expect_present_before:
+            assert before is not None
+            assert after is not None
             self.assert_shallow_binary_loaded(after, assert_version_command=False)
             assert after.loaded_abspath == before.loaded_abspath
             assert after.loaded_version == before.loaded_version
