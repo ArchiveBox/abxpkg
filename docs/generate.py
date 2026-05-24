@@ -277,7 +277,8 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "summary": (
             "Bootstraps @puppeteer/browsers through NpmProvider, then uses its CLI "
             "to install managed browsers. Resolution uses semantic version ordering, "
-            "not lexicographic string sorting."
+            "not lexicographic string sorting. INSTALLER_BINARY is self-bootstrapped "
+            "and does not delegate to the generic cross-provider resolver."
         ),
         "tags": ["browsers", "npm-bootstrap"],
         "source_file": "abxpkg/binprovider_puppeteer.py",
@@ -291,7 +292,8 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
             "Bootstraps playwright via npm, runs playwright install --with-deps, "
             "then symlinks resolved browser executables into bin_dir. Pinning "
             "playwright_root also pins PLAYWRIGHT_BROWSERS_PATH. Defaults euid=0 "
-            "so --with-deps can install system packages."
+            "so --with-deps can install system packages. INSTALLER_BINARY is "
+            "self-bootstrapped and does not delegate to the generic resolver."
         ),
         "tags": ["browsers", "npm-bootstrap", "sudo"],
         "source_file": "abxpkg/binprovider_playwright.py",
