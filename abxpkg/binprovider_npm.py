@@ -254,32 +254,15 @@ class NpmProvider(BinProvider):
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
-        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
-
         loaded = super().INSTALLER_BINARY(no_cache=no_cache)
-        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
-        selected_provider_names = (
-            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
-            if raw_provider_names
-            else list(DEFAULT_PROVIDER_NAMES)
-        )
-        dependency_providers = [
-            EnvProvider(install_root=None, bin_dir=None)
-            if provider_name == "env"
-            else PROVIDER_CLASS_BY_NAME[provider_name]()
-            for provider_name in selected_provider_names
-            if provider_name
-            and provider_name in PROVIDER_CLASS_BY_NAME
-            and provider_name != self.name
-        ]
-        node_loaded = (
-            Binary(
+
+        try:
+            node_loaded = Binary(
                 name="node",
-                binproviders=dependency_providers,
+                binproviders=[EnvProvider(install_root=None, bin_dir=None)],
             ).load(no_cache=no_cache)
-            if dependency_providers
-            else None
-        )
+        except Exception:
+            node_loaded = None
         if (
             node_loaded
             and node_loaded.loaded_abspath

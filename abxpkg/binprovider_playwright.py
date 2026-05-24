@@ -8,6 +8,7 @@ import shutil
 import sys
 import platform
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import Field, TypeAdapter, computed_field
 
@@ -67,6 +68,7 @@ class PlaywrightProvider(BinProvider):
     name: BinProviderName = "playwright"
     _log_emoji = "🎬"
     INSTALLER_BIN: BinName = "playwright"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
     postinstall_scripts: bool | None = Field(default=None, repr=False)

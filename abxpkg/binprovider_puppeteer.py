@@ -8,7 +8,7 @@ import shlex
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 from collections.abc import Iterable
 
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -51,6 +51,7 @@ class PuppeteerProvider(BinProvider):
     name: BinProviderName = "puppeteer"
     _log_emoji = "🎭"
     INSTALLER_BIN: BinName = "puppeteer-browsers"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
     postinstall_scripts: bool | None = Field(
