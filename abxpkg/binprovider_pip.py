@@ -647,8 +647,18 @@ class PipProvider(BinProvider):
         abspath = bin_abspath(str(bin_name), PATH=PATH)
         if abspath:
             return TypeAdapter(HostBinPath).validate_python(abspath)
-        else:
-            return None
+
+        package_name = self._package_name_for_bin(str(bin_name)) or str(bin_name)
+        normalized_name = package_name.lower().replace("-", "_")
+        location_path = Path(location)
+        for candidate in (
+            location_path / normalized_name / "__init__.py",
+            location_path / f"{normalized_name}.py",
+        ):
+            if candidate.exists():
+                return TypeAdapter(HostBinPath).validate_python(candidate)
+
+        return None
 
     @staticmethod
     def _package_name_from_install_arg(install_arg: str) -> str | None:
@@ -717,16 +727,17 @@ class PipProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> SemVer | None:
-        try:
-            version = self._version_from_exec(
-                bin_name,
-                abspath=abspath,
-                timeout=timeout,
-            )
-            if version:
-                return version
-        except ValueError:
-            pass
+        if not abspath or os.access(abspath, os.X_OK):
+            try:
+                version = self._version_from_exec(
+                    bin_name,
+                    abspath=abspath,
+                    timeout=timeout,
+                )
+                if version:
+                    return version
+            except (OSError, ValueError):
+                pass
 
         try:
             pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
