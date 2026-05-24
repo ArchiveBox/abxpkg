@@ -1,0 +1,39 @@
+abxpkg/js/chrome/config.json
+  s_b989805ae95d6a::t_2cdc3a8778084a 28
+tests/test_puppeteerprovider.py
+  s_b989805ae95d6a::t_a302c44db155af 29,46
+  s_b989805ae95d6a::t_e284ae2cc577f7 11-16
+abxpkg/binprovider_chromewebstore.py
+  s_b989805ae95d6a::t_a8d83c9ead2269 147,215-219,230-239,255
+abxpkg/binprovider_puppeteer.py
+  s_b989805ae95d6a::t_34b8ee493f79df 362-364,369
+  s_b989805ae95d6a::t_1b673e8d779c4b 463-464,888
+  s_b989805ae95d6a::t_c0b13caad9dc0c 365-368
+abxpkg/js/chrome/chrome_utils.js
+  s_b989805ae95d6a::t_59c3e42c7e5032 1418,1424,1449-1450,1529,1533,1847
+  s_b989805ae95d6a::t_0720bccf0d53b5 1721-1800,1824
+  s_b989805ae95d6a::t_0425ec88e78ff9 3346,3363
+  s_b989805ae95d6a::t_26ddd402584e04 3882
+  s_b989805ae95d6a::t_92cd23e43103ac 2207
+  s_b989805ae95d6a::t_e218360c6a0f8e 2877-2878,2897,2925
+  s_b989805ae95d6a::t_c46f256359c760 3573,3583-3612,3663-3665,3671,3681-3687,3694
+  s_b989805ae95d6a::t_febeea5c2588a7 4004
+  s_b989805ae95d6a::t_5da44375cacd5f 692-694,704,717,799
+  s_b989805ae95d6a::t_ee966dcb37d8bf 1478
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "1bd2c8c111ac309ad345b6114da2acd8ec6bc98e",
+  "prompts": {},
+  "sessions": {
+    "s_b989805ae95d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1fa8-ca6f-7ef3-af88-ea8dba9078db",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
