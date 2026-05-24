@@ -48,11 +48,7 @@
     "CHROME_BINARY": {
       "type": "string",
       "default": "chromium",
-      "x-aliases": [
-        "CHROMIUM_BINARY",
-        "GOOGLE_CHROME_BINARY"
-      ],
-      "description": "Path to Chromium binary"
+      "description": "Path to a Chromium-family browser binary"
     },
     "NODE_BINARY": {
       "type": "string",
