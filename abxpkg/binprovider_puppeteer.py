@@ -7,7 +7,6 @@ import re
 import shlex
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 from typing import Self
 from collections.abc import Iterable
@@ -45,33 +44,6 @@ logger = get_logger(__name__)
 CLAUDE_SANDBOX_NO_PROXY = (
     "localhost,127.0.0.1,169.254.169.254,metadata.google.internal,"
     ".svc.cluster.local,.local"
-)
-
-CHROMIUM_APT_DEPS = (
-    "fonts-liberation",
-    "libasound2t64",
-    "libatk-bridge2.0-0t64",
-    "libatk1.0-0t64",
-    "libatspi2.0-0t64",
-    "libcairo2",
-    "libcups2t64",
-    "libdbus-1-3",
-    "libdrm2",
-    "libgbm1",
-    "libglib2.0-0t64",
-    "libgtk-3-0t64",
-    "libnspr4",
-    "libnss3",
-    "libpango-1.0-0",
-    "libx11-6",
-    "libxcb1",
-    "libxcomposite1",
-    "libxdamage1",
-    "libxext6",
-    "libxfixes3",
-    "libxkbcommon0",
-    "libxrandr2",
-    "xdg-utils",
 )
 
 
@@ -729,35 +701,6 @@ class PuppeteerProvider(BinProvider):
                     )
         return proc
 
-    def _install_linux_browser_runtime_deps(self, install_args: list[str]) -> None:
-        if sys.platform != "linux" or os.geteuid() != 0:
-            return
-        if "--install-deps" not in install_args:
-            return
-        browser_name = self._browser_name("", install_args)
-        if browser_name not in {"chrome", "chromium", "chrome-headless-shell"}:
-            return
-        if not shutil.which("apt-get"):
-            return
-
-        subprocess.run(
-            ["apt-get", "update", "-qq"],
-            check=True,
-            timeout=120,
-        )
-        subprocess.run(
-            [
-                "apt-get",
-                "install",
-                "-qq",
-                "-y",
-                "--no-install-recommends",
-                *CHROMIUM_APT_DEPS,
-            ],
-            check=True,
-            timeout=300,
-        )
-
     def default_search_handler(
         self,
         bin_name: BinName,
@@ -815,8 +758,6 @@ class PuppeteerProvider(BinProvider):
 
         if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
-
-        self._install_linux_browser_runtime_deps(normalized_install_args)
 
         installer_binary = self._INSTALLER_BINARY
         if installer_binary is None or installer_binary.loaded_abspath is None:
