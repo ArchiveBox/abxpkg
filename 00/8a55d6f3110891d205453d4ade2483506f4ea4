@@ -1,0 +1,19 @@
+abxpkg/binprovider_puppeteer.py
+  s_b989805ae95d6a::t_400d66128e82b4 513-519,521-522,532,534,538,540
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "008a55d6f3110891d205453d4ade2483506f4ea4",
+  "prompts": {},
+  "sessions": {
+    "s_b989805ae95d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1fa8-ca6f-7ef3-af88-ea8dba9078db",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
