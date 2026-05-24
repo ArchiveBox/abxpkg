@@ -25,7 +25,7 @@
       "overrides": {
         "puppeteer": {
           "install_args": [
-            "chromium@latest",
+            "chrome@stable",
             "--install-deps"
           ]
         }

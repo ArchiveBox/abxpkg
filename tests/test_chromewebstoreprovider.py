@@ -12,7 +12,7 @@ PACKAGED_CHROME_UTILS_PATH = (
     / "chrome"
     / "chrome_utils.js"
 )
-UBLOCK_WEBSTORE_ID = "cjpalhdlnbpafiamejdnhcphjbkeiagm"
+UBLOCK_WEBSTORE_ID = "ddkjiahejlhfcafbddmgiahcphecmpfh"
 
 
 def assert_extension_binary_loaded(loaded) -> None:
@@ -197,7 +197,7 @@ class TestChromeWebstoreProvider:
         # queries return [] because the Web Store doesn't expose a JSON
         # search API for keyword lookups.
         results = ChromeWebstoreProvider().search(UBLOCK_WEBSTORE_ID)
-        assert results, "chromewebstore search by id should resolve uBlock Origin"
+        assert results, "chromewebstore search by id should resolve uBlock Origin Lite"
         assert len(results) == 1
         match = results[0]
         assert match.name == UBLOCK_WEBSTORE_ID

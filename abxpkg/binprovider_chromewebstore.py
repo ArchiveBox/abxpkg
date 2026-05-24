@@ -140,11 +140,11 @@ class ChromeWebstoreProvider(BinProvider):
         # Prefer the cached webstore_id/extension_name if we have them (set
         # after install); otherwise fall back to install_args, which is the
         # configured ``[<webstore_id>, --name=<extension_name>]`` pair.
-        cached = self._cached_extension(str(bin_name))
         try:
             install_args = list(self.get_install_args(bin_name, quiet=True))
         except Exception:
             install_args = []
+        cached = self._cached_extension(str(bin_name), install_args)
         webstore_id = str(
             cached.get("webstore_id") or (install_args[0] if install_args else ""),
         ).strip()
@@ -212,7 +212,11 @@ class ChromeWebstoreProvider(BinProvider):
             ),
         ]
 
-    def _cached_extension(self, bin_name: str) -> dict[str, Any]:
+    def _cached_extension(
+        self,
+        bin_name: str,
+        install_args: list[str] | tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
         """Load the persisted extension metadata JSON for a cached extension, if any."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
@@ -223,7 +227,16 @@ class ChromeWebstoreProvider(BinProvider):
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return {}
-        return cached if isinstance(cached, dict) else {}
+        if not isinstance(cached, dict):
+            return {}
+        requested_webstore_id = str(
+            (install_args or self.get_install_args(bin_name, quiet=True) or [bin_name])[
+                0
+            ],
+        )
+        if str(cached.get("webstore_id") or "") != requested_webstore_id:
+            return {}
+        return cached
 
     def _extension_name(self, bin_name: str, install_args: list[str]) -> str:
         """Resolve the human-friendly extension name from install args or the bin_name."""
@@ -238,8 +251,8 @@ class ChromeWebstoreProvider(BinProvider):
         """Return the cached extension id/name and the derived on-disk paths for it."""
         bin_dir = self.bin_dir
         assert bin_dir is not None
-        cached = self._cached_extension(bin_name)
         install_args = list(self.get_install_args(bin_name, quiet=True))
+        cached = self._cached_extension(bin_name, install_args)
         webstore_id = str(
             cached["webstore_id"]
             if "webstore_id" in cached

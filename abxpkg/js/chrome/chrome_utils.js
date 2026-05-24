@@ -689,17 +689,9 @@ async function killZombieChrome(snapDir = null, options = {}) {
 /**
  * Launch Chromium and return the live browser process + browser-level CDP endpoint.
  *
- * This helper only performs process startup and debug-port verification. It is
- * intentionally earlier in the lifecycle than the crawl launch hook's
- * "published readiness" step:
- * - it may write `chrome.pid` immediately for later cleanup/re-attachment
- * - it does NOT publish `cdp_url.txt` as a stable crawl marker
- * - callers must finish any runtime setup that should happen before other
- *   hooks attach (downloads via CDP, cookie seeding, extension discovery, etc.)
- *   and only then write the crawl/session readiness files
- *
- * Snapshot hooks should therefore wait on the persisted session markers emitted
- * by the crawl launch hook, not on this raw launch result alone.
+ * This helper only performs process startup and debug-port verification. The
+ * caller publishes the browser-level CDP endpoint as soon as this returns; later
+ * runtime setup such as extension loading publishes its own readiness metadata.
  *
  * @param {Object} options - Launch options
  * @param {string} [options.binary] - Chrome binary path (auto-detected if not provided)
@@ -709,7 +701,7 @@ async function killZombieChrome(snapDir = null, options = {}) {
  * @param {boolean} [options.headless=true] - Run in headless mode
  * @param {boolean} [options.sandbox=true] - Enable Chrome sandbox
  * @param {boolean} [options.checkSsl=true] - Check SSL certificates
- * @param {string[]} [options.extensionPaths=[]] - Paths to unpacked extensions
+ * @param {boolean} [options.enableExtensionDebugging=false] - Enable CDP extension loading/debugging
  * @returns {Promise<Object>} - {success, cdpUrl, pid, port, process, error}
  */
 async function launchChromium(options = {}) {
@@ -722,7 +714,7 @@ async function launchChromium(options = {}) {
         headless = getEnvBool('CHROME_HEADLESS', true),
         sandbox = getEnvBool('CHROME_SANDBOX', true),
         checkSsl = getEnvBool('CHROME_CHECK_SSL_VALIDITY', getEnvBool('CHECK_SSL_VALIDITY', true)),
-        extensionPaths = [],
+        enableExtensionDebugging = false,
     } = options;
     const config = loadConfig(path.join(__dirname, 'config.json'));
     const maxLaunchAttempts = Math.max(1, Number(config.CHROME_LAUNCH_ATTEMPTS) || 1);
@@ -804,13 +796,8 @@ async function launchChromium(options = {}) {
         chromiumArgs.push('--use-mock-keychain');
     }
 
-    // Add extension loading flags
-    if (extensionPaths.length > 0) {
-        const extPathsArg = extensionPaths.join(',');
-        chromiumArgs.push(`--load-extension=${extPathsArg}`);
+    if (enableExtensionDebugging) {
         chromiumArgs.push('--enable-unsafe-extension-debugging');
-        chromiumArgs.push('--disable-features=DisableLoadExtensionCommandLineSwitch,ExtensionManifestV2Unsupported,ExtensionManifestV2Disabled');
-        console.error(`[*] Loading ${extensionPaths.length} extension(s) via --load-extension`);
     }
 
     chromiumArgs.push('about:blank');
@@ -921,7 +908,6 @@ async function launchChromium(options = {}) {
                 cdpUrl: wsUrl,
                 outputDir,
                 headless,
-                extensionPaths,
             });
 
             return result;
@@ -1429,13 +1415,13 @@ async function loadOrInstallExtension(ext, extensions_dir = null, force_install 
 }
 
 /**
- * Check if a Puppeteer target is an extension background page/service worker.
+ * Check if a Puppeteer target is an MV3 extension service worker.
  *
  * @param {Object} target - Puppeteer target object
  * @returns {Promise<Object>} - Object with target_is_bg, extension_id, manifest_version, etc.
  */
 const CHROME_EXTENSION_URL_PREFIX = 'chrome-extension://';
-const EXTENSION_BACKGROUND_TARGET_TYPES = new Set(['service_worker', 'background_page']);
+const EXTENSION_BACKGROUND_TARGET_TYPES = new Set(['service_worker']);
 
 /**
  * Parse extension ID from a target URL.
@@ -1460,8 +1446,8 @@ function getValidInstalledExtensions(extensions) {
 }
 
 async function tryGetExtensionContext(target, targetType) {
-    if (targetType === 'service_worker') return await target.worker();
-    return await target.page();
+    if (targetType !== 'service_worker') return null;
+    return await target.worker();
 }
 
 async function waitForExtensionTargetType(browser, extensionId, targetType, timeout) {
@@ -1489,8 +1475,7 @@ async function waitForExtensionTargetHandle(browser, extensionId, timeout = 3000
     while (Date.now() < deadline) {
         const candidates = browser.targets().filter(target =>
             getExtensionIdFromUrl(target.url()) === extensionId &&
-            (EXTENSION_BACKGROUND_TARGET_TYPES.has(target.type()) ||
-                target.url().startsWith(CHROME_EXTENSION_URL_PREFIX))
+            target.type() === 'service_worker'
         );
 
         if (preferredTargetUrl) {
@@ -1541,12 +1526,11 @@ async function isTargetExtension(target) {
         }
     }
 
-    // Check if this is an extension background page or service worker
+    // Check if this is an MV3 extension service worker
     const extension_id = getExtensionIdFromUrl(target_url);
     const is_chrome_extension = Boolean(extension_id);
-    const is_background_page = target_type === 'background_page';
     const is_service_worker = target_type === 'service_worker';
-    const target_is_bg = is_chrome_extension && (is_background_page || is_service_worker);
+    const target_is_bg = is_chrome_extension && is_service_worker;
 
     let manifest_version = null;
     let manifest = null;
@@ -1642,14 +1626,6 @@ async function loadExtensionFromTarget(extensions, target) {
                     return await chromeApi.action.onClicked.dispatch(tab);
                 }
 
-                if (browserApi?.browserAction?.onClicked?.dispatch) {
-                    return await browserApi.browserAction.onClicked.dispatch(tab);
-                }
-
-                if (chromeApi?.browserAction?.onClicked?.dispatch) {
-                    return await chromeApi.browserAction.onClicked.dispatch(tab);
-                }
-
                 throw new Error('Extension action dispatch not available');
             }, tab || null);
         },
@@ -1742,6 +1718,86 @@ async function loadAllExtensionsFromBrowser(browser, extensions, timeout = 30000
     return extensions;
 }
 
+async function loadUnpackedExtensionsIntoBrowser(browser, extensions, timeout = 30000) {
+    const validExtensions = getValidInstalledExtensions(extensions);
+    if (validExtensions.length === 0) {
+        return extensions;
+    }
+
+    console.log(`[⚙️] Loading ${validExtensions.length} unpacked chrome extensions into browser...`);
+    const perExtensionTimeout = Math.max(
+        250,
+        getEnvInt('CHROME_EXTENSION_DISCOVERY_TIMEOUT_MS', Math.min(timeout, 10000))
+    );
+    let cdpSession = null;
+    try {
+        cdpSession = await browser.target().createCDPSession();
+    } catch (error) {
+        const loadError = `${error.name}: ${error.message}`;
+        for (const extension of validExtensions) {
+            extension.load_error = loadError;
+        }
+        console.warn(`[!] Browser-level extension loading is unavailable, continuing: ${loadError}`);
+        return extensions;
+    }
+    let loadUnpackedUnavailable = false;
+
+    for (const extension of validExtensions) {
+        if (loadUnpackedUnavailable) {
+            extension.load_error = 'Extensions.loadUnpacked is unavailable in this browser';
+            console.warn(`[!] Skipping CDP unpacked extension load for ${extension.name || extension.id}: ${extension.load_error}`);
+            continue;
+        }
+
+        try {
+            const { id } = await cdpSession.send('Extensions.loadUnpacked', {
+                path: extension.unpacked_path,
+            });
+            if (!id) {
+                throw new Error(`Extensions.loadUnpacked did not return an id for ${extension.unpacked_path}`);
+            }
+            extension.id = id;
+            delete extension.load_error;
+
+            try {
+                const target = await waitForExtensionTargetHandle(
+                    browser,
+                    extension.id,
+                    perExtensionTimeout
+                );
+                const loaded = await loadExtensionFromTarget(extensions, target);
+                if (!loaded) {
+                    throw new Error(`Unable to attach extension target for ${extension.id}`);
+                }
+                delete extension.target_error;
+            } catch (targetError) {
+                extension.target_error = `${targetError.name}: ${targetError.message}`;
+                console.warn(
+                    `[!] Extension ${extension.name || extension.id} loaded but did not expose a background target within ` +
+                    `${perExtensionTimeout}ms, continuing: ${extension.target_error}`
+                );
+            }
+        } catch (error) {
+            extension.load_error = `${error.name}: ${error.message}`;
+            if (
+                String(error.message || '').includes('Method not available') ||
+                String(error.message || '').includes("'Extensions.loadUnpacked' wasn't found")
+            ) {
+                loadUnpackedUnavailable = true;
+                console.warn('[!] Extensions.loadUnpacked is unavailable in this browser, skipping remaining CDP unpacked extension loads');
+                continue;
+            }
+            console.warn(`[!] Failed to load extension ${extension.name || extension.unpacked_path}: ${extension.load_error}`);
+        }
+    }
+
+    try {
+        await cdpSession.detach();
+    } catch (error) {}
+
+    return extensions;
+}
+
 /**
  * Load extension manifest.json file
  *
@@ -1765,35 +1821,7 @@ function loadExtensionManifest(unpacked_path) {
 }
 
 /**
- * @deprecated Use puppeteer's enableExtensions option instead.
- *
- * Generate Chrome launch arguments for loading extensions.
- * NOTE: This is deprecated. Use puppeteer.launch({ pipe: true, enableExtensions: [paths] }) instead.
- *
- * @param {Array} extensions - Array of extension metadata objects
- * @returns {Array<string>} - Chrome CLI arguments for loading extensions
- */
-function getExtensionLaunchArgs(extensions) {
-    console.warn('[DEPRECATED] getExtensionLaunchArgs is deprecated. Use puppeteer enableExtensions option instead.');
-    const validExtensions = getValidInstalledExtensions(extensions);
-    if (validExtensions.length === 0) return [];
-
-    const unpacked_paths = validExtensions.map(ext => ext.unpacked_path);
-    // Use computed id (from path hash) for allowlisting, as that's what Chrome uses for unpacked extensions
-    // Fall back to webstore_id if computed id not available
-    const extension_ids = validExtensions.map(ext => ext.id || getExtensionId(ext.unpacked_path));
-
-    return [
-        `--load-extension=${unpacked_paths.join(',')}`,
-        `--allowlisted-extension-id=${extension_ids.join(',')}`,
-        '--allow-legacy-extension-manifests',
-        '--disable-extensions-auto-update',
-    ];
-}
-
-/**
- * Get extension paths for use with puppeteer's enableExtensions option.
- * Following puppeteer best practices: https://pptr.dev/guides/chrome-extensions
+ * Get unpacked extension paths for CDP Extensions.loadUnpacked.
  *
  * @param {Array} extensions - Array of extension metadata objects
  * @returns {Array<string>} - Array of extension unpacked paths
@@ -1810,30 +1838,13 @@ function getExtensionPaths(extensions) {
  *   const worker = await waitForExtensionTarget(browser, extensionId);
  *   // worker is a WebWorker context
  *
- * For Manifest V2 extensions (background pages):
- *   const page = await waitForExtensionTarget(browser, extensionId);
- *   // page is a Page context
- *
  * @param {Object} browser - Puppeteer browser instance
  * @param {string} extensionId - Extension ID to wait for (computed from path hash)
  * @param {number} [timeout=30000] - Timeout in milliseconds
  * @returns {Promise<Object>} - Worker or Page context for the extension
  */
 async function waitForExtensionTarget(browser, extensionId, timeout = 30000) {
-    for (const targetType of EXTENSION_BACKGROUND_TARGET_TYPES) {
-        try {
-            const context = await waitForExtensionTargetType(browser, extensionId, targetType, timeout);
-            if (context) return context;
-        } catch (err) {
-            // Continue to next extension target type
-        }
-    }
-
-    // Try any extension page as fallback
-    const extTarget = await waitForExtensionTargetHandle(browser, extensionId, timeout);
-
-    // Return worker or page depending on target type
-    return await tryGetExtensionContext(extTarget, extTarget.type());
+    return await waitForExtensionTargetType(browser, extensionId, 'service_worker', timeout);
 }
 
 /**
@@ -2193,7 +2204,7 @@ async function installExtensionWithCache(extension, options = {}) {
             const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
             const manifestPath = path.join(cached.unpacked_path, 'manifest.json');
 
-            if (fs.existsSync(manifestPath)) {
+            if (cached.webstore_id === extension.webstore_id && fs.existsSync(manifestPath)) {
                 if (!quiet) {
                     console.log(`[*] ${extension.name} extension already installed (using cache)`);
                 }
@@ -2854,7 +2865,6 @@ async function cleanupLaunchArtifacts(outputDir, chromePid = null) {
  * @param {number} options.chromePid - Spawned Chrome PID
  * @param {string} options.cdpUrl - Browser websocket endpoint
  * @param {boolean} [options.headless=true] - Whether browser is headless
- * @param {string[]} [options.extensionPaths=[]] - Extension paths loaded at launch
  * @returns {Promise<void>}
  */
 async function verifyStableChromiumSession(options = {}) {
@@ -2862,12 +2872,10 @@ async function verifyStableChromiumSession(options = {}) {
         chromePid,
         cdpUrl,
         headless = true,
-        extensionPaths = [],
     } = options;
 
-    const hasExtensions = extensionPaths.length > 0;
-    const settleMs = getEnvInt('CHROME_LAUNCH_SETTLE_MS', hasExtensions ? 1000 : 250);
-    const stableMs = getEnvInt('CHROME_LAUNCH_STABILITY_MS', hasExtensions ? 2500 : 750);
+    const settleMs = getEnvInt('CHROME_LAUNCH_SETTLE_MS', 250);
+    const stableMs = getEnvInt('CHROME_LAUNCH_STABILITY_MS', 750);
 
     // A ready DevTools websocket is not enough on its own. Chromium sometimes
     // binds the port and then dies moments later while still finishing native
@@ -2886,11 +2894,7 @@ async function verifyStableChromiumSession(options = {}) {
     }
 
     if (!chromePid || !isProcessAlive(chromePid)) {
-        throw new Error(
-            hasExtensions && headless
-                ? 'Chromium exited during headless extension startup'
-                : 'Chromium exited during startup'
-        );
+        throw new Error('Chromium exited during startup');
     }
 
     let browser = null;
@@ -2918,11 +2922,7 @@ async function verifyStableChromiumSession(options = {}) {
     const deadline = Date.now() + stableMs;
     while (Date.now() < deadline) {
         if (!isProcessAlive(chromePid)) {
-            throw new Error(
-                hasExtensions && headless
-                    ? 'Chromium exited after opening the debug port during headless extension startup'
-                    : 'Chromium exited after opening the debug port'
-            );
+            throw new Error('Chromium exited after opening the debug port');
         }
         await sleep(200);
     }
@@ -3341,10 +3341,9 @@ async function connectToPage(options = {}) {
 
 function loadInstalledExtensionsFromCache(extensionsDir = getExtensionsDir()) {
     const installedExtensions = [];
-    const extensionPaths = [];
 
     if (!fs.existsSync(extensionsDir)) {
-        return { installedExtensions, extensionPaths };
+        return { installedExtensions };
     }
 
     for (const file of fs.readdirSync(extensionsDir)) {
@@ -3358,11 +3357,10 @@ function loadInstalledExtensionsFromCache(extensionsDir = getExtensionsDir()) {
                 extData.id = getExtensionId(extData.unpacked_path);
             }
             installedExtensions.push(extData);
-            extensionPaths.push(extData.unpacked_path);
         } catch (error) {}
     }
 
-    return { installedExtensions, extensionPaths };
+    return { installedExtensions };
 }
 
 function parseCookiesTxt(contents) {
@@ -3572,7 +3570,7 @@ async function ensureChromeSession(options = {}) {
         fs.mkdirSync(outputDir, { recursive: true });
     }
 
-    const { installedExtensions, extensionPaths } = loadInstalledExtensionsFromCache(extensionsDir);
+    const { installedExtensions } = loadInstalledExtensionsFromCache(extensionsDir);
 
     const existingSession = await inspectChromeSessionArtifacts(outputDir, { processIsLocal });
     const reusingExplicitCdpUrl =
@@ -3582,12 +3580,41 @@ async function ensureChromeSession(options = {}) {
         existingSession.state?.cdpUrl === cdpUrl;
 
     if (reuseExisting && existingSession.hasArtifacts && !existingSession.stale && existingSession.state?.cdpUrl) {
+        if (installedExtensions.length > 0) {
+            let browser = null;
+            try {
+                browser = await connectToBrowserEndpoint(puppeteer, existingSession.state.cdpUrl, { defaultViewport: null });
+                for (const extension of installedExtensions) {
+                    const existingExtension = (existingSession.state.extensions || []).find(existing =>
+                        existing?.name === extension.name ||
+                        existing?.unpacked_path === extension.unpacked_path
+                    );
+                    if (existingExtension?.id) {
+                        Object.assign(extension, existingExtension);
+                    }
+                }
+                const unloadedExtensions = getValidInstalledExtensions(installedExtensions).filter(ext => !ext.id);
+                if (unloadedExtensions.length > 0) {
+                    await loadUnpackedExtensionsIntoBrowser(browser, unloadedExtensions, timeoutMs);
+                }
+                await loadAllExtensionsFromBrowser(browser, installedExtensions, timeoutMs);
+                fs.writeFileSync(
+                    path.join(outputDir, 'extensions.json'),
+                    JSON.stringify(installedExtensions, null, 2)
+                );
+            } finally {
+                if (browser) {
+                    try {
+                        await browser.disconnect();
+                    } catch (error) {}
+                }
+            }
+        }
         return {
             cdpUrl: existingSession.state.cdpUrl,
             pid: existingSession.state.pid,
             port: getChromeDebugPortFromCdpUrl(existingSession.state.cdpUrl),
             installedExtensions,
-            extensionPaths,
             processIsLocal,
             reusedExisting: true,
             binary,
@@ -3633,12 +3660,15 @@ async function ensureChromeSession(options = {}) {
         if (!resolvedBinary) {
             throw new Error('Chromium binary not found');
         }
+        if (installedExtensions.length > 0) {
+            console.error(`[*] Deferring ${installedExtensions.length} extension(s) to CDP Extensions.loadUnpacked after Chrome startup`);
+        }
 
         const result = await launchChromium({
             binary: resolvedBinary,
             outputDir,
             userDataDir,
-            extensionPaths,
+            enableExtensionDebugging: installedExtensions.length > 0,
         });
         if (!result.success) {
             throw new Error(result.error || 'Failed to launch Chromium');
@@ -3648,13 +3678,20 @@ async function ensureChromeSession(options = {}) {
         resolvedCdpUrl = result.cdpUrl;
     }
 
+    if (resolvedPid) {
+        fs.writeFileSync(path.join(outputDir, 'chrome.pid'), String(resolvedPid));
+    } else {
+        try { fs.unlinkSync(path.join(outputDir, 'chrome.pid')); } catch (error) {}
+    }
+    fs.writeFileSync(path.join(outputDir, 'cdp_url.txt'), resolvedCdpUrl);
+
     if (downloadsDir || cookiesFile || installedExtensions.length > 0) {
         let browser = null;
         try {
             browser = await connectToBrowserEndpoint(puppeteer, resolvedCdpUrl, { defaultViewport: null });
 
             if (installedExtensions.length > 0) {
-                await loadAllExtensionsFromBrowser(browser, installedExtensions, timeoutMs);
+                await loadUnpackedExtensionsIntoBrowser(browser, installedExtensions, timeoutMs);
             }
 
             if (downloadsDir) {
@@ -3708,19 +3745,11 @@ async function ensureChromeSession(options = {}) {
         try { fs.unlinkSync(path.join(outputDir, 'extensions.json')); } catch (error) {}
     }
 
-    if (resolvedPid) {
-        fs.writeFileSync(path.join(outputDir, 'chrome.pid'), String(resolvedPid));
-    } else {
-        try { fs.unlinkSync(path.join(outputDir, 'chrome.pid')); } catch (error) {}
-    }
-    fs.writeFileSync(path.join(outputDir, 'cdp_url.txt'), resolvedCdpUrl);
-
     return {
         cdpUrl: resolvedCdpUrl,
         pid: resolvedPid,
         port: getChromeDebugPortFromCdpUrl(resolvedCdpUrl),
         installedExtensions,
-        extensionPaths,
         processIsLocal,
         reusedExisting: false,
         binary: resolvedBinary,
@@ -3850,6 +3879,7 @@ module.exports = {
     loadExtensionFromTarget,
     installAllExtensions,
     loadAllExtensionsFromBrowser,
+    loadUnpackedExtensionsIntoBrowser,
     waitForExtensionTargetHandle,
     // New puppeteer best-practices helpers
     resolvePuppeteerModule,
@@ -3870,8 +3900,6 @@ module.exports = {
     getTestEnv,
     // Shared extension installer utilities
     installExtensionWithCache,
-    // Deprecated - use enableExtensions option instead
-    getExtensionLaunchArgs,
     // Snapshot hook utilities (for CDP-based plugins)
     parseArgs,
     inspectChromeSessionArtifacts,
@@ -3973,11 +4001,9 @@ if (require.main === module) {
                 }
 
                 case 'launchChromium': {
-                    const [outputDir, extensionPathsJson] = commandArgs;
-                    const extensionPaths = extensionPathsJson ? JSON.parse(extensionPathsJson) : [];
+                    const [outputDir] = commandArgs;
                     const result = await launchChromium({
                         outputDir: outputDir || 'chrome',
-                        extensionPaths,
                     });
                     if (result.success) {
                         console.log(JSON.stringify({
@@ -4055,14 +4081,6 @@ if (require.main === module) {
                     const [unpacked_path] = commandArgs;
                     const manifest = loadExtensionManifest(unpacked_path);
                     console.log(JSON.stringify(manifest));
-                    break;
-                }
-
-                case 'getExtensionLaunchArgs': {
-                    const [extensions_json] = commandArgs;
-                    const extensions = JSON.parse(extensions_json);
-                    const launchArgs = getExtensionLaunchArgs(extensions);
-                    console.log(JSON.stringify(launchArgs));
                     break;
                 }
 

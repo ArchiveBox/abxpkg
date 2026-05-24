@@ -359,6 +359,14 @@ class PuppeteerProvider(BinProvider):
             return arg_str.split("@", 1)[0]
         return bin_name
 
+    def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
+        if str(bin_name) in ("chrome", "chromium"):
+            return ("chrome@stable",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
+
     def _normalize_install_args(self, install_args: Iterable[str]) -> list[str]:
         normalized: list[str] = []
         skip_next = False
@@ -452,8 +460,8 @@ class PuppeteerProvider(BinProvider):
         no_cache: bool = False,
     ) -> Path | None:
         # Pick up the caller's configured install_args so
-        # ``bin_name=chrome`` + ``install_args=["chromium@latest"]``
-        # resolves to ``browser_name="chromium"`` (matching what
+        # ``bin_name=chromium`` + ``install_args=["chrome@stable"]``
+        # resolves to ``browser_name="chrome"`` (matching what
         # ``puppeteer-browsers list`` reports), instead of falling
         # back to ``[bin_name]`` which would look for the alias name.
         if install_args is None:
@@ -877,7 +885,7 @@ class PuppeteerProvider(BinProvider):
         # Forward install_args so ``_resolve_installed_browser_path`` uses
         # the same ``browser_name`` we just derived; otherwise it re-runs
         # ``get_install_args`` and can pick up a different alias (e.g.
-        # caller-passed ``chromium@latest`` vs provider default ``chrome``),
+        # caller-passed ``chrome@stable`` vs provider default ``chrome``),
         # which would leave the parent.name match below unsatisfied and
         # silently skip the rmtree.
         resolved = self._resolve_installed_browser_path(
