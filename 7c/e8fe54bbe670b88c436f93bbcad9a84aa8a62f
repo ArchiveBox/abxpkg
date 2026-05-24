@@ -1,0 +1,29 @@
+abxpkg/binprovider_playwright.py
+  s_b989805ae95d6a::t_8f4fac7fbc61ed 71
+  s_b989805ae95d6a::t_5778ad48284e88 11
+abxpkg/binprovider_pnpm.py
+  s_b989805ae95d6a::t_fb0df1b813710b 187-189,191,193-194
+abxpkg/binprovider_yarn.py
+  s_b989805ae95d6a::t_925b13413348cf 247-248,250,252-253
+abxpkg/binprovider_npm.py
+  s_b989805ae95d6a::t_f376d62524b9b6 258-260,262,264-265
+abxpkg/binprovider_puppeteer.py
+  s_b989805ae95d6a::t_436aa7b5a766cc 11
+  s_b989805ae95d6a::t_af6d0bbb9f9729 54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "7ce8fe54bbe670b88c436f93bbcad9a84aa8a62f",
+  "prompts": {},
+  "sessions": {
+    "s_b989805ae95d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1fa8-ca6f-7ef3-af88-ea8dba9078db",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
