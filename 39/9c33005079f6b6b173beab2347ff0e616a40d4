@@ -1,0 +1,26 @@
+tests/test_installer_binary_contracts.py
+  s_b989805ae95d6a::t_fc9d2b9ad6873b 35-36
+  s_b989805ae95d6a::t_6dba43cb81f11e 1-34,37-38,42-44
+  s_b989805ae95d6a::t_bce8d7753bc43c 39,41
+docs/generate.py
+  s_b989805ae95d6a::t_8992a3e566ec2d 280-281,295-296
+README.md
+  s_b989805ae95d6a::t_fc9d2b9ad6873b 707,1106,1129
+  s_b989805ae95d6a::t_e622fbf92ccbc8 1108,1131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "399c33005079f6b6b173beab2347ff0e616a40d4",
+  "prompts": {},
+  "sessions": {
+    "s_b989805ae95d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e1fa8-ca6f-7ef3-af88-ea8dba9078db",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
