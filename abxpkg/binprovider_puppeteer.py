@@ -24,6 +24,7 @@ from .base_types import (
 from .binary import Binary
 from .binprovider import (
     BinProvider,
+    BinProviderUnavailableError,
     EnvProvider,
     env_flag_is_true,
     log_method_call,
@@ -124,8 +125,6 @@ class PuppeteerProvider(BinProvider):
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
-        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
-
         # Prefer the puppeteer-browsers bootstrapped by an earlier install
         # under ``<install_root>/npm/node_modules/.bin``. Without this, a
         # fresh provider copy (e.g. the one Binary.load() builds via
@@ -190,30 +189,31 @@ class PuppeteerProvider(BinProvider):
                 self._INSTALLER_BINARY = loaded_local
                 return self._INSTALLER_BINARY
 
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
-        raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
-        selected_provider_names = (
-            [provider_name.strip() for provider_name in raw_provider_names.split(",")]
-            if raw_provider_names
-            else list(DEFAULT_PROVIDER_NAMES)
-        )
-        dependency_providers = [
-            EnvProvider(install_root=None, bin_dir=None)
-            if provider_name == "env"
-            else PROVIDER_CLASS_BY_NAME[provider_name]()
-            for provider_name in selected_provider_names
-            if provider_name
-            and provider_name in PROVIDER_CLASS_BY_NAME
-            and provider_name != self.name
-        ]
-        node_loaded = (
-            Binary(
-                name="node",
-                binproviders=dependency_providers,
-            ).load(no_cache=no_cache)
-            if dependency_providers
-            else None
-        )
+        env_provider = EnvProvider(install_root=None, bin_dir=None)
+        try:
+            loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
+        except Exception:
+            loaded = None
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            return self._INSTALLER_BINARY
+        node_loaded = Binary(
+            name="node",
+            binproviders=[env_provider],
+        ).load(no_cache=no_cache)
         if (
             node_loaded
             and node_loaded.loaded_abspath
@@ -232,7 +232,10 @@ class PuppeteerProvider(BinProvider):
                 ),
                 cache_kind="dependency",
             )
-        return loaded
+        raise BinProviderUnavailableError(
+            self.__class__.__name__,
+            self.INSTALLER_BIN,
+        )
 
     def _cli_binary(
         self,
@@ -463,6 +466,14 @@ class PuppeteerProvider(BinProvider):
             )
             if candidate_browser == browser_name
         ]
+        if not candidates and str(bin_name) == "chrome":
+            candidates = [
+                (version, path)
+                for candidate_browser, version, path in self._list_installed_browsers(
+                    no_cache=no_cache,
+                )
+                if candidate_browser in ("chromium", "chrome", "chrome-headless-shell")
+            ]
         parsed_candidates = [
             (parsed_version, path)
             for version, path in candidates
