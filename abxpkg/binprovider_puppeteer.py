@@ -510,7 +510,16 @@ class PuppeteerProvider(BinProvider):
         assert bin_dir is not None
         link_path = bin_dir / bin_name
         link_path.parent.mkdir(parents=True, exist_ok=True)
-        use_shell_shim = os.name == "posix" and ".app/Contents/MacOS/" in str(target)
+        use_shell_shim = os.name == "posix" and (
+            ".app/Contents/MacOS/" in str(target)
+            or target.name
+            in {
+                "chrome",
+                "chromium",
+                "Google Chrome for Testing",
+                "chrome-headless-shell",
+            }
+        )
         desired_script = (
             f'#!/bin/sh\nexec {shlex.quote(str(target))} "$@"\n'
             if use_shell_shim
@@ -520,15 +529,15 @@ class PuppeteerProvider(BinProvider):
         # points at ``target``. Rewriting on every ``load()`` would bump
         # the shim's mtime (shell-script case), which breaks callers
         # that stat the shim to validate a freshly-installed binary.
-        if link_path.is_symlink():
+        if use_shell_shim and link_path.is_file() and not link_path.is_symlink():
             try:
-                if os.readlink(link_path) == str(target):
+                if link_path.read_text(encoding="utf-8") == desired_script:
                     return link_path
             except OSError:
                 pass
-        elif use_shell_shim and link_path.is_file():
+        elif link_path.is_symlink():
             try:
-                if link_path.read_text(encoding="utf-8") == desired_script:
+                if os.readlink(link_path) == str(target):
                     return link_path
             except OSError:
                 pass
