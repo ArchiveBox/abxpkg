@@ -286,6 +286,12 @@ publish_artifacts() {
                 return 1
             fi
             UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ "${artifacts[@]}"
+        elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+            if [[ ! -e "${artifacts[0]}" ]]; then
+                echo "Missing build artifacts for ${PYPI_PACKAGE}==${version} in ${WORKSPACE_DIR}/dist" >&2
+                return 1
+            fi
+            uv publish --trusted-publishing always "${artifacts[@]}"
         else
             echo "Missing PyPI credentials: set UV_PUBLISH_TOKEN or PYPI_TOKEN" >&2
             return 1
