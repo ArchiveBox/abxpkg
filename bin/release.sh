@@ -287,21 +287,15 @@ publish_artifacts() {
     if curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null 2>&1; then
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
-        if [[ -n "${pypi_token}" ]]; then
-            if [[ "${#artifacts[@]}" -eq 0 ]]; then
-                echo "Missing build artifacts for ${PYPI_PACKAGE}==${version}" >&2
-                return 1
-            fi
-            UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ "${artifacts[@]}"
-        elif [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-            if [[ "${#artifacts[@]}" -eq 0 ]]; then
-                echo "Missing build artifacts for ${PYPI_PACKAGE}==${version}" >&2
-                return 1
-            fi
-            uv publish --trusted-publishing always "${artifacts[@]}"
-        else
-            echo "Missing PyPI credentials: set UV_PUBLISH_TOKEN or PYPI_TOKEN" >&2
+        if [[ "${#artifacts[@]}" -eq 0 ]]; then
+            echo "Missing build artifacts for ${PYPI_PACKAGE}==${version}" >&2
             return 1
+        fi
+
+        if [[ -n "${pypi_token}" ]]; then
+            UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ "${artifacts[@]}"
+        else
+            uv publish --username=__token__ "${artifacts[@]}"
         fi
     fi
 
