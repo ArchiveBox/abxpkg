@@ -164,9 +164,42 @@ wait_for_runs() {
         sleep 10
     done
 
-    while read -r run_id; do
-        gh run watch "${run_id}" --repo "${slug}" --exit-status
-    done < <(jq -r '.[].databaseId' <<<"${runs_json}")
+    while IFS=$'\t' read -r run_id workflow_name; do
+        workflow_name_lower="${workflow_name,,}"
+        if [[ "${workflow_name_lower}" == *"release state"* ]]; then
+            gh run watch "${run_id}" --repo "${slug}" --exit-status
+            continue
+        fi
+        if [[ "${workflow_name_lower}" != *"test"* ]]; then
+            echo "Skipping non-gating workflow: ${workflow_name}"
+            continue
+        fi
+
+        attempts=0
+        while :; do
+            precheck_state="$(
+                gh run view "${run_id}" --repo "${slug}" --json jobs --jq '
+                    [.jobs[] | select((.name | ascii_downcase) | test("precheck|pre-commit|prek"))][0]
+                    | if . == null then "missing:" else ((.status // "") + ":" + (.conclusion // "")) end
+                '
+            )"
+            case "${precheck_state}" in
+                completed:success|completed:skipped)
+                    break
+                    ;;
+                completed:failure|completed:cancelled|completed:timed_out)
+                    gh run view "${run_id}" --repo "${slug}"
+                    return 1
+                    ;;
+            esac
+            attempts=$((attempts + 1))
+            if [[ "${attempts}" -ge 120 ]]; then
+                echo "Timed out waiting for ${workflow_name} precheck job" >&2
+                return 1
+            fi
+            sleep 5
+        done
+    done < <(jq -r '.[] | [.databaseId, .workflowName] | @tsv' <<<"${runs_json}")
 }
 
 wait_for_pypi() {
