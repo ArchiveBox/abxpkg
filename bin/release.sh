@@ -335,7 +335,6 @@ main() {
             return 1
         fi
         run_checks
-        wait_for_runs "${slug}" push "$(git rev-parse HEAD)" "push"
     else
         echo "Current version ${version} is behind latest GitHub release ${latest}" >&2
         return 1
