@@ -271,12 +271,21 @@ create_release() {
 publish_artifacts() {
     local version="$1"
     local pypi_token="${UV_PUBLISH_TOKEN:-${PYPI_TOKEN:-${PYPI_PAT_SECRET:-}}}"
+    local artifact_prefix="${PYPI_PACKAGE//-/_}"
+    local artifacts=("${WORKSPACE_DIR}/dist/${PYPI_PACKAGE}-${version}"*)
+    if [[ "${artifact_prefix}" != "${PYPI_PACKAGE}" ]]; then
+        artifacts+=("${WORKSPACE_DIR}/dist/${artifact_prefix}-${version}"*)
+    fi
 
     if curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null 2>&1; then
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
         if [[ -n "${pypi_token}" ]]; then
-            UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ dist/*
+            if [[ ! -e "${artifacts[0]}" ]]; then
+                echo "Missing build artifacts for ${PYPI_PACKAGE}==${version} in ${WORKSPACE_DIR}/dist" >&2
+                return 1
+            fi
+            UV_PUBLISH_TOKEN="${pypi_token}" uv publish --username=__token__ "${artifacts[@]}"
         else
             echo "Missing PyPI credentials: set UV_PUBLISH_TOKEN or PYPI_TOKEN" >&2
             return 1
