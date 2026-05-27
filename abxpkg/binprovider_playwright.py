@@ -9,6 +9,7 @@ import sys
 import platform
 from pathlib import Path
 from typing import ClassVar
+from collections.abc import Iterable
 
 from pydantic import Field, TypeAdapter, computed_field
 
@@ -539,6 +540,14 @@ class PlaywrightProvider(BinProvider):
         path = Path(proc.stdout.strip())
         return path if path.exists() else None
 
+    def _browser_name(self, bin_name: str, install_args: Iterable[str]) -> str:
+        for arg in install_args:
+            arg_str = str(arg)
+            if arg_str.startswith("-"):
+                continue
+            return arg_str
+        return bin_name
+
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
         """Refresh the managed browser shim, using a tiny launcher for macOS .app bundles."""
         assert self.bin_dir is not None, (
@@ -605,8 +614,17 @@ class PlaywrightProvider(BinProvider):
         # the managed ``bin_dir`` shim as a source of truth, it may
         # point at a browser that was removed out-of-band. When
         # playwright-core reports nothing, we report nothing.
+        bin_name_str = str(bin_name)
+        install_args = self.get_install_args(
+            bin_name_str,
+            quiet=True,
+            no_cache=no_cache,
+        ) or [
+            bin_name_str,
+        ]
+        browser_name = self._browser_name(bin_name_str, install_args)
         resolved = self._playwright_browser_path(
-            str(bin_name),
+            browser_name,
             no_cache=no_cache,
         )
         if not resolved:
@@ -675,6 +693,7 @@ class PlaywrightProvider(BinProvider):
         **context,
     ) -> str:
         install_args = list(install_args or self.get_install_args(bin_name))
+        browser_name = self._browser_name(bin_name, install_args)
         merged_args = ["--with-deps", *install_args]
         if no_cache and "--force" not in merged_args:
             merged_args = ["--force", *merged_args]
@@ -732,11 +751,11 @@ class PlaywrightProvider(BinProvider):
                 quiet=True,
             )
 
-        resolved = self._playwright_browser_path(bin_name, no_cache=no_cache)
+        resolved = self._playwright_browser_path(browser_name, no_cache=no_cache)
         if not resolved or not resolved.exists():
             raise FileNotFoundError(
                 f"{self.__class__.__name__} could not resolve installed browser "
-                f"path for {bin_name} (install_root={self.install_root})",
+                f"path for {browser_name} (install_root={self.install_root})",
             )
         if self.bin_dir is not None:
             self._refresh_symlink(bin_name, resolved)
