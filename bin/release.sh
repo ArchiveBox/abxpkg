@@ -350,10 +350,8 @@ main() {
     publish_artifacts "${version}"
     create_release "${slug}" "${version}"
 
-    latest="$(latest_release_version "${slug}")"
-    relation="$(compare_versions "${latest}" "${version}")"
-    if [[ "${relation}" != "eq" ]]; then
-        echo "GitHub release version mismatch: expected ${version}, got ${latest}" >&2
+    if ! gh release view "${TAG_PREFIX}${version}" --repo "${slug}" >/dev/null 2>&1; then
+        echo "GitHub release ${TAG_PREFIX}${version} was not found after creation" >&2
         return 1
     fi
 
