@@ -125,6 +125,57 @@ class PnpmProvider(BinProvider):
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
 
+    @staticmethod
+    def _install_args_have_option(args: InstallArgs, *options: str) -> bool:
+        """Return True when install_args already contains any of the requested options."""
+        return any(
+            arg == option or arg.startswith(f"{option}=")
+            for arg in args
+            for option in options
+        )
+
+    def _apply_min_version(
+        self,
+        install_args: InstallArgs,
+        min_version: SemVer | None,
+    ) -> list[str]:
+        """Rewrite unpinned package specs to ``pkg@>=<min_version>`` when requested."""
+        if not min_version:
+            return list(install_args)
+        return [
+            f"{arg}@>={min_version}"
+            if arg
+            and not arg.startswith(("-", ".", "/"))
+            and ":" not in arg.split("/")[0]
+            and "@" not in arg.split("/")[-1]
+            else arg
+            for arg in install_args
+        ]
+
+    def _build_mutation_args(
+        self,
+        install_args: InstallArgs,
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float,
+    ) -> list[str]:
+        """Shared ``add``/``update`` CLI args (security flags + prefix)."""
+        args: list[str] = ["--loglevel=error", f"--store-dir={self.cache_dir}"]
+        if not postinstall_scripts:
+            args.append("--ignore-scripts")
+        else:
+            # pnpm 10+ blocks ALL postinstall scripts unless explicitly allowed.
+            args.append("--config.dangerouslyAllowAllBuilds=true")
+        if min_release_age > 0 and not self._install_args_have_option(
+            install_args,
+            "--config.minimumReleaseAge",
+        ):
+            args.append(
+                f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
+            )
+        args.append(f"--dir={self.install_root}" if self.install_root else "--global")
+        return args
+
     def default_install_args_handler(
         self,
         bin_name: BinName,
@@ -336,52 +387,27 @@ class PnpmProvider(BinProvider):
     ) -> str:
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
+        install_args = self._apply_min_version(
+            install_args or self.get_install_args(bin_name),
+            min_version,
         )
-        min_release_age = 7.0 if min_release_age is None else min_release_age
-        install_args = install_args or self.get_install_args(bin_name)
-        if min_version:
-            install_args = [
-                f"{arg}@>={min_version}"
-                if arg
-                and not arg.startswith(("-", ".", "/"))
-                and ":" not in arg.split("/")[0]
-                and "@" not in arg.split("/")[-1]
-                else arg
-                for arg in install_args
-            ]
-        if any(
-            arg == "--ignore-scripts" for arg in ("--loglevel=error", *install_args)
-        ):
+        if postinstall_scripts is None:
             postinstall_scripts = False
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
+        if min_release_age is None:
+            min_release_age = 7.0
 
-        cmd: list[str] = [
-            "add",
-            "--loglevel=error",
-            f"--store-dir={self.cache_dir}",
-        ]
-        if not postinstall_scripts:
-            cmd.append("--ignore-scripts")
-        else:
-            # pnpm 10+ blocks ALL postinstall scripts unless explicitly allowed.
-            cmd.append("--config.dangerouslyAllowAllBuilds=true")
-        if (
-            min_release_age is not None
-            and min_release_age > 0
-            and not any(
-                arg == "--config.minimumReleaseAge"
-                or arg.startswith("--config.minimumReleaseAge=")
-                for arg in ("--loglevel=error", *install_args)
-            )
-        ):
-            cmd.append(
-                f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
-            )
-        cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
-        cmd.extend(install_args)
-
-        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
+        mutation_args = self._build_mutation_args(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=["add", *mutation_args, *install_args],
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
@@ -399,51 +425,28 @@ class PnpmProvider(BinProvider):
     ) -> str:
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        postinstall_scripts = (
-            False if postinstall_scripts is None else postinstall_scripts
+        install_args = self._apply_min_version(
+            install_args or self.get_install_args(bin_name),
+            min_version,
         )
-        min_release_age = 7.0 if min_release_age is None else min_release_age
-        install_args = install_args or self.get_install_args(bin_name)
-        if min_version:
-            install_args = [
-                f"{arg}@>={min_version}"
-                if arg
-                and not arg.startswith(("-", ".", "/"))
-                and ":" not in arg.split("/")[0]
-                and "@" not in arg.split("/")[-1]
-                else arg
-                for arg in install_args
-            ]
-        if any(
-            arg == "--ignore-scripts" for arg in ("--loglevel=error", *install_args)
-        ):
+        if postinstall_scripts is None:
             postinstall_scripts = False
+        if self._install_args_have_option(install_args, "--ignore-scripts"):
+            postinstall_scripts = False
+        if min_release_age is None:
+            min_release_age = 7.0
 
-        cmd: list[str] = [
-            "add" if min_version is not None else "update",
-            "--loglevel=error",
-            f"--store-dir={self.cache_dir}",
-        ]
-        if not postinstall_scripts:
-            cmd.append("--ignore-scripts")
-        else:
-            cmd.append("--config.dangerouslyAllowAllBuilds=true")
-        if (
-            min_release_age is not None
-            and min_release_age > 0
-            and not any(
-                arg == "--config.minimumReleaseAge"
-                or arg.startswith("--config.minimumReleaseAge=")
-                for arg in ("--loglevel=error", *install_args)
-            )
-        ):
-            cmd.append(
-                f"--config.minimumReleaseAge={max(int(min_release_age * 24 * 60), 1)}",
-            )
-        cmd.append(f"--dir={self.install_root}" if self.install_root else "--global")
-        cmd.extend(install_args)
-
-        proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
+        mutation_args = self._build_mutation_args(
+            install_args,
+            postinstall_scripts=postinstall_scripts,
+            min_release_age=min_release_age,
+        )
+        verb = "add" if min_version is not None else "update"
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=[verb, *mutation_args, *install_args],
+            timeout=timeout,
+        )
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
         return format_subprocess_output(proc.stdout, proc.stderr)
