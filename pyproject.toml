@@ -1,6 +1,6 @@
 [project]
 name = "abxpkg"
-version = "1.11.46"
+version = "1.11.47"
 description = "System package manager interfaces with Python type hints"
 authors = [{name = "Nick Sweeting"}, {name = "ArchiveBox"}]
 requires-python = ">=3.11"
