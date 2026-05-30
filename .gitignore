@@ -15,3 +15,4 @@ venv/
 *.log
 .DS_Store
 uv.lock
+tmp/
