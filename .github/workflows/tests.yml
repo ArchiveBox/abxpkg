@@ -98,7 +98,7 @@ jobs:
         - os:
             group: Default
           os_name: linux
-          python_version: '3.11'
+          python_version: '3.12'
         - os: macOS-latest
           os_name: macOS
           python_version: '3.14'
