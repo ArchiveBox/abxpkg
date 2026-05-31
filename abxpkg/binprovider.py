@@ -2888,17 +2888,6 @@ class EnvProvider(BinProvider):
             return TypeAdapter(HostBinPath).validate_python(target)
 
         link_path = self.bin_dir / link_name
-        lib_bin_dir = (
-            Path(os.environ.get("LIB_BIN_DIR", "")).expanduser().absolute()
-            if os.environ.get("LIB_BIN_DIR")
-            else (
-                self.install_root.parent / "bin"
-                if self.install_root is not None
-                else None
-            )
-        )
-        if lib_bin_dir is not None and source_path.parent == lib_bin_dir:
-            return TypeAdapter(HostBinPath).validate_python(target)
         if target.is_symlink():
             target_dest = target.readlink()
             if not target_dest.is_absolute():
