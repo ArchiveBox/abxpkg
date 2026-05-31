@@ -599,6 +599,42 @@ class PuppeteerProvider(BinProvider):
         except OSError:
             return resolved
 
+    def default_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        no_cache: bool = False,
+        **context,
+    ) -> SemVer | None:
+        abspath = abspath or self.get_abspath(bin_name, quiet=True, no_cache=no_cache)
+        if not abspath:
+            return None
+
+        version_cmd = ["--version"]
+        if (
+            sys.platform.startswith("linux")
+            and os.name == "posix"
+            and os.geteuid() == 0
+        ):
+            version_cmd.append("--no-sandbox")
+
+        proc = self.exec(
+            bin_name=abspath,
+            cmd=version_cmd,
+            timeout=self.version_timeout if timeout is None else timeout,
+            quiet=True,
+        )
+        version_output = proc.stdout.strip() or proc.stderr.strip()
+        if proc.returncode == 0 and version_output:
+            return SemVer.parse(version_output)
+
+        return self._version_from_exec(
+            bin_name,
+            abspath=abspath,
+            timeout=timeout,
+        )
+
     def _cleanup_partial_browser_cache(
         self,
         install_output: str,
