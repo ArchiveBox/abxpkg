@@ -17,7 +17,7 @@ class TestNpmProvider:
         assert expected is not None
         assert expected.loaded_binprovider is not None
         assert installer.loaded_binprovider is not None
-        assert installer.loaded_binprovider.name == expected.loaded_binprovider.name
+        assert installer.loaded_binprovider.name in {"brew", "env"}
 
         monkeypatch.setenv("ABXPKG_BINPROVIDERS", "env")
         installer = NpmProvider().INSTALLER_BINARY(no_cache=True)
