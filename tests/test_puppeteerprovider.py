@@ -8,11 +8,11 @@ PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 
 class TestPuppeteerProvider:
-    def test_chromium_defaults_to_stable_chrome_for_testing(self):
+    def test_chromium_defaults_to_chromium(self):
         provider = PuppeteerProvider()
 
-        assert provider.get_install_args("chromium") == ("chrome@stable",)
-        assert provider.get_install_args("chrome") == ("chrome@stable",)
+        assert provider.get_install_args("chromium") == ("chromium",)
+        assert provider.get_install_args("chrome") == ("chromium",)
 
     def test_chrome_alias_installs_real_browser_binary(self, test_machine):
         test_machine.require_tool("node")
@@ -26,7 +26,7 @@ class TestPuppeteerProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             ).get_provider_with_overrides(
-                overrides={"chrome": {"install_args": ["chrome@stable"]}},
+                overrides={"chrome": {"install_args": ["chromium"]}},
             )
 
             installed = provider.install("chrome", no_cache=True)
@@ -43,7 +43,7 @@ class TestPuppeteerProvider:
             cache_dir = provider.install_root / "cache"
             assert installed.loaded_abspath.parent == bin_dir
             assert installed.loaded_abspath == bin_dir / "chrome"
-            assert (cache_dir / "chrome").exists()
+            assert (cache_dir / "chromium").exists()
 
             loaded = provider.load("chrome", no_cache=True)
             test_machine.assert_shallow_binary_loaded(loaded)

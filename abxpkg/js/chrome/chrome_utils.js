@@ -1988,12 +1988,8 @@ function findChromium() {
                     const versionDir = path.join(versionRoot, version);
                     const candidates = [
                         path.join(versionDir, 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'),
-                        path.join(versionDir, 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
                         path.join(versionDir, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium'),
-                        path.join(versionDir, 'chrome-mac/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
                         path.join(versionDir, 'chrome-mac-x64/Chromium.app/Contents/MacOS/Chromium'),
-                        path.join(versionDir, 'chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
-                        path.join(versionDir, 'chrome-linux64/chrome'),
                         path.join(versionDir, 'chrome-linux/chrome'),
                     ];
                     for (const c of candidates) {
