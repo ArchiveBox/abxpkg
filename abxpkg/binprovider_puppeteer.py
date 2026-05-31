@@ -362,7 +362,7 @@ class PuppeteerProvider(BinProvider):
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         if str(bin_name) in ("chrome", "chromium"):
-            return ("chrome@canary",)
+            return ("chromium@latest",)
         return TypeAdapter(InstallArgs).validate_python(
             super().default_install_args_handler(bin_name, **context)
             or [str(bin_name)],
@@ -461,13 +461,16 @@ class PuppeteerProvider(BinProvider):
         no_cache: bool = False,
     ) -> Path | None:
         # Pick up the caller's configured install_args so
-        # ``bin_name=chromium`` + ``install_args=["chrome@canary"]``
-        # resolves to ``browser_name="chrome"`` (matching what
+        # ``bin_name=chrome`` + ``install_args=["chromium@latest"]``
+        # resolves to Puppeteer's real ``browser_name="chromium"`` (matching what
         # ``puppeteer-browsers list`` reports), instead of falling
         # back to ``[bin_name]`` which would look for the alias name.
         if install_args is None:
             install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
-        browser_name = self._browser_name(bin_name, install_args)
+        browser_name = self._browser_name(
+            bin_name,
+            self._normalize_install_args(install_args),
+        )
         candidates = [
             (version, path)
             for candidate_browser, version, path in self._list_installed_browsers(
@@ -770,8 +773,8 @@ class PuppeteerProvider(BinProvider):
         if str(bin_name) == self.INSTALLER_BIN:
             return f"Bootstrapped {self.INSTALLER_BIN} via npm"
         install_args = list(install_args or self.get_install_args(bin_name))
-        browser_name = self._browser_name(bin_name, install_args)
         normalized_install_args = self._normalize_install_args(install_args)
+        browser_name = self._browser_name(bin_name, normalized_install_args)
 
         if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
@@ -890,7 +893,8 @@ class PuppeteerProvider(BinProvider):
         # managed ``install_root``, ambient ``PUPPETEER_CACHE_DIR``,
         # and puppeteer-browsers' own default uniformly.
         install_args = list(install_args or self.get_install_args(bin_name))
-        browser_name = self._browser_name(bin_name, install_args)
+        normalized_install_args = self._normalize_install_args(install_args)
+        browser_name = self._browser_name(bin_name, normalized_install_args)
         # Forward install_args so ``_resolve_installed_browser_path`` uses
         # the same ``browser_name`` we just derived; otherwise it re-runs
         # ``get_install_args`` and can pick up a different alias (e.g.
@@ -899,7 +903,7 @@ class PuppeteerProvider(BinProvider):
         # silently skip the rmtree.
         resolved = self._resolve_installed_browser_path(
             str(bin_name),
-            install_args=install_args,
+            install_args=normalized_install_args,
         )
         if resolved is not None:
             for parent in Path(resolved).resolve().parents:
