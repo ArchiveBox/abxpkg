@@ -15,7 +15,7 @@ repos:
     rev: v3.20.0
     hooks:
       - id: pyupgrade
-        args: [--py311-plus]
+        args: [--py312-plus]
 
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v3.1.0
@@ -26,23 +26,23 @@ repos:
     hooks:
       - id: ruff-format
         name: ruff-format
-        entry: uv run --active --no-sources ruff format
+        entry: uv run --active --no-sync --no-sources ruff format
         language: system
         types_or: [python, pyi]
       - id: ruff-check
         name: ruff-check
-        entry: uv run --active --no-sources ruff check --fix
+        entry: uv run --active --no-sync --no-sources ruff check --fix
         language: system
         types_or: [python, pyi]
       - id: ty-check
         name: ty-check
-        entry: uv run --active --no-sources ty check
+        entry: uv run --active --no-sync --no-sources ty check
         language: system
         files: ^(abxpkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
         pass_filenames: false
       - id: pyright
         name: pyright
-        entry: uv run --active --no-sources pyright
+        entry: uv run --active --no-sync --no-sources pyright
         language: system
         files: ^(abxpkg/|tests\.py$|django_example_project/project/(?!migrations/).+\.py$)
         pass_filenames: false
