@@ -540,12 +540,24 @@ class PlaywrightProvider(BinProvider):
         path = Path(proc.stdout.strip())
         return path if path.exists() else None
 
-    def _browser_name(self, bin_name: str, install_args: Iterable[str]) -> str:
+    def _normalize_install_args(self, install_args: Iterable[str]) -> list[str]:
+        normalized: list[str] = []
         for arg in install_args:
             arg_str = str(arg)
             if arg_str.startswith("-"):
+                normalized.append(arg_str)
                 continue
-            return arg_str
+            browser_name = arg_str.split("@", 1)[0]
+            normalized.append(
+                "chromium" if browser_name in ("chrome", "chromium") else browser_name,
+            )
+        return normalized
+
+    def _browser_name(self, bin_name: str, install_args: Iterable[str]) -> str:
+        for arg in self._normalize_install_args(install_args):
+            if arg.startswith("-"):
+                continue
+            return arg
         return bin_name
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
@@ -623,13 +635,16 @@ class PlaywrightProvider(BinProvider):
         # point at a browser that was removed out-of-band. When
         # playwright-core reports nothing, we report nothing.
         bin_name_str = str(bin_name)
-        install_args = self.get_install_args(
-            bin_name_str,
-            quiet=True,
-            no_cache=no_cache,
-        ) or [
-            bin_name_str,
-        ]
+        install_args = self._normalize_install_args(
+            self.get_install_args(
+                bin_name_str,
+                quiet=True,
+                no_cache=no_cache,
+            )
+            or [
+                bin_name_str,
+            ],
+        )
         browser_name = self._browser_name(bin_name_str, install_args)
         resolved = self._playwright_browser_path(
             browser_name,
@@ -700,7 +715,9 @@ class PlaywrightProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> str:
-        install_args = list(install_args or self.get_install_args(bin_name))
+        install_args = self._normalize_install_args(
+            install_args or self.get_install_args(bin_name),
+        )
         browser_name = self._browser_name(bin_name, install_args)
         merged_args = ["--with-deps", *install_args]
         if no_cache and "--force" not in merged_args:
@@ -809,7 +826,9 @@ class PlaywrightProvider(BinProvider):
                 )
                 self._INSTALLER_BINARY = None  # clear cache to force re-resolution
 
-        merged_args = list(install_args or self.get_install_args(bin_name))
+        merged_args = self._normalize_install_args(
+            install_args or self.get_install_args(bin_name),
+        )
         if "--force" not in merged_args:
             merged_args = ["--force", *merged_args]
         return self.default_install_handler(

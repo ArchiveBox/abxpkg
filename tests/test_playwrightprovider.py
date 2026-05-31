@@ -52,6 +52,20 @@ class TestPlaywrightProvider:
 
         assert provider.get_install_args("chromium") == ("chromium",)
         assert provider.get_install_args("chrome") == ("chromium",)
+        assert provider._normalize_install_args(
+            ["chrome@latest", "--no-shell"],
+        ) == ["chromium", "--no-shell"]
+        assert provider._normalize_install_args(
+            ["chromium@latest", "--no-shell"],
+        ) == ["chromium", "--no-shell"]
+        dry_run_provider = provider.get_provider_with_overrides(dry_run=True)
+        assert (
+            dry_run_provider.default_install_handler(
+                "chrome",
+                install_args=("chrome@latest", "--no-shell"),
+            )
+            == "DRY_RUN would run: playwright install --with-deps chromium --no-shell"
+        )
 
     @staticmethod
     def copy_seeded_playwright_root(
