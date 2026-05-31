@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 __package__ = "abxpkg"
 
+import fcntl
 import sys
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 from pydantic import TypeAdapter, model_validator
 from typing import Self
@@ -14,6 +17,7 @@ from .logging import format_subprocess_output
 
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
+APT_LOCK_PATH = Path("/tmp/abxpkg-apt.lock")
 
 
 class AptProvider(BinProvider):
@@ -33,6 +37,16 @@ class AptProvider(BinProvider):
             "install_args": ["ruby"],
         }
         return self
+
+    @contextmanager
+    def apt_lock(self):
+        APT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with APT_LOCK_PATH.open("w") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""
@@ -165,23 +179,24 @@ class AptProvider(BinProvider):
 
         # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
 
-        if (
-            not _LAST_UPDATE_CHECK
-            or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
-        ):
-            # only update if we haven't checked in the last day
-            self.exec(
+        with self.apt_lock():
+            if (
+                not _LAST_UPDATE_CHECK
+                or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
+            ):
+                # only update if we haven't checked in the last day
+                self.exec(
+                    bin_name=installer_bin,
+                    cmd=["update", "-qq"],
+                    timeout=timeout,
+                )
+                _LAST_UPDATE_CHECK = time.time()
+
+            proc = self.exec(
                 bin_name=installer_bin,
-                cmd=["update", "-qq"],
+                cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args],
                 timeout=timeout,
             )
-            _LAST_UPDATE_CHECK = time.time()
-
-        proc = self.exec(
-            bin_name=installer_bin,
-            cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args],
-            timeout=timeout,
-        )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return (
@@ -217,29 +232,30 @@ class AptProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
-        if (
-            not _LAST_UPDATE_CHECK
-            or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
-        ):
-            self.exec(
+        with self.apt_lock():
+            if (
+                not _LAST_UPDATE_CHECK
+                or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
+            ):
+                self.exec(
+                    bin_name=installer_bin,
+                    cmd=["update", "-qq"],
+                    timeout=timeout,
+                )
+                _LAST_UPDATE_CHECK = time.time()
+
+            proc = self.exec(
                 bin_name=installer_bin,
-                cmd=["update", "-qq"],
+                cmd=[
+                    "install",
+                    "--only-upgrade",
+                    "-y",
+                    "-qq",
+                    "--no-install-recommends",
+                    *install_args,
+                ],
                 timeout=timeout,
             )
-            _LAST_UPDATE_CHECK = time.time()
-
-        proc = self.exec(
-            bin_name=installer_bin,
-            cmd=[
-                "install",
-                "--only-upgrade",
-                "-y",
-                "-qq",
-                "--no-install-recommends",
-                *install_args,
-            ],
-            timeout=timeout,
-        )
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
         return (
@@ -313,11 +329,12 @@ class AptProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
-        proc = self.exec(
-            bin_name=installer_bin,
-            cmd=["remove", "-y", "-qq", *install_args],
-            timeout=timeout,
-        )
+        with self.apt_lock():
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=["remove", "-y", "-qq", *install_args],
+                timeout=timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("uninstall", install_args, proc)
 
