@@ -189,6 +189,34 @@ class TestEnvProvider:
 
             assert pip_provider.uninstall("black") is True
 
+    def test_provider_does_not_reverse_link_shared_lib_bin_shims(self, monkeypatch):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib_dir = Path(tmpdir)
+            env_bin_dir = lib_dir / "env" / "bin"
+            lib_bin_dir = lib_dir / "bin"
+            env_bin_dir.mkdir(parents=True)
+            lib_bin_dir.mkdir()
+            env_binary = env_bin_dir / "demo"
+            env_binary.write_text("#!/bin/sh\nexit 0\n")
+            env_binary.chmod(0o755)
+            shared_shim = lib_bin_dir / "demo"
+            shared_shim.symlink_to(env_binary)
+            monkeypatch.setenv("LIB_BIN_DIR", str(lib_bin_dir))
+
+            provider = EnvProvider(
+                install_root=lib_dir / "env",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            linked_path = provider._link_loaded_binary("demo", shared_shim)
+
+            assert linked_path == shared_shim
+            assert shared_shim.is_symlink()
+            assert shared_shim.readlink() == env_binary
+            assert env_binary.is_file()
+            assert not env_binary.is_symlink()
+
     def test_search_returns_empty_for_env_provider(self):
         # EnvProvider has no package index — it just exposes ambient PATH —
         # so search must be an empty list rather than a crash or fallback.
