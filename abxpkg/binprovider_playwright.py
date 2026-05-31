@@ -548,6 +548,14 @@ class PlaywrightProvider(BinProvider):
             return arg_str
         return bin_name
 
+    def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
+        if str(bin_name) in ("chrome", "chromium"):
+            return ("chromium",)
+        return TypeAdapter(InstallArgs).validate_python(
+            super().default_install_args_handler(bin_name, **context)
+            or [str(bin_name)],
+        )
+
     def _refresh_symlink(self, bin_name: str, target: Path) -> Path:
         """Refresh the managed browser shim, using a tiny launcher for macOS .app bundles."""
         assert self.bin_dir is not None, (

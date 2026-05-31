@@ -22,14 +22,7 @@
       "name": "{CHROME_BINARY}",
       "binproviders": "env,puppeteer",
       "min_version": "150.0.0",
-      "overrides": {
-        "puppeteer": {
-          "install_args": [
-            "chromium@latest",
-            "--install-deps"
-          ]
-        }
-      }
+      "postinstall_scripts": true
     }
   ],
   "output_mimetypes": [

@@ -11,8 +11,13 @@ class TestPuppeteerProvider:
     def test_chromium_defaults_to_latest_channel(self):
         provider = PuppeteerProvider()
 
-        assert provider.get_install_args("chromium") == ("chromium@latest",)
-        assert provider.get_install_args("chrome") == ("chromium@latest",)
+        chromium_args = provider.get_install_args("chromium")
+        chrome_args = provider.get_install_args("chrome")
+
+        assert chromium_args[0] == "chromium@latest"
+        assert chrome_args[0] == "chromium@latest"
+        assert set(chromium_args) <= {"chromium@latest", "--install-deps"}
+        assert set(chrome_args) <= {"chromium@latest", "--install-deps"}
 
     def test_chrome_alias_installs_real_browser_binary(self, test_machine):
         test_machine.require_tool("node")

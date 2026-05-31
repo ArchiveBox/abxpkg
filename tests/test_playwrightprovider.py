@@ -47,6 +47,12 @@ def seeded_playwright_root():
 
 
 class TestPlaywrightProvider:
+    def test_chrome_aliases_install_chromium(self):
+        provider = PlaywrightProvider()
+
+        assert provider.get_install_args("chromium") == ("chromium",)
+        assert provider.get_install_args("chrome") == ("chromium",)
+
     @staticmethod
     def copy_seeded_playwright_root(
         seeded_playwright_root: Path,

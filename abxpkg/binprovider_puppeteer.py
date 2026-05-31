@@ -4,6 +4,7 @@ __package__ = "abxpkg"
 
 import os
 import re
+import sys
 import shlex
 import shutil
 import subprocess
@@ -362,7 +363,14 @@ class PuppeteerProvider(BinProvider):
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         if str(bin_name) in ("chrome", "chromium"):
-            return ("chromium@latest",)
+            install_args = ["chromium@latest"]
+            if (
+                sys.platform.startswith("linux")
+                and os.name == "posix"
+                and os.geteuid() == 0
+            ):
+                install_args.append("--install-deps")
+            return tuple(install_args)
         return TypeAdapter(InstallArgs).validate_python(
             super().default_install_args_handler(bin_name, **context)
             or [str(bin_name)],

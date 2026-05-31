@@ -1951,6 +1951,7 @@ class BinProvider(BaseModel):
                 self._call_handler_for_action(
                     bin_name=bin_name,
                     handler_type="abspath",
+                    no_cache=no_cache,
                 ),
             )
         except Exception:
