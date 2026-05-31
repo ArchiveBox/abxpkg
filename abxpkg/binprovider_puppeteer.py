@@ -765,6 +765,44 @@ class PuppeteerProvider(BinProvider):
                     )
         return proc
 
+    def _install_chromium_system_deps(
+        self,
+        installer_bin: HostBinPath,
+        normalized_install_args: list[str],
+        timeout: int,
+    ) -> None:
+        if (
+            not sys.platform.startswith("linux")
+            or os.name != "posix"
+            or os.geteuid() != 0
+            or "--install-deps" not in normalized_install_args
+            or self._browser_name("", normalized_install_args) != "chromium"
+        ):
+            return
+
+        # Puppeteer's Chromium snapshots do not ship deb.deps, so
+        # `chromium@latest --install-deps` downloads Chromium but has no
+        # package manifest to satisfy. The Chrome headless shell artifact
+        # does ship the same Linux dependency manifest; use Puppeteer's own
+        # install-deps path, then discard the helper browser cache.
+        deps_args = self._normalize_install_args(
+            ["chrome-headless-shell@latest", "--install-deps"],
+        )
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=["install", *deps_args],
+            cwd=self.install_root or ".",
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            self._raise_proc_error("install", "chrome-headless-shell", proc)
+
+        if self.install_root is not None:
+            shutil.rmtree(
+                self.install_root / "cache" / "chrome-headless-shell",
+                ignore_errors=True,
+            )
+
     def default_search_handler(
         self,
         bin_name: BinName,
@@ -828,6 +866,11 @@ class PuppeteerProvider(BinProvider):
             installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
         installer_bin = installer_binary.loaded_abspath
         assert installer_bin
+        self._install_chromium_system_deps(
+            installer_bin,
+            normalized_install_args,
+            timeout if timeout is not None else self.install_timeout,
+        )
         proc = self.exec(
             bin_name=installer_bin,
             cmd=["install", *normalized_install_args],
