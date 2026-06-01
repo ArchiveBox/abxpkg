@@ -1,6 +1,6 @@
 [project]
 name = "abxpkg"
-version = "1.11.102"
+version = "1.11.103"
 description = "System package manager interfaces with Python type hints"
 authors = [{name = "Nick Sweeting"}, {name = "ArchiveBox"}]
 requires-python = ">=3.12,<3.15"
@@ -55,7 +55,7 @@ rich = [
     "rich>=14.0.0",
 ]
 abxbus = [
-    "abxbus>=2.5.8",
+    "abxbus>=2.4.9",
 ]
 pyinfra = [
     'pyinfra>=3.6.1',
@@ -97,7 +97,7 @@ dev = [
     "django-admin-data-views>=0.3.1",
     "django-pydantic-field>=0.3.9",
     "django-jsonform>=2.22.0",
-    "abxbus>=2.5.8",
+    "abxbus>=2.4.9",
     "pytest>=9.0.2",
     "rich>=14.0.0",
     "prek>=0.3.6",
