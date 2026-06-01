@@ -28,7 +28,6 @@ def _ansible_provider_for_host(test_machine):
             "tree",
             "rename",
             "jq",
-            "tmux",
             "screen",
             "sl",
             "toilet",
