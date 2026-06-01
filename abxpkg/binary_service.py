@@ -358,11 +358,5 @@ class BinaryService:
             overrides=self._overrides_for_event(request),
             env=env,
         )
-        if event.event_parent_id is None:
-            event.event_parent_id = request.event_id
-        request_emit = getattr(request, "emit", None)
-        if request_emit is not None:
-            await request_emit(event).now()
-        else:
-            await getattr(self.bus, "emit")(event).now()
+        await request.emit(event).now()
         return event.abspath

@@ -12,15 +12,6 @@ from abxpkg.exceptions import BinaryLoadError
 from abxpkg.semver import SemVer
 
 
-async def _emit_child(bus: Any, parent: Any, child: Any) -> Any:
-    if child.event_parent_id is None:
-        child.event_parent_id = parent.event_id
-    parent_emit = getattr(parent, "emit", None)
-    if parent_emit is not None:
-        return await parent_emit(child).now()
-    return await bus.emit(child).now()
-
-
 def test_binary_request_events_allow_parallel_scheduling_by_default(
     tmp_path: Path,
 ) -> None:
@@ -266,9 +257,7 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
         bus = abxbus.EventBus(name="test_binary_service_trusts_injected_event")
 
         async def inject_binary(event: BinaryRequestEvent) -> None:
-            await _emit_child(
-                bus,
-                event,
+            await event.emit(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(injected_path),
@@ -277,7 +266,7 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
                     binproviders="pip",
                     binprovider="pip",
                 ),
-            )
+            ).now()
 
         bus.on(BinaryRequestEvent, inject_binary)
         NoResolutionService(bus, probe=probe, output_dir=tmp_path)
@@ -326,16 +315,14 @@ def test_binary_service_ignores_binary_events_from_other_requests(
             if seeded:
                 return
             seeded = True
-            await _emit_child(
-                bus,
-                event,
+            await event.emit(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(stale_path),
                     binproviders="pip",
                     binprovider="pip",
                 ),
-            )
+            ).now()
 
         bus.on(BinaryRequestEvent, seed_first_request)
 
@@ -489,16 +476,14 @@ def test_binary_service_rechecks_same_request_after_install_semaphore(
             async def emit_later() -> None:
                 await second_load_seen.wait()
                 await asyncio.sleep(0.05)
-                await _emit_child(
-                    bus,
-                    event,
+                await event.emit(
                     BinaryEvent(
                         name="race-target",
                         abspath=str(injected_path),
                         binproviders="pip",
                         binprovider="pip",
                     ),
-                )
+                ).now()
 
             background_tasks.append(asyncio.create_task(emit_later()))
 

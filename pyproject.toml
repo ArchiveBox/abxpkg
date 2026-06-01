@@ -55,7 +55,7 @@ rich = [
     "rich>=14.0.0",
 ]
 abxbus = [
-    "abxbus>=2.4.9",
+    "abxbus>=2.4.15",
 ]
 pyinfra = [
     'pyinfra>=3.6.1',
@@ -97,7 +97,7 @@ dev = [
     "django-admin-data-views>=0.3.1",
     "django-pydantic-field>=0.3.9",
     "django-jsonform>=2.22.0",
-    "abxbus>=2.4.9",
+    "abxbus>=2.4.15",
     "pytest>=9.0.2",
     "rich>=14.0.0",
     "prek>=0.3.6",
@@ -111,7 +111,7 @@ dev = [
 # reproducible. ``uv`` (as of 0.8.x) requires a literal RFC 3339 date/time
 # here, not a relative duration like ``"5 days"`` — passing an invalid value
 # silently disables the cutoff and regenerates the lockfile on every invoke.
-exclude-newer = "2026-04-04T00:00:00Z"
+exclude-newer = "2026-04-28T00:00:00Z"
 
 [tool.mypy]
 mypy_path = "abxpkg"
