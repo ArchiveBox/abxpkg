@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from copy import deepcopy
+from inspect import isawaitable
+from collections.abc import Awaitable, Mapping
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Protocol
 
 from pydantic import ConfigDict, Field
 
@@ -55,6 +57,7 @@ class BinaryRequestEvent(BaseEvent):
     version_timeout: int | None = None
     base_env: dict[str, str] | None = None
     extra_env: dict[str, str] | None = None
+    extra_context: dict[str, Any] = Field(default_factory=dict)
     event_timeout: float | None = 300.0
 
 
@@ -74,7 +77,232 @@ class BinaryEvent(BaseEvent):
     binprovider: str = ""
     overrides: dict[str, Any] | None = None
     env: dict[str, str] = Field(default_factory=dict)
+    extra_context: dict[str, Any] = Field(default_factory=dict)
     event_timeout: float | None = 10.0
+
+
+class BinaryCacheBackend(Protocol):
+    """Storage/projection policy used by BinaryCacheService."""
+
+    def get(
+        self,
+        request: BinaryRequestEvent,
+    ) -> Binary | None | Awaitable[Binary | None]: ...
+
+    def set(
+        self,
+        request: BinaryRequestEvent | None,
+        binary: Binary,
+    ) -> None | Awaitable[None]: ...
+
+
+async def _maybe_await(value: Any) -> Any:
+    return await value if isawaitable(value) else value
+
+
+def _provider_names(
+    requested: str | list[str] | None,
+    *,
+    default_provider_names: str | list[str] | None = None,
+) -> list[str]:
+    names: list[str] = []
+    raw_requested = (
+        requested if requested not in (None, "", []) else default_provider_names
+    )
+    if isinstance(raw_requested, str):
+        if raw_requested.strip() == "*":
+            raw_names = list(DEFAULT_PROVIDER_NAMES)
+        else:
+            raw_names = [part.strip() for part in raw_requested.split(",")]
+    elif raw_requested:
+        raw_names = [str(part).strip() for part in raw_requested]
+    else:
+        raw_names = list(DEFAULT_PROVIDER_NAMES)
+
+    for name in raw_names:
+        if not name or name in names:
+            continue
+        if name not in PROVIDER_CLASS_BY_NAME:
+            valid = ", ".join(PROVIDER_CLASS_BY_NAME)
+            raise ValueError(
+                f"Unknown abxpkg provider {name!r}. Valid providers: {valid}",
+            )
+        names.append(name)
+    if not names:
+        raise ValueError(
+            "BinaryRequestEvent.binproviders did not include any providers",
+        )
+    return names
+
+
+def _binary_event_from_binary(
+    request: BinaryRequestEvent,
+    binary: Binary,
+    *,
+    description: str,
+    binproviders: str,
+    overrides: dict[str, Any] | None,
+    base_env: Mapping[str, str] | None,
+    extra_env: Mapping[str, str] | None,
+) -> BinaryEvent:
+    if not binary.loaded_abspath:
+        raise ValueError(f"{request.name} did not resolve to an abspath")
+    provider = binary.loaded_binprovider
+    provider_name = provider.name if provider is not None else ""
+    binary_extra = getattr(binary, "model_extra", None) or {}
+    cached_env = binary_extra.get("env")
+    env = (
+        dict(cached_env)
+        if isinstance(cached_env, Mapping)
+        else (
+            BinProvider.build_exec_env(
+                providers=[provider],
+                base_env=base_env,
+                extra_env=dict(extra_env or {}),
+            )
+            if provider is not None
+            else BinProvider.build_exec_env(
+                providers=[],
+                base_env=base_env,
+                extra_env=dict(extra_env or {}),
+            )
+        )
+    )
+    return BinaryEvent(
+        name=request.name,
+        description=description,
+        abspath=str(binary.loaded_abspath),
+        version=str(binary.loaded_version or ""),
+        sha256=str(binary.loaded_sha256 or ""),
+        mtime=binary.loaded_mtime,
+        euid=binary.loaded_euid,
+        binproviders=binproviders,
+        binprovider=provider_name,
+        overrides=overrides,
+        env=env,
+        extra_context=deepcopy(request.extra_context),
+    )
+
+
+def _binary_from_event(event: BinaryEvent) -> Binary:
+    provider_names = _provider_names(
+        event.binproviders or event.binprovider or "env",
+        default_provider_names="env",
+    )
+    providers = [PROVIDER_CLASS_BY_NAME[name]() for name in provider_names]
+    loaded_provider = (
+        PROVIDER_CLASS_BY_NAME[event.binprovider]()
+        if event.binprovider in PROVIDER_CLASS_BY_NAME
+        else None
+    )
+    return Binary.model_validate(
+        {
+            "name": event.name,
+            "description": event.description,
+            "binproviders": providers,
+            "overrides": event.overrides or {},
+            "loaded_binprovider": loaded_provider,
+            "loaded_abspath": event.abspath,
+            "loaded_version": event.version or None,
+            "loaded_sha256": event.sha256 or None,
+            "loaded_mtime": event.mtime,
+            "loaded_euid": event.euid,
+            "env": dict(event.env),
+            "extra_context": deepcopy(event.extra_context),
+        },
+    )
+
+
+class BinaryCacheService:
+    """abxbus service that projects cached Binary objects onto BinaryRequestEvent."""
+
+    LISTENS_TO: ClassVar[list[type[BaseEvent]]] = [BinaryRequestEvent, BinaryEvent]
+    EMITS: ClassVar[list[type[BaseEvent]]] = [BinaryEvent]
+
+    def __init__(
+        self,
+        bus: EventBus,
+        *,
+        backend: BinaryCacheBackend,
+        validate_cached_path: bool = True,
+        base_env: Mapping[str, str] | None = None,
+        extra_env: Mapping[str, str] | None = None,
+    ):
+        self.bus = bus
+        self.backend = backend
+        self.validate_cached_path = validate_cached_path
+        self.base_env = base_env
+        self.extra_env = extra_env
+        self.bus.on(BinaryRequestEvent, self.on_BinaryRequestEvent)
+        self.bus.on(BinaryEvent, self.on_BinaryEvent)
+
+    async def on_BinaryRequestEvent(self, event: BinaryRequestEvent) -> str | None:
+        if event.no_cache:
+            return None
+
+        cached = await _maybe_await(self.backend.get(event))
+        if cached is None:
+            return None
+        if not isinstance(cached, Binary):
+            cached = Binary.model_validate(cached)
+
+        invalid_reason = self._invalid_cached_binary_reason(event, cached)
+        if invalid_reason:
+            invalidate = getattr(self.backend, "invalidate", None)
+            if invalidate is not None:
+                await _maybe_await(invalidate(event, cached, invalid_reason))
+            return None
+
+        binary_event = _binary_event_from_binary(
+            event,
+            cached,
+            description=event.description or cached.description,
+            binproviders=",".join(_provider_names(event.binproviders)),
+            overrides=dict(event.overrides or cached.overrides or {}),
+            base_env=event.base_env or self.base_env,
+            extra_env={**dict(self.extra_env or {}), **dict(event.extra_env or {})},
+        )
+        await event.emit(binary_event).now()
+        return binary_event.abspath
+
+    async def on_BinaryEvent(self, event: BinaryEvent) -> None:
+        request = await self.bus.find(
+            BinaryRequestEvent,
+            past=True,
+            future=False,
+            where=lambda candidate: self.bus.event_is_child_of(event, candidate),
+        )
+        request = request if isinstance(request, BinaryRequestEvent) else None
+        if request is not None and request.no_cache:
+            return
+        binary = _binary_from_event(event)
+        await _maybe_await(self.backend.set(request, binary))
+
+    def _invalid_cached_binary_reason(
+        self,
+        event: BinaryRequestEvent,
+        binary: Binary,
+    ) -> str:
+        if binary.name and binary.name != event.name:
+            return (
+                f"cached binary name {binary.name!r} did not match "
+                f"request {event.name!r}"
+            )
+        if not binary.loaded_abspath:
+            return "cached binary did not include loaded_abspath"
+        if self.validate_cached_path and not Path(binary.loaded_abspath).exists():
+            return f"cached binary path does not exist: {binary.loaded_abspath}"
+        min_version = SemVer(event.min_version) if event.min_version else None
+        if (
+            min_version
+            and binary.loaded_version
+            and binary.loaded_version < min_version
+        ):
+            return (
+                f"cached binary version {binary.loaded_version} is below "
+                f"requested minimum {min_version}"
+            )
+        return ""
 
 
 class BinaryService:
@@ -294,69 +522,24 @@ class BinaryService:
         }
 
     def _provider_names(self, requested: str | list[str] | None) -> list[str]:
-        names: list[str] = []
-        raw_requested = (
-            requested if requested not in (None, "", []) else self.provider_names
+        return _provider_names(
+            requested,
+            default_provider_names=self.provider_names,
         )
-        if isinstance(raw_requested, str):
-            if raw_requested.strip() == "*":
-                raw_names = list(DEFAULT_PROVIDER_NAMES)
-            else:
-                raw_names = [part.strip() for part in raw_requested.split(",")]
-        elif raw_requested:
-            raw_names = [str(part).strip() for part in raw_requested]
-        else:
-            raw_names = list(DEFAULT_PROVIDER_NAMES)
-
-        for name in raw_names:
-            if not name or name in names:
-                continue
-            if name not in PROVIDER_CLASS_BY_NAME:
-                valid = ", ".join(PROVIDER_CLASS_BY_NAME)
-                raise ValueError(
-                    f"Unknown abxpkg provider {name!r}. Valid providers: {valid}",
-                )
-            names.append(name)
-        if not names:
-            raise ValueError(
-                "BinaryRequestEvent.binproviders did not include any providers",
-            )
-        return names
 
     async def _emit_binary_event(
         self,
         request: BinaryRequestEvent,
         binary: Binary,
     ) -> str:
-        if not binary.loaded_abspath:
-            raise ValueError(f"{request.name} did not resolve to an abspath")
-        provider = binary.loaded_binprovider
-        provider_name = provider.name if provider is not None else ""
-        env = (
-            BinProvider.build_exec_env(
-                providers=[provider],
-                base_env=self._base_env_for_event(request),
-                extra_env=self._extra_env_for_event(request),
-            )
-            if provider is not None
-            else BinProvider.build_exec_env(
-                providers=[],
-                base_env=self._base_env_for_event(request),
-                extra_env=self._extra_env_for_event(request),
-            )
-        )
-        event = BinaryEvent(
-            name=request.name,
+        event = _binary_event_from_binary(
+            request,
+            binary,
             description=self._description_for_event(request),
-            abspath=str(binary.loaded_abspath),
-            version=str(binary.loaded_version or ""),
-            sha256=str(binary.loaded_sha256 or ""),
-            mtime=binary.loaded_mtime,
-            euid=binary.loaded_euid,
             binproviders=",".join(self._provider_names(request.binproviders)),
-            binprovider=provider_name,
             overrides=self._overrides_for_event(request),
-            env=env,
+            base_env=self._base_env_for_event(request),
+            extra_env=self._extra_env_for_event(request),
         )
         await request.emit(event).now()
         return event.abspath
