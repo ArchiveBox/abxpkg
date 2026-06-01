@@ -266,7 +266,7 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
                     binproviders="pip",
                     binprovider="pip",
                 ),
-            ).now()
+            ).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
         bus.on(BinaryRequestEvent, inject_binary)
         NoResolutionService(bus, probe=probe, output_dir=tmp_path)
@@ -322,7 +322,7 @@ def test_binary_service_ignores_binary_events_from_other_requests(
                     binproviders="pip",
                     binprovider="pip",
                 ),
-            ).now()
+            ).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
         bus.on(BinaryRequestEvent, seed_first_request)
 
@@ -483,7 +483,7 @@ def test_binary_service_rechecks_same_request_after_install_semaphore(
                         binproviders="pip",
                         binprovider="pip",
                     ),
-                ).now()
+                ).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
 
             background_tasks.append(asyncio.create_task(emit_later()))
 
