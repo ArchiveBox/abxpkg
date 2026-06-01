@@ -1,0 +1,23 @@
+tests/test_binary_service.py
+  s_17c28d5ae0af20::t_45eba83138d996 269,325,486
+abxpkg/binary_service.py
+  s_17c28d5ae0af20::t_d2df7abb985223 361
+pyproject.toml
+  s_17c28d5ae0af20::t_c142c921e6cf88 58,100,114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c467121ae2c75d1791b81840ade7f613522a4140",
+  "prompts": {},
+  "sessions": {
+    "s_17c28d5ae0af20": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e81b9-e7d3-7892-a6dd-7fea61970acb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
