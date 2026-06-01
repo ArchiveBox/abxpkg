@@ -12,7 +12,12 @@ from .exceptions import BinaryLoadError
 from .semver import SemVer
 
 try:
-    from abxbus import BaseEvent, EventBus, EventConcurrencyMode
+    from abxbus import (
+        BaseEvent,
+        EventBus,
+        EventConcurrencyMode,
+        EventHandlerConcurrencyMode,
+    )
     from abxbus.retry import retry
 except (
     ModuleNotFoundError
@@ -29,6 +34,9 @@ class BinaryRequestEvent(BaseEvent):
     model_config = ConfigDict(extra="allow")
 
     event_concurrency: EventConcurrencyMode | None = EventConcurrencyMode.PARALLEL
+    event_handler_concurrency: EventHandlerConcurrencyMode | None = (
+        EventHandlerConcurrencyMode.SERIAL
+    )
     name: str = Field(min_length=1)
     plugin_name: str = ""
     hook_name: str = ""

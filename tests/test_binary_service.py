@@ -31,7 +31,7 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     )
 
     assert event.event_concurrency == abxbus.EventConcurrencyMode.PARALLEL
-    assert event.event_handler_concurrency is None
+    assert event.event_handler_concurrency == abxbus.EventHandlerConcurrencyMode.SERIAL
     assert service._install_semaphore_name(event) == service._install_semaphore_name(
         event,
     )
