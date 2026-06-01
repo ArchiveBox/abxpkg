@@ -208,7 +208,6 @@ def _binary_from_event(event: BinaryEvent) -> Binary:
             "loaded_mtime": event.mtime,
             "loaded_euid": event.euid,
             "env": dict(event.env),
-            "extra_context": deepcopy(event.extra_context),
         },
     )
 

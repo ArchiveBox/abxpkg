@@ -381,7 +381,9 @@ def test_binary_cache_service_stores_resolved_binary_event() -> None:
     assert cached.loaded_binprovider is not None
     assert cached.loaded_binprovider.name == "env"
     assert cached.model_extra
-    assert cached.model_extra["extra_context"] == {"binary_id": "python-cache"}
+    assert "env" in cached.model_extra
+    assert "extra_context" not in cached.model_extra
+    assert request.extra_context == {"binary_id": "python-cache"}
 
 
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:
