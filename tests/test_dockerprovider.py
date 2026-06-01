@@ -364,14 +364,23 @@ class TestDockerProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            results = provider.search("alpine")
-            assert results, "docker search alpine should return Docker Hub matches"
+            results = provider.search("koalaman/shellcheck")
+            assert results, (
+                "docker search koalaman/shellcheck should return Docker Hub matches"
+            )
             names = [r.name for r in results]
-            assert "alpine" in names
-            match = next(r for r in results if r.name == "alpine")
-            assert match.overrides == {"docker": {"install_args": ["alpine:latest"]}}
+            assert "shellcheck" in names
+            match = next(
+                r
+                for r in results
+                if r.overrides
+                == {"docker": {"install_args": ["koalaman/shellcheck:latest"]}}
+            )
+            assert match.overrides == {
+                "docker": {"install_args": ["koalaman/shellcheck:latest"]},
+            }
             assert match.loaded_abspath is None
             assert match.loaded_version is None
             installed = match.install()
             test_machine.assert_shallow_binary_loaded(installed)
-            assert installed.name == "alpine"
+            assert installed.name == "shellcheck"

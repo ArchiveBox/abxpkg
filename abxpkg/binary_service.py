@@ -31,25 +31,30 @@ except (
 class BinaryRequestEvent(BaseEvent):
     """Request that abxpkg resolve or install one binary."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     event_concurrency: EventConcurrencyMode | None = EventConcurrencyMode.PARALLEL
     event_handler_concurrency: EventHandlerConcurrencyMode | None = (
         EventHandlerConcurrencyMode.SERIAL
     )
     name: str = Field(min_length=1)
-    plugin_name: str = ""
-    hook_name: str = ""
-    output_dir: str = ""
+    description: str = ""
     min_version: str | None = None
     postinstall_scripts: bool | None = None
     min_release_age: float | None = None
-    binary_id: str = ""
-    machine_id: str = ""
     binproviders: str | list[str] = "env"
     overrides: dict[str, Any] | None = None
-    install_cache_key: str = ""
-    install_cache_hit: bool = False
+    auto_install: bool | None = None
+    lib_dir: Path | None = None
+    install_root: Path | None = None
+    bin_dir: Path | None = None
+    euid: int | None = None
+    dry_run: bool | None = None
+    no_cache: bool | None = None
+    install_timeout: int | None = None
+    version_timeout: int | None = None
+    base_env: dict[str, str] | None = None
+    extra_env: dict[str, str] | None = None
     event_timeout: float | None = 300.0
 
 
@@ -59,17 +64,16 @@ class BinaryEvent(BaseEvent):
     model_config = ConfigDict(extra="ignore")
 
     name: str = Field(min_length=1)
-    plugin_name: str = ""
-    hook_name: str = ""
+    description: str = ""
     abspath: str = Field(min_length=1)
     version: str = ""
     sha256: str = ""
+    mtime: int | None = None
+    euid: int | None = None
     binproviders: str = ""
     binprovider: str = ""
     overrides: dict[str, Any] | None = None
     env: dict[str, str] = Field(default_factory=dict)
-    binary_id: str = ""
-    machine_id: str = ""
     event_timeout: float | None = 10.0
 
 
@@ -85,6 +89,12 @@ class BinaryService:
         *,
         auto_install: bool = True,
         provider_names: str | list[str] | None = None,
+        description: str = "",
+        min_version: str | None = None,
+        postinstall_scripts: bool | None = None,
+        min_release_age: float | None = None,
+        overrides: Mapping[str, Any] | None = None,
+        lib_dir: Path | None = None,
         install_root: Path | None = None,
         bin_dir: Path | None = None,
         euid: int | None = None,
@@ -93,10 +103,17 @@ class BinaryService:
         install_timeout: int | None = None,
         version_timeout: int | None = None,
         base_env: Mapping[str, str] | None = None,
+        extra_env: Mapping[str, str] | None = None,
     ):
         self.bus = bus
         self.auto_install = auto_install
         self.provider_names = provider_names
+        self.description = description
+        self.min_version = min_version
+        self.postinstall_scripts = postinstall_scripts
+        self.min_release_age = min_release_age
+        self.overrides = dict(overrides or {})
+        self.lib_dir = lib_dir
         self.install_root = install_root
         self.bin_dir = bin_dir
         self.euid = euid
@@ -105,18 +122,12 @@ class BinaryService:
         self.install_timeout = install_timeout
         self.version_timeout = version_timeout
         self.base_env = base_env
+        self.extra_env = extra_env
         self.bus.on(BinaryRequestEvent, self.on_BinaryRequestEvent)
 
     async def on_BinaryRequestEvent(self, event: BinaryRequestEvent) -> str | None:
-        existing = await self.bus.find(
-            BinaryEvent,
-            child_of=event,
-            past=True,
-            future=False,
-            name=event.name,
-            where=lambda candidate: bool(candidate.abspath),
-        )
-        if isinstance(existing, BinaryEvent):
+        existing = await self._find_binary_event(event)
+        if existing is not None:
             return existing.abspath
 
         try:
@@ -126,9 +137,24 @@ class BinaryService:
         if loaded is not None and loaded.loaded_abspath:
             return await self._emit_binary_event(event, loaded)
 
-        if not self.auto_install:
+        auto_install = (
+            self.auto_install if event.auto_install is None else event.auto_install
+        )
+        if not auto_install:
             return None
 
+        existing = await self._find_binary_event(event)
+        if existing is not None:
+            return existing.abspath
+        installed = await self._install_or_find(event)
+        if isinstance(installed, BinaryEvent):
+            return installed.abspath
+        return await self._emit_binary_event(event, installed)
+
+    async def _find_binary_event(
+        self,
+        event: BinaryRequestEvent,
+    ) -> BinaryEvent | None:
         existing = await self.bus.find(
             BinaryEvent,
             child_of=event,
@@ -137,13 +163,12 @@ class BinaryService:
             name=event.name,
             where=lambda candidate: bool(candidate.abspath),
         )
-        if isinstance(existing, BinaryEvent):
-            return existing.abspath
-        installed = await self._install(event)
-        return await self._emit_binary_event(event, installed)
+        return existing if isinstance(existing, BinaryEvent) else None
 
     def _load(self, event: BinaryRequestEvent) -> Binary:
-        return self._binary_for_event(event).load(no_cache=self.no_cache)
+        return self._binary_for_event(event).load(
+            no_cache=self._no_cache_for_event(event),
+        )
 
     @retry(
         max_attempts=1,
@@ -153,13 +178,16 @@ class BinaryService:
         semaphore_timeout=300,
         semaphore_lax=False,
     )
-    async def _install(self, event: BinaryRequestEvent) -> Binary:
+    async def _install_or_find(self, event: BinaryRequestEvent) -> Binary | BinaryEvent:
+        existing = await self._find_binary_event(event)
+        if existing is not None:
+            return existing
         return await asyncio.to_thread(
             self._binary_for_event(event).install,
-            no_cache=self.no_cache,
-            dry_run=self.dry_run,
-            postinstall_scripts=event.postinstall_scripts,
-            min_release_age=event.min_release_age,
+            no_cache=self._no_cache_for_event(event),
+            dry_run=self._dry_run_for_event(event),
+            postinstall_scripts=self._postinstall_scripts_for_event(event),
+            min_release_age=self._min_release_age_for_event(event),
         )
 
     def _install_semaphore_name(self, event: BinaryRequestEvent) -> str:
@@ -176,26 +204,94 @@ class BinaryService:
     def _binary_for_event(self, event: BinaryRequestEvent) -> Binary:
         return Binary(
             name=event.name,
-            min_version=SemVer(event.min_version) if event.min_version else None,
-            postinstall_scripts=event.postinstall_scripts,
-            min_release_age=event.min_release_age,
+            description=self._description_for_event(event),
+            min_version=(
+                SemVer(min_version)
+                if (min_version := self._min_version_for_event(event))
+                else None
+            ),
+            postinstall_scripts=self._postinstall_scripts_for_event(event),
+            min_release_age=self._min_release_age_for_event(event),
             binproviders=self._providers_for_event(event),
-            overrides=event.overrides or {},
+            overrides=self._overrides_for_event(event),
         )
 
     def _providers_for_event(self, event: BinaryRequestEvent) -> list[BinProvider]:
         names = self._provider_names(event.binproviders)
-        kwargs: dict[str, Any] = {"dry_run": self.dry_run}
-        for key, value in (
-            ("install_root", self.install_root),
-            ("bin_dir", self.bin_dir),
-            ("euid", self.euid),
-            ("install_timeout", self.install_timeout),
-            ("version_timeout", self.version_timeout),
-        ):
-            if value is not None:
-                kwargs[key] = value
-        return [PROVIDER_CLASS_BY_NAME[name](**kwargs) for name in names]
+        providers: list[BinProvider] = []
+        for name in names:
+            install_root = (
+                self.install_root if event.install_root is None else event.install_root
+            )
+            lib_dir = self.lib_dir if event.lib_dir is None else event.lib_dir
+            kwargs: dict[str, Any] = {"dry_run": self._dry_run_for_event(event)}
+            for key, value in (
+                ("install_root", install_root),
+                ("bin_dir", self.bin_dir if event.bin_dir is None else event.bin_dir),
+                ("euid", self.euid if event.euid is None else event.euid),
+                (
+                    "install_timeout",
+                    self.install_timeout
+                    if event.install_timeout is None
+                    else event.install_timeout,
+                ),
+                (
+                    "version_timeout",
+                    self.version_timeout
+                    if event.version_timeout is None
+                    else event.version_timeout,
+                ),
+            ):
+                if value is not None:
+                    kwargs[key] = value
+            if install_root is None and lib_dir is not None:
+                kwargs["install_root"] = lib_dir / name
+            providers.append(PROVIDER_CLASS_BY_NAME[name](**kwargs))
+        return providers
+
+    def _dry_run_for_event(self, event: BinaryRequestEvent) -> bool:
+        return self.dry_run if event.dry_run is None else event.dry_run
+
+    def _no_cache_for_event(self, event: BinaryRequestEvent) -> bool:
+        return self.no_cache if event.no_cache is None else event.no_cache
+
+    def _description_for_event(self, event: BinaryRequestEvent) -> str:
+        return event.description or self.description
+
+    def _min_version_for_event(self, event: BinaryRequestEvent) -> str | None:
+        return self.min_version if event.min_version is None else event.min_version
+
+    def _postinstall_scripts_for_event(
+        self,
+        event: BinaryRequestEvent,
+    ) -> bool | None:
+        return (
+            self.postinstall_scripts
+            if event.postinstall_scripts is None
+            else event.postinstall_scripts
+        )
+
+    def _min_release_age_for_event(self, event: BinaryRequestEvent) -> float | None:
+        return (
+            self.min_release_age
+            if event.min_release_age is None
+            else event.min_release_age
+        )
+
+    def _overrides_for_event(self, event: BinaryRequestEvent) -> dict[str, Any]:
+        return dict(self.overrides if event.overrides is None else event.overrides)
+
+    def _base_env_for_event(
+        self,
+        event: BinaryRequestEvent,
+    ) -> Mapping[str, str] | None:
+        return self.base_env if event.base_env is None else event.base_env
+
+    def _extra_env_for_event(self, event: BinaryRequestEvent) -> dict[str, str]:
+        return {
+            **dict(self.extra_env or {}),
+            **dict(event.extra_env or {}),
+        }
 
     def _provider_names(self, requested: str | list[str] | None) -> list[str]:
         names: list[str] = []
@@ -237,23 +333,30 @@ class BinaryService:
         provider = binary.loaded_binprovider
         provider_name = provider.name if provider is not None else ""
         env = (
-            BinProvider.build_exec_env(providers=[provider], base_env=self.base_env)
+            BinProvider.build_exec_env(
+                providers=[provider],
+                base_env=self._base_env_for_event(request),
+                extra_env=self._extra_env_for_event(request),
+            )
             if provider is not None
-            else dict(self.base_env or {})
+            else BinProvider.build_exec_env(
+                providers=[],
+                base_env=self._base_env_for_event(request),
+                extra_env=self._extra_env_for_event(request),
+            )
         )
         event = BinaryEvent(
             name=request.name,
-            plugin_name=request.plugin_name,
-            hook_name=request.hook_name,
+            description=self._description_for_event(request),
             abspath=str(binary.loaded_abspath),
             version=str(binary.loaded_version or ""),
             sha256=str(binary.loaded_sha256 or ""),
+            mtime=binary.loaded_mtime,
+            euid=binary.loaded_euid,
             binproviders=",".join(self._provider_names(request.binproviders)),
             binprovider=provider_name,
-            overrides=request.overrides,
+            overrides=self._overrides_for_event(request),
             env=env,
-            binary_id=request.binary_id,
-            machine_id=request.machine_id,
         )
-        await request.emit(event).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+        await request.emit(event).now()
         return event.abspath

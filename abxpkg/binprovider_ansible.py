@@ -145,15 +145,6 @@ def ansible_package_install(
     else:
         pkg_names = list(pkg_names)
 
-    if installer_module == "community.general.homebrew":
-        homebrew_path = get_homebrew_search_path()
-        module_extra_kwargs = {
-            **({"path": homebrew_path} if homebrew_path else {}),
-            **(module_extra_kwargs or {}),
-        }
-
-    module_extra_yaml = render_ansible_module_extra_yaml(module_extra_kwargs)
-
     if installer_module == "auto":
         if OPERATING_SYSTEM == "darwin":
             # macOS: Use homebrew
@@ -163,6 +154,15 @@ def ansible_package_install(
             resolved_installer_module = "ansible.builtin.package"
     else:
         resolved_installer_module = installer_module
+
+    if resolved_installer_module == "community.general.homebrew":
+        homebrew_path = get_homebrew_search_path()
+        module_extra_kwargs = {
+            **({"path": homebrew_path} if homebrew_path else {}),
+            **(module_extra_kwargs or {}),
+        }
+
+    module_extra_yaml = render_ansible_module_extra_yaml(module_extra_kwargs)
 
     playbook = playbook_template.format(
         pkg_names=pkg_names,

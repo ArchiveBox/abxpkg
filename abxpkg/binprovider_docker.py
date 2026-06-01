@@ -145,7 +145,9 @@ class DockerProvider(BinProvider):
         """Persist the resolved docker image ref/tag that currently backs a shim."""
         install_root = self.install_root
         assert install_root is not None
-        (install_root / "metadata" / f"{bin_name}.json").write_text(
+        metadata_dir = install_root / "metadata"
+        metadata_dir.mkdir(parents=True, exist_ok=True)
+        (metadata_dir / f"{bin_name}.json").write_text(
             json.dumps(
                 {
                     "image": image_ref,
@@ -174,6 +176,7 @@ class DockerProvider(BinProvider):
         bin_dir = self.bin_dir
         assert bin_dir is not None
         wrapper_path = bin_dir / bin_name
+        wrapper_path.parent.mkdir(parents=True, exist_ok=True)
         docker_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert docker_bin
 
