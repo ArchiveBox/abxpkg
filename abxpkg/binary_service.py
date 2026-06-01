@@ -12,7 +12,8 @@ from .exceptions import BinaryLoadError
 from .semver import SemVer
 
 try:
-    from abxbus import BaseEvent, EventBus, EventHandlerConcurrencyMode
+    from abxbus import BaseEvent, EventBus, EventConcurrencyMode
+    from abxbus.retry import retry
 except (
     ModuleNotFoundError
 ) as err:  # pragma: no cover - exercised only without optional peer dependency
@@ -27,9 +28,7 @@ class BinaryRequestEvent(BaseEvent):
 
     model_config = ConfigDict(extra="allow")
 
-    event_handler_concurrency: EventHandlerConcurrencyMode | None = (
-        EventHandlerConcurrencyMode.SERIAL
-    )
+    event_concurrency: EventConcurrencyMode | None = EventConcurrencyMode.PARALLEL
     name: str = Field(min_length=1)
     plugin_name: str = ""
     hook_name: str = ""
@@ -98,7 +97,6 @@ class BinaryService:
         self.install_timeout = install_timeout
         self.version_timeout = version_timeout
         self.base_env = base_env
-        self._install_lock = asyncio.Lock()
         self.bus.on(BinaryRequestEvent, self.on_BinaryRequestEvent)
 
     async def on_BinaryRequestEvent(self, event: BinaryRequestEvent) -> str | None:
@@ -123,23 +121,30 @@ class BinaryService:
         if not self.auto_install:
             return None
 
-        async with self._install_lock:
-            existing = await self.bus.find(
-                BinaryEvent,
-                child_of=event,
-                past=True,
-                future=False,
-                name=event.name,
-                where=lambda candidate: bool(candidate.abspath),
-            )
-            if isinstance(existing, BinaryEvent):
-                return existing.abspath
-            installed = await asyncio.to_thread(self._install, event)
-            return await self._emit_binary_event(event, installed)
+        existing = await self.bus.find(
+            BinaryEvent,
+            child_of=event,
+            past=True,
+            future=False,
+            name=event.name,
+            where=lambda candidate: bool(candidate.abspath),
+        )
+        if isinstance(existing, BinaryEvent):
+            return existing.abspath
+        installed = await asyncio.to_thread(self._install, event)
+        return await self._emit_binary_event(event, installed)
 
     def _load(self, event: BinaryRequestEvent) -> Binary:
         return self._binary_for_event(event).load(no_cache=self.no_cache)
 
+    @retry(
+        max_attempts=1,
+        semaphore_limit=1,
+        semaphore_scope="multiprocess",
+        semaphore_name=lambda self, event: self._install_semaphore_name(event),
+        semaphore_timeout=300,
+        semaphore_lax=False,
+    )
     def _install(self, event: BinaryRequestEvent) -> Binary:
         return self._binary_for_event(event).install(
             no_cache=self.no_cache,
@@ -147,6 +152,17 @@ class BinaryService:
             postinstall_scripts=event.postinstall_scripts,
             min_release_age=event.min_release_age,
         )
+
+    def _install_semaphore_name(self, event: BinaryRequestEvent) -> str:
+        roots: list[str] = []
+        for provider in self._providers_for_event(event):
+            root = provider.install_root or provider.bin_dir
+            roots.append(
+                str(Path(root).expanduser().resolve())
+                if root is not None
+                else provider.name,
+            )
+        return "abxpkg:install:" + "|".join(roots)
 
     def _binary_for_event(self, event: BinaryRequestEvent) -> Binary:
         return Binary(
