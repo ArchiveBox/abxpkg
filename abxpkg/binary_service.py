@@ -246,5 +246,5 @@ class BinaryService:
             binary_id=request.binary_id,
             machine_id=request.machine_id,
         )
-        await request.emit(event).now()
+        await request.emit(event).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
         return event.abspath

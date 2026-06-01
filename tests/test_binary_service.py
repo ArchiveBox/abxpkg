@@ -78,8 +78,8 @@ class _ProbeBinary(Binary):
             name=event.name,
             binproviders=service._providers_for_event(event),
         )
-        self.service = service
-        self.event = event
+        object.__setattr__(self, "service", service)
+        object.__setattr__(self, "event", event)
 
     def install(
         self,
