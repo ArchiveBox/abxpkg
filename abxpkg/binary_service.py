@@ -364,5 +364,5 @@ class BinaryService:
         if request_emit is not None:
             await request_emit(event).now()
         else:
-            await self.bus.emit(event).now()
+            await getattr(self.bus, "emit")(event).now()
         return event.abspath
