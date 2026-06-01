@@ -257,7 +257,7 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
         bus = abxbus.EventBus(name="test_binary_service_trusts_injected_event")
 
         async def inject_binary(event: BinaryRequestEvent) -> None:
-            await event.emit(
+            await getattr(event, "emit")(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(injected_path),
@@ -315,7 +315,7 @@ def test_binary_service_ignores_binary_events_from_other_requests(
             if seeded:
                 return
             seeded = True
-            await event.emit(
+            await getattr(event, "emit")(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(stale_path),
@@ -476,14 +476,14 @@ def test_binary_service_rechecks_same_request_after_install_semaphore(
             async def emit_later() -> None:
                 await second_load_seen.wait()
                 await asyncio.sleep(0.05)
-                event.emit(
+                await getattr(event, "emit")(
                     BinaryEvent(
                         name="race-target",
                         abspath=str(injected_path),
                         binproviders="pip",
                         binprovider="pip",
                     ),
-                )
+                ).now()
 
             background_tasks.append(asyncio.create_task(emit_later()))
 
