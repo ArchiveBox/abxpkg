@@ -358,5 +358,5 @@ class BinaryService:
             overrides=self._overrides_for_event(request),
             env=env,
         )
-        await request.emit(event).now()  # pyright: ignore[reportAttributeAccessIssue]  # ty: ignore[unresolved-attribute]
+        await request.emit(event).now()
         return event.abspath
