@@ -131,7 +131,7 @@ class BinaryService:
         )
         if isinstance(existing, BinaryEvent):
             return existing.abspath
-        installed = await asyncio.to_thread(self._install, event)
+        installed = await self._install(event)
         return await self._emit_binary_event(event, installed)
 
     def _load(self, event: BinaryRequestEvent) -> Binary:
@@ -145,8 +145,9 @@ class BinaryService:
         semaphore_timeout=300,
         semaphore_lax=False,
     )
-    def _install(self, event: BinaryRequestEvent) -> Binary:
-        return self._binary_for_event(event).install(
+    async def _install(self, event: BinaryRequestEvent) -> Binary:
+        return await asyncio.to_thread(
+            self._binary_for_event(event).install,
             no_cache=self.no_cache,
             dry_run=self.dry_run,
             postinstall_scripts=event.postinstall_scripts,
