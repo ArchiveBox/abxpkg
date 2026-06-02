@@ -1,9 +1,5 @@
 __package__ = "abxpkg"
 
-import os
-import sys
-import time
-from contextlib import contextmanager
 from typing import Any
 from typing import Self
 
@@ -44,23 +40,6 @@ from .base_types import (
 
 DEFAULT_PROVIDER = EnvProvider()
 logger = get_logger(__name__)
-
-
-@contextmanager
-def _perf_span(label: str):
-    if os.environ.get("ARCHIVEBOX_PERF_TRACE") != "1":
-        yield
-        return
-    started_at = time.perf_counter()
-    try:
-        yield
-    finally:
-        elapsed_ms = (time.perf_counter() - started_at) * 1000
-        print(
-            f"PERF_TRACE label={label} ms={elapsed_ms:.3f}",
-            file=sys.stderr,
-            flush=True,
-        )
 
 
 class Binary(ShallowBinary):
@@ -445,24 +424,21 @@ class Binary(ShallowBinary):
 
             provider = binprovider
             try:
-                with _perf_span("abxpkg.Binary.load.get_binprovider"):
-                    provider = self.get_binprovider(
-                        binprovider_name=binprovider.name,
-                        **extra_overrides,
-                    )
-                with _perf_span("abxpkg.Binary.load.provider_load"):
-                    installed_bin = provider.load(self.name, no_cache=no_cache)
+                provider = self.get_binprovider(
+                    binprovider_name=binprovider.name,
+                    **extra_overrides,
+                )
+                installed_bin = provider.load(self.name, no_cache=no_cache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     # print('LOADED', binprovider, self.name, installed_bin)
-                    with _perf_span("abxpkg.Binary.load.validated_loaded_copy"):
-                        return self._validated_loaded_copy(
-                            provider,
-                            abspath=installed_bin.loaded_abspath,
-                            version=installed_bin.loaded_version,
-                            sha256=installed_bin.loaded_sha256,
-                            mtime=installed_bin.loaded_mtime,
-                            euid=installed_bin.loaded_euid,
-                        )
+                    return self._validated_loaded_copy(
+                        provider,
+                        abspath=installed_bin.loaded_abspath,
+                        version=installed_bin.loaded_version,
+                        sha256=installed_bin.loaded_sha256,
+                        mtime=installed_bin.loaded_mtime,
+                        euid=installed_bin.loaded_euid,
+                    )
                 else:
                     continue
             except Exception as err:
