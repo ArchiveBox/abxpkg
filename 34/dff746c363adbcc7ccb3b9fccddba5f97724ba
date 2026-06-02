@@ -1,0 +1,25 @@
+abxpkg/binprovider_pyinfra.py
+  s_1ff935dadc9b9f::t_dcb193d61a7fe0 25,231
+abxpkg/binprovider.py
+  s_1ff935dadc9b9f::t_79e7c4b56f38d5 107-118
+abxpkg/binprovider_ansible.py
+  s_1ff935dadc9b9f::t_4f244453cd3671 23,293
+tests/test_binprovider.py
+  s_1ff935dadc9b9f::t_f03f0e9686c978 1,26-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "34dff746c363adbcc7ccb3b9fccddba5f97724ba",
+  "prompts": {},
+  "sessions": {
+    "s_1ff935dadc9b9f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e820e-52cc-7311-9ae4-f3f56880ac41",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
