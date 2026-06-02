@@ -20,6 +20,7 @@ from .binprovider import (
     EnvProvider,
     OPERATING_SYSTEM,
     DEFAULT_PATH,
+    DEFAULT_ENV_PATH,
     remap_kwargs,
 )
 from .logging import (
@@ -289,10 +290,7 @@ class AnsibleProvider(BinProvider):
     name: BinProviderName = "ansible"
     _log_emoji = "📘"
     INSTALLER_BIN: BinName = "ansible"
-    PATH: PATHStr = os.environ.get(
-        "PATH",
-        DEFAULT_PATH,
-    )  # Always ambient system PATH. Ansible has no bin_dir field of its own and never mutates PATH in setup().
+    PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Ansible has no bin_dir field of its own and never mutates PATH in setup().
 
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:

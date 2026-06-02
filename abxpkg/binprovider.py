@@ -103,12 +103,19 @@ logger = get_logger(__name__)
 ################## GLOBALS ##########################################
 
 OPERATING_SYSTEM = platform.system().lower()
-DEFAULT_PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-DEFAULT_ENV_PATH = os.environ.get("PATH", DEFAULT_PATH)
 PYTHON_BIN_DIR = str(Path(sys.executable).parent)
-
-if PYTHON_BIN_DIR not in DEFAULT_ENV_PATH:
-    DEFAULT_ENV_PATH = PYTHON_BIN_DIR + ":" + DEFAULT_ENV_PATH
+DEFAULT_PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/games:/usr/games"
+DEFAULT_ENV_PATH = TypeAdapter(PATHStr).validate_python(
+    ":".join(
+        dict.fromkeys(
+            [
+                PYTHON_BIN_DIR,
+                *os.environ.get("PATH", DEFAULT_PATH).split(":"),
+                *DEFAULT_PATH.split(":"),
+            ],
+        ),
+    ),
+)
 
 UNKNOWN_ABSPATH = Path("/usr/bin/true")
 UNKNOWN_VERSION = cast(SemVer, SemVer.parse("999.999.999"))

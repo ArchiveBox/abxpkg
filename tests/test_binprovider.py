@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,6 +23,42 @@ from abxpkg import (
 
 
 class TestBinProvider:
+    def test_default_env_path_keeps_ambient_and_standard_package_dirs(
+        self,
+        tmp_path,
+    ):
+        ambient_bin = tmp_path / "ambient-bin"
+        ambient_bin.mkdir()
+        env = {
+            **os.environ,
+            "PATH": str(ambient_bin),
+            "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        }
+
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "from abxpkg.binprovider import DEFAULT_ENV_PATH\n"
+                    "from abxpkg.binprovider_ansible import AnsibleProvider\n"
+                    "from abxpkg.binprovider_pyinfra import PyinfraProvider\n"
+                    "paths = DEFAULT_ENV_PATH.split(':')\n"
+                    f"assert {str(ambient_bin)!r} in paths\n"
+                    "assert '/usr/games' in paths\n"
+                    "assert '/usr/local/games' in paths\n"
+                    "assert str(AnsibleProvider().PATH) == DEFAULT_ENV_PATH\n"
+                    "assert str(PyinfraProvider().PATH) == DEFAULT_ENV_PATH\n"
+                ),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+
     @pytest.mark.parametrize(
         ("provider_cls", "installer_bin"),
         (

@@ -22,6 +22,7 @@ from .binprovider import (
     EnvProvider,
     OPERATING_SYSTEM,
     DEFAULT_PATH,
+    DEFAULT_ENV_PATH,
     remap_kwargs,
 )
 from .logging import (
@@ -227,10 +228,7 @@ class PyinfraProvider(BinProvider):
     name: BinProviderName = "pyinfra"
     _log_emoji = "🛠️"
     INSTALLER_BIN: BinName = "pyinfra"
-    PATH: PATHStr = os.environ.get(
-        "PATH",
-        DEFAULT_PATH,
-    )  # Always ambient system PATH. Pyinfra has no bin_dir field of its own and never mutates PATH in setup().
+    PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Pyinfra has no bin_dir field of its own and never mutates PATH in setup().
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
