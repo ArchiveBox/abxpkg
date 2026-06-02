@@ -1,0 +1,19 @@
+abxpkg/binprovider_yarn.py
+  s_ccefc8ac08198c::t_c6e6c814eeb5d9 371-373,375-381,384,393-424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "a55be08a3f424009035384fc23dc7b55a2d2f9a9",
+  "prompts": {},
+  "sessions": {
+    "s_ccefc8ac08198c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e86b5-1bab-7df2-80cb-660ce277c3ec",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
