@@ -1311,20 +1311,45 @@ async function installExtension(extension, options = {}) {
                 fs.mkdirSync(crxDir, { recursive: true });
             }
 
-            // Download CRX file from Chrome Web Store
-            const response = await fetch(extension.crx_url);
+            const maxDownloadAttempts = Math.max(1, getEnvInt('CHROME_EXTENSION_DOWNLOAD_ATTEMPTS', 3));
+            let lastDownloadError = null;
 
-            if (!response.ok) {
-                console.warn(`[⚠️] Failed to download extension ${extension.name}: HTTP ${response.status}`);
-                return false;
+            for (let attempt = 1; attempt <= maxDownloadAttempts; attempt++) {
+                try {
+                    // Download CRX file from Chrome Web Store
+                    const response = await fetch(extension.crx_url);
+
+                    if (!response.ok) {
+                        console.warn(`[⚠️] Failed to download extension ${extension.name}: HTTP ${response.status}`);
+                        return false;
+                    }
+
+                    if (!response.body) {
+                        console.warn(`[⚠️] Failed to download extension ${extension.name}: No response body`);
+                        return false;
+                    }
+
+                    const crx_file = fs.createWriteStream(extension.crx_path);
+                    const crx_stream = Readable.fromWeb(response.body);
+                    await finished(crx_stream.pipe(crx_file));
+                    lastDownloadError = null;
+                    break;
+                } catch (err) {
+                    lastDownloadError = err;
+                    try {
+                        fs.rmSync(extension.crx_path, { force: true });
+                    } catch (_) {}
+
+                    if (attempt < maxDownloadAttempts) {
+                        const delayMs = Math.min(1000 * attempt, 5000);
+                        console.warn(`[⚠️] Failed to download extension ${extension.name} on attempt ${attempt}/${maxDownloadAttempts}: ${err?.message || err}. Retrying in ${delayMs}ms...`);
+                        await sleep(delayMs);
+                    }
+                }
             }
 
-            if (response.body) {
-                const crx_file = fs.createWriteStream(extension.crx_path);
-                const crx_stream = Readable.fromWeb(response.body);
-                await finished(crx_stream.pipe(crx_file));
-            } else {
-                console.warn(`[⚠️] Failed to download extension ${extension.name}: No response body`);
+            if (lastDownloadError) {
+                console.error(`[❌] Failed to download extension ${extension.name}:`, lastDownloadError);
                 return false;
             }
         } catch (err) {
