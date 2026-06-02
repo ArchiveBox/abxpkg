@@ -252,19 +252,21 @@ class BunProvider(BinProvider):
             + urllib.parse.quote(str(bin_name))
             + "&size=25"
         )
-        with urllib.request.urlopen(
-            url,
-            timeout=timeout or self.version_timeout,
-        ) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
         results: list = []
-        for entry in data.get("objects", []):
-            pkg = entry.get("package", {})
+        seen: set[str] = set()
+
+        def append_result(pkg: dict) -> None:
             pkg_name = pkg.get("name", "")
-            if not pkg_name or str(bin_name).lower() not in pkg_name.lower():
-                continue
+            if (
+                not pkg_name
+                or not (pkg_name[0].isalpha() or pkg_name[0] == "@")
+                or pkg_name in seen
+                or str(bin_name).lower() not in pkg_name.lower()
+            ):
+                return
             version_str = pkg.get("version", "")
             description = pkg.get("description", "") or pkg_name
+            seen.add(pkg_name)
             results.append(
                 Binary(
                     name=pkg_name,
@@ -273,6 +275,36 @@ class BunProvider(BinProvider):
                     overrides={self.name: {"install_args": [pkg_name]}},
                 ),
             )
+
+        try:
+            with urllib.request.urlopen(
+                url,
+                timeout=timeout or self.version_timeout,
+            ) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+
+        for entry in data.get("objects", []):
+            append_result(entry.get("package", {}))
+
+        if str(bin_name) not in seen:
+            exact_url = (
+                "https://registry.npmjs.org/"
+                + urllib.parse.quote(
+                    str(bin_name),
+                    safe="",
+                )
+                + "/latest"
+            )
+            try:
+                with urllib.request.urlopen(
+                    exact_url,
+                    timeout=timeout or self.version_timeout,
+                ) as resp:
+                    append_result(json.loads(resp.read().decode("utf-8")))
+            except (OSError, json.JSONDecodeError):
+                pass
         return results
 
     @remap_kwargs({"packages": "install_args"})
