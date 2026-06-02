@@ -13,6 +13,8 @@ import platform
 import subprocess
 import functools
 import tempfile
+import time
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from typing import (
@@ -118,6 +120,23 @@ ACTIVE_EXEC_LOG_PREFIX: ContextVar[str | None] = ContextVar(
 
 def env_flag_is_true(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@contextmanager
+def _perf_span(label: str):
+    if os.environ.get("ARCHIVEBOX_PERF_TRACE") != "1":
+        yield
+        return
+    started_at = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        print(
+            f"PERF_TRACE label={label} ms={elapsed_ms:.3f}",
+            file=sys.stderr,
+            flush=True,
+        )
 
 
 ################## SUPPLY-CHAIN SECURITY HELPERS ######################
@@ -2668,24 +2687,26 @@ class BinProvider(BaseModel):
         # ``EnvProvider(bin_dir=None)``), walk every ``get_abspaths``
         # candidate so a broken-on-PATH binary (e.g. linuxbrew cargo
         # with a stale ``libllhttp.so``) doesn't shadow a working one.
-        if self.bin_dir is None:
-            candidates = self.get_abspaths(bin_name, no_cache=no_cache)
-        else:
-            primary_abspath = self.get_abspath(
-                bin_name,
-                quiet=quiet,
-                no_cache=no_cache,
-            )
-            candidates = [primary_abspath] if primary_abspath else []
+        with _perf_span("abxpkg.BinProvider.load.find_candidates"):
+            if self.bin_dir is None:
+                candidates = self.get_abspaths(bin_name, no_cache=no_cache)
+            else:
+                primary_abspath = self.get_abspath(
+                    bin_name,
+                    quiet=quiet,
+                    no_cache=no_cache,
+                )
+                candidates = [primary_abspath] if primary_abspath else []
         if not candidates:
             return None
         for candidate_abspath in candidates:
-            result = self._try_load_at_abspath(
-                bin_name,
-                candidate_abspath,
-                quiet=quiet,
-                no_cache=no_cache,
-            )
+            with _perf_span("abxpkg.BinProvider.load.try_load_candidate"):
+                result = self._try_load_at_abspath(
+                    bin_name,
+                    candidate_abspath,
+                    quiet=quiet,
+                    no_cache=no_cache,
+                )
             if result is not None:
                 logger.info(
                     format_loaded_binary(
@@ -2708,55 +2729,65 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
-        result = (
-            None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
-        )
-        if result is None:
-            loaded_version = self.get_version(
-                bin_name,
-                abspath=installed_abspath,
-                quiet=quiet,
-                no_cache=True,
+        with _perf_span("abxpkg.BinProvider._try_load_at_abspath.load_cached_binary"):
+            result = (
+                None
+                if no_cache
+                else self.load_cached_binary(bin_name, installed_abspath)
             )
-            if not loaded_version:
-                return None
-            loaded_sha256 = (
-                self.get_sha256(
+        if result is None:
+            with _perf_span("abxpkg.BinProvider._try_load_at_abspath.get_version"):
+                loaded_version = self.get_version(
                     bin_name,
                     abspath=installed_abspath,
+                    quiet=quiet,
                     no_cache=True,
                 )
-                or UNKNOWN_SHA256
-            )
-            cache_write_result = self.write_cached_binary(
-                bin_name,
-                installed_abspath,
-                loaded_version,
-                loaded_sha256,
-            )
+            if not loaded_version:
+                return None
+            with _perf_span("abxpkg.BinProvider._try_load_at_abspath.get_sha256"):
+                loaded_sha256 = (
+                    self.get_sha256(
+                        bin_name,
+                        abspath=installed_abspath,
+                        no_cache=True,
+                    )
+                    or UNKNOWN_SHA256
+                )
+            with _perf_span(
+                "abxpkg.BinProvider._try_load_at_abspath.write_cached_binary",
+            ):
+                cache_write_result = self.write_cached_binary(
+                    bin_name,
+                    installed_abspath,
+                    loaded_version,
+                    loaded_sha256,
+                )
             if cache_write_result is None:
-                resolved_path = (
-                    Path(installed_abspath).expanduser().resolve(strict=False)
-                )
-                stat_result = resolved_path.stat()
-                loaded_mtime = TypeAdapter(MTimeNs).validate_python(
-                    stat_result.st_mtime_ns,
-                )
-                loaded_euid = TypeAdapter(EUID).validate_python(stat_result.st_uid)
+                with _perf_span("abxpkg.BinProvider._try_load_at_abspath.stat_result"):
+                    resolved_path = (
+                        Path(installed_abspath).expanduser().resolve(strict=False)
+                    )
+                    stat_result = resolved_path.stat()
+                    loaded_mtime = TypeAdapter(MTimeNs).validate_python(
+                        stat_result.st_mtime_ns,
+                    )
+                    loaded_euid = TypeAdapter(EUID).validate_python(stat_result.st_uid)
             else:
                 loaded_mtime, loaded_euid = cache_write_result
-            result = ShallowBinary.model_validate(
-                {
-                    "name": bin_name,
-                    "binprovider": self,
-                    "abspath": installed_abspath,
-                    "version": loaded_version,
-                    "sha256": loaded_sha256,
-                    "mtime": loaded_mtime,
-                    "euid": loaded_euid,
-                    "binproviders": [self],
-                },
-            )
+            with _perf_span("abxpkg.BinProvider._try_load_at_abspath.model_validate"):
+                result = ShallowBinary.model_validate(
+                    {
+                        "name": bin_name,
+                        "binprovider": self,
+                        "abspath": installed_abspath,
+                        "version": loaded_version,
+                        "sha256": loaded_sha256,
+                        "mtime": loaded_mtime,
+                        "euid": loaded_euid,
+                        "binproviders": [self],
+                    },
+                )
         return result
 
 
