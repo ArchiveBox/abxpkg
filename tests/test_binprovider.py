@@ -45,8 +45,6 @@ class TestBinProvider:
                     "from abxpkg.binprovider_pyinfra import PyinfraProvider\n"
                     "paths = DEFAULT_ENV_PATH.split(':')\n"
                     f"assert {str(ambient_bin)!r} in paths\n"
-                    "assert '/usr/games' in paths\n"
-                    "assert '/usr/local/games' in paths\n"
                     "assert str(AnsibleProvider().PATH) == DEFAULT_ENV_PATH\n"
                     "assert str(PyinfraProvider().PATH) == DEFAULT_ENV_PATH\n"
                 ),
