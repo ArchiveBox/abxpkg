@@ -8,6 +8,8 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+from .base_types import DEFAULT_LIB_DIR
+
 
 _OPTS_WITH_VALUES = {
     "--lib",
@@ -247,9 +249,12 @@ def _apply_abxpkg_lib_env(
     options: dict[str, str],
     binary_name: str,
 ) -> None:
-    raw_lib = options.get("--lib") or env.get("ABXPKG_LIB_DIR") or env.get("LIB_DIR")
-    if not raw_lib:
-        return
+    raw_lib = (
+        options.get("--lib")
+        or env.get("ABXPKG_LIB_DIR")
+        or env.get("LIB_DIR")
+        or DEFAULT_LIB_DIR
+    )
     lib_dir = Path(raw_lib).expanduser().resolve()
     inherited_venvs = []
     for key in ("VIRTUAL_ENV", "ACTIVE_PY_ENV"):

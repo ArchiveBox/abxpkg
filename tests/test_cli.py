@@ -2807,6 +2807,58 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
     assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
 
+def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path):
+    config_home = tmp_path / "xdg-config"
+    default_lib = config_home / "abx" / "lib"
+
+    install_proc = _run_abxpkg_cli(
+        "--binproviders=uv",
+        "--postinstall-scripts=False",
+        "--min-release-age=0",
+        f'--overrides={{"uv":{{"install_root":"{default_lib / "uv" / "packages" / "hook-runtime"}","install_args":["humanize>=4.0.0"]}}}}',
+        "install",
+        "humanize",
+        env_overrides={
+            "XDG_CONFIG_HOME": str(config_home),
+        },
+    )
+    assert install_proc.returncode == 0, install_proc.stderr
+
+    script = tmp_path / "fast_import_default_uv_package.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        "# ///\n"
+        "import humanize, json, os\n"
+        "print(json.dumps({\n"
+        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
+        "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
+        "    'humanize_file': humanize.__file__,\n"
+        "}))\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        "run",
+        "--script",
+        "python3",
+        str(script),
+        env_overrides={
+            "XDG_CONFIG_HOME": str(config_home),
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["fast"] == "1"
+    assert Path(payload["abxpkg_lib_dir"]) == default_lib
+    assert (
+        str(default_lib / "uv" / "packages" / "hook-runtime" / "venv")
+        in payload["humanize_file"]
+    )
+
+
 @pytest.fixture()
 def abx_e2e_lib():
     """Provide a lib dir with playwright + chromium pre-installed.
