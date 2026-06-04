@@ -328,6 +328,9 @@ def try_fast_script_run(argv: list[str] | None = None) -> bool:
                 env.setdefault(str(key), str(value))
             else:
                 raise _Fallback
+        if _is_python_binary(binary_name):
+            env.setdefault("ACTIVE_PY_BIN", sys.executable)
+            env.setdefault("ACTIVE_PY_ENV", sys.prefix)
         _apply_abxpkg_lib_env(env, options, binary_name)
         active_py_bin = env.get("ACTIVE_PY_BIN")
         if active_py_bin and _is_python_binary(binary_name):
