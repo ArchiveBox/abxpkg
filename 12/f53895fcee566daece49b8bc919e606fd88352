@@ -1,0 +1,23 @@
+abxpkg/fastcli.py
+  s_be3edb5822a954::t_738d135da2bf6f 11,253-256
+pyproject.toml
+  s_be3edb5822a954::t_a28ab3927a899f 3
+tests/test_cli.py
+  s_be3edb5822a954::t_6dffbdfe3385fa 2810-2855,2857-2861
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "12f53895fcee566daece49b8bc919e606fd88352",
+  "prompts": {},
+  "sessions": {
+    "s_be3edb5822a954": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e8c46-aad7-7802-ab71-f24622948dc9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
