@@ -919,8 +919,8 @@ class BinProvider(BaseModel):
             else PROVIDER_CLASS_BY_NAME[provider_name]()
             for provider_name in installer_provider_names
         ]
-        if not installer_providers:
-            installer_providers = [env_provider]
+        if all(provider.name != "env" for provider in installer_providers):
+            installer_providers.insert(0, env_provider)
 
         # Check {INSTALLER_BIN}_BINARY env var (e.g. NPM_BINARY, UV_BINARY)
         env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"

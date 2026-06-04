@@ -181,15 +181,22 @@ class PnpmProvider(BinProvider):
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or PNPM_HOME in global mode."""
+        path_entries: list[str | Path] = []
         if self.bin_dir:
-            self.PATH = self._merge_PATH(self.bin_dir)
+            path_entries.append(self.bin_dir)
         else:
             # In global mode, pnpm puts shims under PNPM_HOME (from env, or
             # ``<cache_dir>/pnpm-home`` — the same fallback exec() uses).
             pnpm_home = os.environ.get("PNPM_HOME") or str(
                 self.cache_dir / "pnpm-home",
             )
-            self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
+            path_entries.append(pnpm_home)
+        if self._INSTALLER_BINARY and self._INSTALLER_BINARY.loaded_abspath:
+            path_entries.append(self._INSTALLER_BINARY.loaded_abspath.parent)
+        npm_binary = os.environ.get("NPM_BINARY")
+        if npm_binary and os.path.isabs(npm_binary) and Path(npm_binary).is_file():
+            path_entries.append(Path(npm_binary).parent)
+        self.PATH = self._merge_PATH(*path_entries, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
 
     def _cached_installer_binary(self, no_cache: bool = False):

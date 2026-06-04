@@ -199,8 +199,16 @@ class NpmProvider(BinProvider):
         """Resolve npm's effective bin PATH from the current local/global npm prefixes."""
         PATH = self.PATH
 
+        installer_dir = (
+            self._INSTALLER_BINARY.loaded_abspath.parent
+            if self._INSTALLER_BINARY and self._INSTALLER_BINARY.loaded_abspath
+            else None
+        )
         if self.bin_dir:
-            return self._merge_PATH(self.bin_dir)
+            entries = [self.bin_dir]
+            if installer_dir is not None:
+                entries.append(installer_dir)
+            return self._merge_PATH(*entries)
 
         try:
             installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)

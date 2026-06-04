@@ -57,6 +57,53 @@ class TestPnpmProvider:
                 == install_root / "node_modules" / ".bin" / "zx"
             )
 
+    def test_self_bootstrap_uses_host_npm_when_top_level_provider_excludes_env(
+        self,
+        test_machine,
+    ):
+        npm_binary = shutil.which("npm")
+        node_binary = shutil.which("node")
+        if not npm_binary or not node_binary:
+            pytest.skip("npm and node are required for pnpm self-bootstrap")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "pnpm-root"
+            old_path = os.environ.get("PATH", "")
+            old_binproviders = os.environ.get("ABXPKG_BINPROVIDERS")
+            old_npm_binary = os.environ.get("NPM_BINARY")
+            os.environ["PATH"] = "/usr/bin:/bin"
+            os.environ["ABXPKG_BINPROVIDERS"] = "playwright"
+            os.environ["NPM_BINARY"] = npm_binary
+            try:
+                provider = PnpmProvider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+                installed = provider.install("zx")
+            finally:
+                os.environ["PATH"] = old_path
+                if old_binproviders is None:
+                    os.environ.pop("ABXPKG_BINPROVIDERS", None)
+                else:
+                    os.environ["ABXPKG_BINPROVIDERS"] = old_binproviders
+                if old_npm_binary is None:
+                    os.environ.pop("NPM_BINARY", None)
+                else:
+                    os.environ["NPM_BINARY"] = old_npm_binary
+
+            assert installer.loaded_abspath is not None
+            assert installer.loaded_abspath.is_relative_to(install_root / "npm")
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert (
+                installed.loaded_abspath
+                == install_root / "node_modules" / ".bin" / "zx"
+            )
+
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             pnpm_prefix = Path(temp_dir) / "pnpm"
