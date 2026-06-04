@@ -2749,6 +2749,16 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         "imagesize",
     )
     assert install_proc.returncode == 0, install_proc.stderr
+    package_install_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=uv",
+        "--postinstall-scripts=False",
+        "--min-release-age=0",
+        f'--overrides={{"uv":{{"install_root":"{lib / "uv" / "packages" / "hook-runtime"}","install_args":["humanize>=4.0.0"]}}}}',
+        "install",
+        "humanize",
+    )
+    assert package_install_proc.returncode == 0, package_install_proc.stderr
 
     script = tmp_path / "fast_import_runtime_and_uv_packages.py"
     script.write_text(
@@ -2756,11 +2766,12 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
         "# ///\n"
-        "import abxpkg, imagesize, json, os, rich_click, sys\n"
+        "import abxpkg, humanize, imagesize, json, os, rich_click, sys\n"
         "print(json.dumps({\n"
         "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
         "    'abxpkg_file': abxpkg.__file__,\n"
         "    'executable': sys.executable,\n"
+        "    'humanize_file': humanize.__file__,\n"
         "    'imagesize_file': imagesize.__file__,\n"
         "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
         "    'rich_click_file': rich_click.__file__,\n"
@@ -2788,7 +2799,11 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
     )
     assert Path(payload["executable"]).resolve() == Path(sys.executable).resolve()
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
-    assert str(Path(sys.executable).parent.parent / "lib") not in payload["pythonpath"]
+    assert (
+        str(lib / "uv" / "packages" / "hook-runtime" / "venv")
+        in payload["humanize_file"]
+    )
+    assert str(Path(sys.executable).parent.parent / "lib") in payload["pythonpath"]
     assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
 

@@ -737,6 +737,8 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
+        if str(bin_name) == self.INSTALLER_BIN:
+            return bin_abspath(bin_name, PATH=self.PATH) or bin_abspath(bin_name)
         return self._available_cli_paths(no_cache=no_cache).get(str(bin_name))
 
     def default_version_handler(

@@ -27,10 +27,19 @@ class TestInstallerBinaryContracts:
             NixProvider,
             NpmProvider,
             PipProvider,
-            PnpmProvider,
             PyinfraProvider,
         ):
             assert "super().INSTALLER_BINARY" in _installer_source(provider_cls)
+
+    def test_pnpm_provider_resolves_installer_without_base_recursion(self):
+        provider = PnpmProvider(postinstall_scripts=True, min_release_age=0)
+        abspath = provider.get_abspath("pnpm", quiet=True, no_cache=True)
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+
+        assert abspath is not None
+        assert installer.loaded_binprovider is not None
+        assert installer.loaded_abspath == abspath
+        assert installer.loaded_binprovider.name == "env"
 
     def test_browser_providers_do_not_delegate_to_base_resolver(self):
         for provider_cls in (PlaywrightProvider, PuppeteerProvider):
@@ -42,4 +51,6 @@ class TestInstallerBinaryContracts:
         for provider_cls in (PlaywrightProvider, PuppeteerProvider):
             source = _installer_source(provider_cls)
             assert "BinProviderUnavailableError" in source
-            assert 'Path(lib_dir) / "npm" / "node_modules" / ".bin"' in source
+            assert "Path(lib_dir)" in source
+            assert '/ "pnpm"' in source
+            assert '/ "packages"' in source

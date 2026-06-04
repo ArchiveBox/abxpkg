@@ -2,8 +2,6 @@ import tempfile
 from pathlib import Path
 import logging
 
-import pytest
-
 from abxpkg import Binary, GemProvider, SemVer
 
 
@@ -168,8 +166,11 @@ class TestGemProvider:
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            with pytest.raises(Exception):
-                provider.install("lolcat", min_version=SemVer("100.0.0"))
+            upgraded = provider.install("lolcat", min_version=SemVer("100.0.0"))
+            test_machine.assert_shallow_binary_loaded(
+                upgraded,
+                expected_version=SemVer("100.0.0"),
+            )
 
             updated = provider.update("lolcat")
             test_machine.assert_shallow_binary_loaded(

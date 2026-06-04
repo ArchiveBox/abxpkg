@@ -227,6 +227,17 @@ def _append_venv_import_paths(env: dict[str, str], venv_root: Path) -> None:
             _append_env_path(env, "PYTHONPATH", pth_path)
 
 
+def _uv_package_venvs(uv_root: Path) -> list[Path]:
+    packages_root = uv_root / "packages"
+    if not packages_root.is_dir():
+        return []
+    return [
+        package_venv
+        for package_venv in sorted(packages_root.glob("*/venv"))
+        if package_venv.is_dir()
+    ]
+
+
 def _is_python_binary(binary_name: str) -> bool:
     return binary_name in {"python", "python3"} or binary_name.startswith("python3.")
 
@@ -240,14 +251,6 @@ def _apply_abxpkg_lib_env(
     if not raw_lib:
         return
     lib_dir = Path(raw_lib).expanduser().resolve()
-    active_py_env = (
-        Path(env["ACTIVE_PY_ENV"]).expanduser().resolve()
-        if env.get("ACTIVE_PY_ENV")
-        else None
-    )
-    use_active_python = bool(
-        active_py_env and env.get("ACTIVE_PY_BIN") and _is_python_binary(binary_name),
-    )
     inherited_venvs = []
     for key in ("VIRTUAL_ENV", "ACTIVE_PY_ENV"):
         if not env.get(key):
@@ -282,10 +285,11 @@ def _apply_abxpkg_lib_env(
         env["VIRTUAL_ENV"] = str(uv_venv)
         path_entries.append(uv_venv / "bin")
         _append_venv_import_paths(env, uv_venv)
+        for package_venv in _uv_package_venvs(uv_root):
+            path_entries.append(package_venv / "bin")
+            _append_venv_import_paths(env, package_venv)
         for inherited_venv in inherited_venvs:
             if inherited_venv == uv_venv:
-                continue
-            if use_active_python and inherited_venv == active_py_env:
                 continue
             _append_venv_import_paths(env, inherited_venv)
     if "pnpm" in provider_names:
