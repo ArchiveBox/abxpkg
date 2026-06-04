@@ -20,6 +20,7 @@ concurrency:
 jobs:
   release-state:
     runs-on: ubuntu-latest
+    environment: pypi
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
