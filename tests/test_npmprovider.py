@@ -1,9 +1,19 @@
 import tempfile
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, BrewProvider, EnvProvider, NpmProvider, SemVer
+from abxpkg import (
+    Binary,
+    BrewProvider,
+    EnvProvider,
+    NpmProvider,
+    PnpmProvider,
+    PuppeteerProvider,
+    SemVer,
+)
+from abxpkg.exceptions import BinaryLoadError
 
 
 class TestNpmProvider:
@@ -140,6 +150,94 @@ class TestNpmProvider:
                 min_release_age=0,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="zx")
+
+    def test_install_args_change_forces_real_install_after_puppeteer_bootstrap(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            puppeteer_root = Path(temp_dir) / "puppeteer"
+            pnpm_root = puppeteer_root / "pnpm"
+            expected_version = SemVer("149.0.0")
+            assert expected_version is not None
+            browser = Binary(
+                name="chromium",
+                binproviders=[
+                    PuppeteerProvider(
+                        install_root=puppeteer_root,
+                        install_timeout=900,
+                        postinstall_scripts=True,
+                        min_release_age=0,
+                    ),
+                ],
+                min_version=expected_version,
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).install()
+
+            test_machine.assert_shallow_binary_loaded(browser)
+            assert browser is not None
+            assert browser.loaded_version is not None
+            assert browser.loaded_version >= expected_version
+            assert (
+                pnpm_root / "node_modules" / "@puppeteer" / "browsers" / "package.json"
+            ).exists()
+            assert not (
+                pnpm_root / "node_modules" / "puppeteer" / "package.json"
+            ).exists()
+
+            binary = Binary(
+                name="browsers",
+                binproviders=[
+                    PnpmProvider(
+                        install_root=pnpm_root,
+                        install_timeout=900,
+                        postinstall_scripts=False,
+                        min_release_age=0,
+                    ),
+                ],
+                overrides={
+                    "pnpm": {
+                        "install_args": ["@puppeteer/browsers", "puppeteer"],
+                    },
+                },
+                postinstall_scripts=False,
+                min_release_age=0,
+            )
+
+            with pytest.raises(BinaryLoadError):
+                binary.load()
+
+            installed = binary.install()
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert (
+                installed.loaded_abspath.resolve()
+                == (pnpm_root / "node_modules" / ".bin" / "browsers").resolve()
+            )
+            assert (pnpm_root / "node_modules" / "puppeteer" / "package.json").exists()
+            assert list(
+                (pnpm_root / "node_modules" / ".pnpm").glob(
+                    "puppeteer-core@*/node_modules/puppeteer-core/package.json",
+                ),
+            )
+
+            proc = subprocess.run(
+                [
+                    "node",
+                    "-e",
+                    "require(require.resolve('puppeteer', {paths: [process.argv[1]]}));",
+                    str(pnpm_root / "node_modules"),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert proc.returncode == 0, proc.stderr or proc.stdout
 
     def test_provider_direct_min_version_revalidates_old_install_and_upgrades(
         self,

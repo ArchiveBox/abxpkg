@@ -31,7 +31,7 @@ from .binprovider import (
     log_method_call,
     remap_kwargs,
 )
-from .binprovider_npm import NpmProvider
+from .binprovider_pnpm import PnpmProvider
 from .logging import (
     format_command,
     format_subprocess_output,
@@ -51,10 +51,10 @@ CLAUDE_SANDBOX_NO_PROXY = (
 class PuppeteerProvider(BinProvider):
     name: BinProviderName = "puppeteer"
     _log_emoji = "🎭"
-    INSTALLER_BIN: BinName = "puppeteer-browsers"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
+    INSTALLER_BIN: BinName = "browsers"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("pnpm",)
 
-    PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
+    PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/pnpm helper bins.
     postinstall_scripts: bool | None = Field(
         default_factory=lambda: env_flag_is_true("ABXPKG_POSTINSTALL_SCRIPTS"),
         repr=False,
@@ -75,7 +75,7 @@ class PuppeteerProvider(BinProvider):
     def ENV(self) -> "dict[str, str]":
         # In managed mode we pin ``PUPPETEER_CACHE_DIR`` to
         # ``<install_root>/cache``. In unmanaged mode we leave the
-        # ambient env (or puppeteer-browsers' own ``~/.cache/puppeteer``
+        # ambient env (or @puppeteer/browsers' own ``~/.cache/puppeteer``
         # default) untouched.
         env: dict[str, str] = {}
         if self.install_root is not None:
@@ -107,7 +107,7 @@ class PuppeteerProvider(BinProvider):
         return self
 
     def setup_PATH(self, no_cache: bool = False) -> None:
-        """Populate PATH on first use with bin_dir and any install_root/npm helper bin dirs."""
+        """Populate PATH on first use with bin_dir and any install_root/pnpm helper bin dirs."""
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
             not lib_dir
@@ -117,7 +117,7 @@ class PuppeteerProvider(BinProvider):
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
         if hermetic and self.install_root is not None:
-            path_entries.append(self.install_root / "npm" / "node_modules" / ".bin")
+            path_entries.append(self.install_root / "pnpm" / "node_modules" / ".bin")
         if path_entries:
             self.PATH = self._merge_PATH(
                 *path_entries,
@@ -127,10 +127,10 @@ class PuppeteerProvider(BinProvider):
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
-        # Prefer the puppeteer-browsers bootstrapped by an earlier install
-        # under ``<install_root>/npm/node_modules/.bin``. Without this, a
+        # Prefer the @puppeteer/browsers CLI bootstrapped by an earlier install
+        # under ``<install_root>/pnpm/node_modules/.bin``. Without this, a
         # fresh provider copy (e.g. the one Binary.load() builds via
-        # get_provider_with_overrides) can't locate puppeteer-browsers and
+        # get_provider_with_overrides) can't locate the browsers CLI and
         # ``_list_installed_browsers()`` silently returns empty.
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         if (
@@ -139,11 +139,21 @@ class PuppeteerProvider(BinProvider):
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
             local_cli = (
-                Path(lib_dir) / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+                Path(lib_dir)
+                / "pnpm"
+                / "packages"
+                / "puppeteer"
+                / "node_modules"
+                / ".bin"
+                / self.INSTALLER_BIN
             )
         elif self.install_root is not None:
             local_cli = (
-                self.install_root / "npm" / "node_modules" / ".bin" / self.INSTALLER_BIN
+                self.install_root
+                / "pnpm"
+                / "node_modules"
+                / ".bin"
+                / self.INSTALLER_BIN
             )
         else:
             local_cli = None
@@ -192,26 +202,30 @@ class PuppeteerProvider(BinProvider):
                 return self._INSTALLER_BINARY
 
         env_provider = EnvProvider(install_root=None, bin_dir=None)
-        try:
-            loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
-        except Exception:
-            loaded = None
-        if loaded and loaded.loaded_abspath:
-            if loaded.loaded_version and loaded.loaded_sha256:
-                self.write_cached_binary(
-                    self.INSTALLER_BIN,
-                    loaded.loaded_abspath,
-                    loaded.loaded_version,
-                    loaded.loaded_sha256,
-                    resolved_provider_name=(
-                        loaded.loaded_binprovider.name
-                        if loaded.loaded_binprovider is not None
-                        else self.name
-                    ),
-                    cache_kind="dependency",
+        if self.install_root is None:
+            try:
+                loaded = env_provider.load(
+                    bin_name=self.INSTALLER_BIN,
+                    no_cache=no_cache,
                 )
-            self._INSTALLER_BINARY = loaded
-            return self._INSTALLER_BINARY
+            except Exception:
+                loaded = None
+            if loaded and loaded.loaded_abspath:
+                if loaded.loaded_version and loaded.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded.loaded_abspath,
+                        loaded.loaded_version,
+                        loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded.loaded_binprovider.name
+                            if loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded
+                return self._INSTALLER_BINARY
         node_loaded = Binary(
             name="node",
             binproviders=[env_provider],
@@ -252,20 +266,20 @@ class PuppeteerProvider(BinProvider):
             and lib_dir
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
-            npm_install_root = Path(lib_dir) / "npm"
+            pnpm_install_root = Path(lib_dir) / "pnpm" / "packages" / "puppeteer"
         elif self.install_root is not None:
-            npm_install_root = self.install_root / "npm"
+            pnpm_install_root = self.install_root / "pnpm"
         else:
-            npm_install_root = None
-        cli_provider = NpmProvider(
-            install_root=npm_install_root,
+            pnpm_install_root = None
+        cli_provider = PnpmProvider(
+            install_root=pnpm_install_root,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
         return Binary(
-            name="puppeteer-browsers",
+            name=self.INSTALLER_BIN,
             binproviders=[cli_provider],
-            overrides={"npm": {"install_args": ["@puppeteer/browsers"]}},
+            overrides={"pnpm": {"install_args": ["@puppeteer/browsers"]}},
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         ).install(no_cache=no_cache)
@@ -287,7 +301,7 @@ class PuppeteerProvider(BinProvider):
                     self.install_root / "cache"
                     if self.install_root is not None
                     else None,
-                    self.install_root / "npm"
+                    self.install_root / "pnpm"
                     if self.install_root is not None
                     else None,
                 ),
@@ -307,7 +321,9 @@ class PuppeteerProvider(BinProvider):
             if self.bin_dir is not None:
                 path_entries.append(self.bin_dir)
             if hermetic and self.install_root is not None:
-                path_entries.append(self.install_root / "npm" / "node_modules" / ".bin")
+                path_entries.append(
+                    self.install_root / "pnpm" / "node_modules" / ".bin",
+                )
             if path_entries:
                 self.PATH = self._merge_PATH(
                     *path_entries,
@@ -331,7 +347,7 @@ class PuppeteerProvider(BinProvider):
             min_release_age=min_release_age,
             no_cache=no_cache,
         )
-        self._INSTALLER_BINARY = cli_binary  # bootstrap: seed cache after npm install
+        self._INSTALLER_BINARY = cli_binary  # bootstrap: seed cache after pnpm install
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
             not lib_dir
@@ -341,7 +357,7 @@ class PuppeteerProvider(BinProvider):
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
         if hermetic and self.install_root is not None:
-            path_entries.append(self.install_root / "npm" / "node_modules" / ".bin")
+            path_entries.append(self.install_root / "pnpm" / "node_modules" / ".bin")
         if path_entries:
             self.PATH = self._merge_PATH(
                 *path_entries,
@@ -853,7 +869,7 @@ class PuppeteerProvider(BinProvider):
     ) -> str:
         self.setup(no_cache=no_cache)
         if str(bin_name) == self.INSTALLER_BIN:
-            return f"Bootstrapped {self.INSTALLER_BIN} via npm"
+            return f"Bootstrapped {self.INSTALLER_BIN} via pnpm"
         install_args = list(install_args or self.get_install_args(bin_name))
         normalized_install_args = self._normalize_install_args(install_args)
         browser_name = self._browser_name(bin_name, normalized_install_args)
@@ -897,7 +913,7 @@ class PuppeteerProvider(BinProvider):
         if proc.returncode != 0 and self._should_repair_cli_install(install_output):
             cli_binary = self._cli_binary(postinstall_scripts=True, min_release_age=0)
             self._INSTALLER_BINARY = (
-                cli_binary  # bootstrap: seed cache after npm install
+                cli_binary  # bootstrap: seed cache after pnpm install
             )
             installer_binary = self._INSTALLER_BINARY
             if installer_binary is None or installer_binary.loaded_abspath is None:

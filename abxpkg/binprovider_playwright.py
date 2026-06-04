@@ -30,7 +30,7 @@ from .binprovider import (
     log_method_call,
     remap_kwargs,
 )
-from .binprovider_npm import NpmProvider
+from .binprovider_pnpm import PnpmProvider
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
@@ -46,15 +46,15 @@ class PlaywrightProvider(BinProvider):
     """Playwright browser installer provider.
 
     Drives ``playwright install --with-deps <install_args>`` against the
-    ``playwright`` npm package. When ``playwright_root`` is set it acts
-    as the abxpkg install root: a dedicated npm prefix is nested under
+    ``playwright`` package. When ``playwright_root`` is set it acts
+    as the abxpkg install root: a dedicated pnpm project is nested under
     it, ``bin_dir`` surfaces each requested browser so ``load(bin_name)``
     finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` is pinned to
     ``<install_root>/cache`` for every subprocess the provider runs.
     When ``playwright_root`` is left unset, playwright picks its own
     default browsers path (``$PLAYWRIGHT_BROWSERS_PATH`` from the
     ambient env, otherwise ``~/.cache/ms-playwright`` on Linux), the
-    npm CLI bootstraps against the host's npm default, and ``load()``
+    pnpm CLI bootstraps against the host's pnpm global mode, and ``load()``
     returns the resolved ``executablePath()`` directly without
     creating any install_root/bin_dir symlinks.
 
@@ -69,9 +69,9 @@ class PlaywrightProvider(BinProvider):
     name: BinProviderName = "playwright"
     _log_emoji = "🎬"
     INSTALLER_BIN: BinName = "playwright"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("pnpm",)
 
-    PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/npm helper bins.
+    PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/pnpm helper bins.
     postinstall_scripts: bool | None = Field(default=None, repr=False)
     min_release_age: float | None = Field(default=None, repr=False)
 
@@ -132,10 +132,18 @@ class PlaywrightProvider(BinProvider):
             and lib_dir
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
-            local_cli = Path(lib_dir) / "npm" / "node_modules" / ".bin" / "playwright"
+            local_cli = (
+                Path(lib_dir)
+                / "pnpm"
+                / "packages"
+                / "playwright"
+                / "node_modules"
+                / ".bin"
+                / "playwright"
+            )
         elif self.install_root is not None:
             local_cli = (
-                self.install_root / "npm" / "node_modules" / ".bin" / "playwright"
+                self.install_root / "pnpm" / "node_modules" / ".bin" / "playwright"
             )
         else:
             local_cli = None
@@ -206,26 +214,30 @@ class PlaywrightProvider(BinProvider):
                 return self._INSTALLER_BINARY
 
         env_provider = EnvProvider(install_root=None, bin_dir=None)
-        try:
-            loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
-        except Exception:
-            loaded = None
-        if loaded and loaded.loaded_abspath:
-            if loaded.loaded_version and loaded.loaded_sha256:
-                self.write_cached_binary(
-                    self.INSTALLER_BIN,
-                    loaded.loaded_abspath,
-                    loaded.loaded_version,
-                    loaded.loaded_sha256,
-                    resolved_provider_name=(
-                        loaded.loaded_binprovider.name
-                        if loaded.loaded_binprovider is not None
-                        else self.name
-                    ),
-                    cache_kind="dependency",
+        if self.install_root is None:
+            try:
+                loaded = env_provider.load(
+                    bin_name=self.INSTALLER_BIN,
+                    no_cache=no_cache,
                 )
-            self._INSTALLER_BINARY = loaded
-            return self._INSTALLER_BINARY
+            except Exception:
+                loaded = None
+            if loaded and loaded.loaded_abspath:
+                if loaded.loaded_version and loaded.loaded_sha256:
+                    self.write_cached_binary(
+                        self.INSTALLER_BIN,
+                        loaded.loaded_abspath,
+                        loaded.loaded_version,
+                        loaded.loaded_sha256,
+                        resolved_provider_name=(
+                            loaded.loaded_binprovider.name
+                            if loaded.loaded_binprovider is not None
+                            else self.name
+                        ),
+                        cache_kind="dependency",
+                    )
+                self._INSTALLER_BINARY = loaded
+                return self._INSTALLER_BINARY
         node_loaded = Binary(
             name="node",
             binproviders=[env_provider],
@@ -254,21 +266,21 @@ class PlaywrightProvider(BinProvider):
         )
 
     def setup_PATH(self, no_cache: bool = False) -> None:
-        """Populate PATH on first use with bin_dir and any install_root/npm helper bin dirs."""
+        """Populate PATH on first use with bin_dir and any install_root/pnpm helper bin dirs."""
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
         path_entries: list[Path] = []
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
         # In hermetic mode (install_root outside LIB_DIR), add our own
-        # npm bin dir. When install_root lives outside ABXPKG_LIB_DIR, this provider adds it directly.
+        # pnpm bin dir. When install_root lives outside ABXPKG_LIB_DIR, this provider adds it directly.
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
             not lib_dir
             or not str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         )
         if hermetic and self.install_root is not None:
-            path_entries.append(self.install_root / "npm" / "node_modules" / ".bin")
+            path_entries.append(self.install_root / "pnpm" / "node_modules" / ".bin")
         if path_entries:
             self.PATH = self._merge_PATH(
                 *path_entries,
@@ -366,14 +378,14 @@ class PlaywrightProvider(BinProvider):
             and lib_dir
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
-            npm_install_root = Path(lib_dir) / "npm"
+            pnpm_install_root = Path(lib_dir) / "pnpm" / "packages" / "playwright"
         elif self.install_root is not None:
-            npm_install_root = self.install_root / "npm"
+            pnpm_install_root = self.install_root / "pnpm"
         else:
-            npm_install_root = None
+            pnpm_install_root = None
         expected_playwright_module = (
-            npm_install_root / "node_modules" / "playwright"
-            if npm_install_root is not None
+            pnpm_install_root / "node_modules" / "playwright"
+            if pnpm_install_root is not None
             else None
         )
         try:
@@ -396,7 +408,7 @@ class PlaywrightProvider(BinProvider):
                 or not str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
             ):
                 path_entries.append(
-                    self.install_root / "npm" / "node_modules" / ".bin",
+                    self.install_root / "pnpm" / "node_modules" / ".bin",
                 )
             if path_entries:
                 self.PATH = self._merge_PATH(
@@ -405,15 +417,15 @@ class PlaywrightProvider(BinProvider):
                     prepend=True,
                 )
             return
-        # Bootstrap the ``playwright`` npm package (which ships the CLI
+        # Bootstrap the ``playwright`` package (which ships the CLI
         # and its ``playwright-core`` peer). Nest it under
         # ``playwright_root`` when one is pinned; otherwise leave
-        # ``npm_prefix`` unset so ``NpmProvider`` falls back to the
-        # host's own npm default.
+        # ``pnpm_install_root`` unset so ``PnpmProvider`` falls back to
+        # global mode.
         #
         # Security flags are propagated to the bootstrap install so
         # ``--min-release-age`` / ``--postinstall-scripts`` apply to the
-        # ``playwright`` npm package too, not just the browser download.
+        # ``playwright`` package too, not just the browser download.
         effective_postinstall = (
             self.postinstall_scripts
             if postinstall_scripts is None
@@ -430,33 +442,37 @@ class PlaywrightProvider(BinProvider):
         if effective_min_release_age is None:
             effective_min_release_age = 0.0
 
-        # Determine where to install the playwright npm package.
-        # Hermetic: install_root/npm
-        # Managed LIB_DIR: LIB_DIR/npm (shared with NpmProvider)
-        # Global: no install_root (NpmProvider picks its own default)
+        # Determine where to install the playwright package.
+        # Hermetic: install_root/pnpm
+        # Managed LIB_DIR: LIB_DIR/pnpm/packages/playwright
+        # Global: no install_root (PnpmProvider picks global mode)
         if (
             self.install_root is not None
             and lib_dir
             and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
         ):
-            npm_install_root = Path(lib_dir) / "npm"
-        cli_provider = NpmProvider(
-            install_root=npm_install_root,
+            pnpm_install_root = Path(lib_dir) / "pnpm" / "packages" / "playwright"
+        elif self.install_root is not None:
+            pnpm_install_root = self.install_root / "pnpm"
+        else:
+            pnpm_install_root = None
+        cli_provider = PnpmProvider(
+            install_root=pnpm_install_root,
             postinstall_scripts=effective_postinstall,
             min_release_age=effective_min_release_age,
         )
         cli = Binary(
             name="playwright",
             binproviders=[cli_provider],
-            overrides={"npm": {"install_args": ["playwright@next"]}},
+            overrides={"pnpm": {"install_args": ["playwright@next"]}},
             postinstall_scripts=effective_postinstall,
             min_release_age=effective_min_release_age,
         ).install(no_cache=no_cache)
         path_entries: list[Path] = []
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
-        if npm_install_root is not None:
-            path_entries.append(npm_install_root / "node_modules" / ".bin")
+        if pnpm_install_root is not None:
+            path_entries.append(pnpm_install_root / "node_modules" / ".bin")
         if path_entries:
             self.PATH = self._merge_PATH(
                 *path_entries,
@@ -466,7 +482,7 @@ class PlaywrightProvider(BinProvider):
         loaded_cli = self.load(self.INSTALLER_BIN, quiet=True, no_cache=True)
         self._INSTALLER_BINARY = (
             loaded_cli if loaded_cli is not None else cli
-        )  # bootstrap: seed cache after npm install
+        )  # bootstrap: seed cache after pnpm install
 
     def _playwright_browser_path(
         self,
@@ -478,14 +494,14 @@ class PlaywrightProvider(BinProvider):
 
         Delegates to ``playwright-core`` so we stay consistent with
         upstream layout across OSes and builds without hardcoding
-        browser-specific path patterns. When ``npm_prefix`` is pinned
+        browser-specific path patterns. When the helper package root is pinned
         we ``require()`` the absolute ``<prefix>/node_modules/playwright``
         path so the install_root copy wins; otherwise we let node's own
         module resolution find whichever ``playwright`` the host ships.
         """
-        # Find the playwright npm module to call executablePath().
-        # Hermetic: install_root/npm/node_modules/playwright
-        # Managed LIB_DIR: LIB_DIR/npm/node_modules/playwright
+        # Find the playwright module to call executablePath().
+        # Hermetic: install_root/pnpm/node_modules/playwright
+        # Managed LIB_DIR: LIB_DIR/pnpm/packages/playwright/node_modules/playwright
         # Global: let node's require() find it
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
@@ -494,10 +510,17 @@ class PlaywrightProvider(BinProvider):
         )
         if hermetic and self.install_root is not None:
             pw_require_target = (
-                self.install_root / "npm" / "node_modules" / "playwright"
+                self.install_root / "pnpm" / "node_modules" / "playwright"
             )
         elif lib_dir:
-            pw_require_target = Path(lib_dir) / "npm" / "node_modules" / "playwright"
+            pw_require_target = (
+                Path(lib_dir)
+                / "pnpm"
+                / "packages"
+                / "playwright"
+                / "node_modules"
+                / "playwright"
+            )
         else:
             pw_require_target = None
 
@@ -799,8 +822,8 @@ class PlaywrightProvider(BinProvider):
         # Browser versions are pinned by the ``playwright`` npm package,
         # so a real upgrade means bumping that package first and then
         # re-running ``playwright install`` to pull the new browser
-        # builds. When ``npm_prefix`` is pinned, drive the bump through
-        # our install_root-scoped NpmProvider; otherwise trust the host-installed
+        # builds. When the helper install root is pinned, drive the bump through
+        # our install_root-scoped PnpmProvider; otherwise trust the host-installed
         # playwright to already be at the desired version.
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
@@ -809,18 +832,18 @@ class PlaywrightProvider(BinProvider):
         )
         if hermetic and self.install_root is not None:
             try:
-                updated_cli = NpmProvider(
-                    install_root=self.install_root / "npm",
+                updated_cli = PnpmProvider(
+                    install_root=self.install_root / "pnpm",
                     postinstall_scripts=True,
                     min_release_age=0,
                 ).update("playwright", no_cache=no_cache)
                 if updated_cli is not None and updated_cli.loaded_abspath is not None:
                     self._INSTALLER_BINARY = (
-                        updated_cli  # bootstrap: seed cache after npm update
+                        updated_cli  # bootstrap: seed cache after pnpm update
                     )
             except Exception:
                 logger.debug(
-                    "PlaywrightProvider: npm update for ``playwright`` failed, "
+                    "PlaywrightProvider: pnpm update for ``playwright`` failed, "
                     "falling through to re-running ``playwright install``",
                     exc_info=True,
                 )

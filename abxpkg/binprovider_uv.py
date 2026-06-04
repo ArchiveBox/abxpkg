@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 from .base_types import (
@@ -19,8 +19,17 @@ from .base_types import (
     InstallArgs,
     PATHStr,
     abxpkg_install_root_default,
+    bin_abspath,
 )
-from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
+from .binary import Binary
+from .binprovider import (
+    BinProvider,
+    EnvProvider,
+    env_flag_is_true,
+    log_method_call,
+    remap_kwargs,
+)
+from .config import load_derived_cache
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
@@ -49,6 +58,7 @@ class UvProvider(BinProvider):
     name: BinProviderName = "uv"
     _log_emoji = "🚀"
     INSTALLER_BIN: BinName = "uv"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("pip",)
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/venv/bin in venv mode, or UV_TOOL_BIN_DIR/~/.local/bin in tool mode.
     postinstall_scripts: bool | None = Field(
         default_factory=lambda: env_flag_is_true("ABXPKG_POSTINSTALL_SCRIPTS"),
@@ -96,6 +106,136 @@ class UvProvider(BinProvider):
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
+
+    def _cached_installer_binary(self, no_cache: bool = False):
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            return self._INSTALLER_BINARY
+
+        derived_env_path = self.derived_env_path
+        if no_cache or not derived_env_path or not derived_env_path.is_file():
+            return None
+
+        cache = load_derived_cache(derived_env_path)
+        for cached_record in cache.values():
+            if not isinstance(cached_record, dict):
+                continue
+            if cached_record.get("provider_name") != self.name or cached_record.get(
+                "bin_name",
+            ) != str(self.INSTALLER_BIN):
+                continue
+            cached_abspath = cached_record.get("abspath")
+            if not isinstance(cached_abspath, str):
+                continue
+            loaded = self.load_cached_binary(self.INSTALLER_BIN, Path(cached_abspath))
+            if loaded and loaded.loaded_abspath:
+                self._INSTALLER_BINARY = loaded
+                return loaded
+        return None
+
+    def _installer_provider_root(self) -> Path:
+        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            return Path(lib_dir) / "pip" / "packages" / "uv"
+        if self.install_root is not None:
+            return self.install_root / "pip"
+        return self.cache_dir / "pip"
+
+    def _load_installer_at(self, abspath: Path, no_cache: bool = False):
+        loaded = EnvProvider(
+            PATH=str(abspath.parent),
+            install_root=None,
+            bin_dir=None,
+        ).load(bin_name=self.INSTALLER_BIN, no_cache=True)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            return loaded
+        return None
+
+    def _install_installer_binary(self, no_cache: bool = False):
+        from .binprovider_pip import PipProvider
+
+        pip_root = self._installer_provider_root()
+        loaded = Binary(
+            name=self.INSTALLER_BIN,
+            binproviders=[
+                PipProvider(
+                    install_root=pip_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                ),
+            ],
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).install(no_cache=no_cache)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+        return loaded
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        cached = self._cached_installer_binary(no_cache=no_cache)
+        if cached is not None:
+            return cached
+
+        env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
+        manual = os.environ.get(env_var)
+        if manual and os.path.isabs(manual) and Path(manual).is_file():
+            loaded = self._load_installer_at(Path(manual), no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        host_installer = bin_abspath(
+            self.INSTALLER_BIN,
+            PATH=os.environ.get("PATH", ""),
+        )
+        if host_installer:
+            loaded = self._load_installer_at(host_installer, no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        local_installer = (
+            self._installer_provider_root()
+            / "venv"
+            / "bin"
+            / str(
+                self.INSTALLER_BIN,
+            )
+        )
+        if local_installer.is_file() and os.access(local_installer, os.X_OK):
+            loaded = self._load_installer_at(local_installer, no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        return self._install_installer_binary(no_cache=no_cache)
 
     @computed_field
     @property
@@ -640,6 +780,31 @@ class UvProvider(BinProvider):
                 candidate = self.install_root / "venv" / "bin" / str(bin_name)
                 if candidate.exists():
                     return TypeAdapter(HostBinPath).validate_python(candidate)
+                site_packages_locations = [
+                    Path(line.split("Location: ", 1)[1])
+                    for line in proc.stdout.splitlines()
+                    if line.startswith("Location: ")
+                ]
+                module_names = [tool_name.replace("-", "_").replace(".", "_")]
+                for line in proc.stdout.splitlines():
+                    if line.startswith("Name: "):
+                        package_name = line.split("Name: ", 1)[1].strip()
+                        normalized_package_name = package_name.replace(
+                            "-",
+                            "_",
+                        ).replace(".", "_")
+                        if normalized_package_name not in module_names:
+                            module_names.append(normalized_package_name)
+                for location in site_packages_locations:
+                    for module_name in module_names:
+                        for module_candidate in (
+                            location / module_name / "__init__.py",
+                            location / f"{module_name}.py",
+                        ):
+                            if module_candidate.exists():
+                                return TypeAdapter(HostBinPath).validate_python(
+                                    module_candidate,
+                                )
         else:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
             candidate = self.tool_dir / tool_name / "bin" / str(bin_name)
@@ -665,22 +830,26 @@ class UvProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> SemVer | None:
-        try:
-            version = self._version_from_exec(
-                bin_name,
-                abspath=abspath,
-                timeout=timeout,
-            )
-            if version:
-                return version
-        except ValueError:
-            pass
         tool_name = self._package_name_for_bin(str(bin_name), **context)
-        return self._version_from_uv_metadata(
+        metadata_version = self._version_from_uv_metadata(
             tool_name,
             timeout=timeout,
             no_cache=no_cache,
         )
+        if metadata_version:
+            return metadata_version
+        if abspath is None or os.access(abspath, os.X_OK):
+            try:
+                version = self._version_from_exec(
+                    bin_name,
+                    abspath=abspath,
+                    timeout=timeout,
+                )
+                if version:
+                    return version
+            except ValueError:
+                pass
+        return None
 
 
 if __name__ == "__main__":

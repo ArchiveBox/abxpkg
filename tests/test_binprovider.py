@@ -224,6 +224,85 @@ class TestBinProvider:
                 deno_provider.ENV,
             )
 
+    def test_build_exec_env_merges_materialized_runtime_module_paths(
+        self,
+        tmp_path,
+    ):
+        base_node_modules = tmp_path / "base" / "node_modules"
+        base_site_packages = tmp_path / "base" / "site-packages"
+        first_site_packages = (
+            tmp_path
+            / "pip"
+            / "first"
+            / "venv"
+            / "lib"
+            / f"python{sys.version_info.major}.{sys.version_info.minor}"
+            / "site-packages"
+        )
+        second_site_packages = (
+            tmp_path
+            / "pip"
+            / "second"
+            / "venv"
+            / "lib"
+            / f"python{sys.version_info.major}.{sys.version_info.minor}"
+            / "site-packages"
+        )
+        first_site_packages.mkdir(parents=True)
+        second_site_packages.mkdir(parents=True)
+
+        first_pnpm = PnpmProvider(
+            install_root=tmp_path / "pnpm" / "packages" / "singlefile",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        second_pnpm = PnpmProvider(
+            install_root=tmp_path / "pnpm" / "packages" / "chrome",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        first_pip = PipProvider(
+            install_root=tmp_path / "pip" / "first",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        second_pip = PipProvider(
+            install_root=tmp_path / "pip" / "second",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+
+        first_event_env = BinProvider.build_exec_env(
+            providers=[first_pnpm, first_pip],
+            base_env={},
+        )
+        second_event_env = BinProvider.build_exec_env(
+            providers=[second_pnpm, second_pip],
+            base_env={},
+        )
+        env = BinProvider.build_exec_env(
+            base_env={
+                "PATH": os.environ["PATH"],
+                "NODE_PATH": str(base_node_modules),
+                "PYTHONPATH": str(base_site_packages),
+            },
+            extra_env=first_event_env,
+        )
+        env = BinProvider.build_exec_env(base_env=env, extra_env=second_event_env)
+
+        assert first_pnpm.install_root is not None
+        assert second_pnpm.install_root is not None
+        assert env["NODE_PATH"].split(":") == [
+            str(base_node_modules),
+            str(first_pnpm.install_root / "node_modules"),
+            str(second_pnpm.install_root / "node_modules"),
+        ]
+        assert env["PYTHONPATH"].split(":") == [
+            str(base_site_packages),
+            str(first_site_packages),
+            str(second_site_packages),
+        ]
+
     def test_get_provider_with_overrides_changes_real_install_behavior(
         self,
         test_machine,

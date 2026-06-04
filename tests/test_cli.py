@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import shlex
 import shutil
 import subprocess
@@ -2630,6 +2631,165 @@ def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
     assert lines[0].startswith(str(lib / "pip" / "venv" / "bin"))
     assert str(lib / "env" / "bin") in lines[1]
     assert str(lib / "pip" / "venv" / "bin") in lines[1]
+
+
+def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
+    """abxpkg --script should use provider envs without requiring duplicate inline deps."""
+
+    lib = tmp_path / "lib"
+
+    install_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=uv",
+        "--postinstall-scripts=False",
+        "--min-release-age=0",
+        '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
+        "install",
+        "imagesize",
+    )
+    assert install_proc.returncode == 0, install_proc.stderr
+
+    script = tmp_path / "import_imagesize.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        "# ///\n"
+        "import imagesize\n"
+        "print(imagesize.__file__)\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env,uv",
+        "run",
+        "--script",
+        "python3",
+        str(script),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert str(lib / "uv" / "venv") in proc.stdout
+
+
+def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
+    """No-dependency script headers should hit the fast path and use caller LIB_DIR."""
+
+    lib = tmp_path / "lib"
+
+    install_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=uv",
+        "--postinstall-scripts=False",
+        "--min-release-age=0",
+        '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
+        "install",
+        "imagesize",
+    )
+    assert install_proc.returncode == 0, install_proc.stderr
+
+    script = tmp_path / "fast_import_imagesize.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        "# ///\n"
+        "import imagesize, json, os\n"
+        "print(json.dumps({\n"
+        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
+        "    'overhead_ns': int(os.environ.get('ABXPKG_FAST_SCRIPT_OVERHEAD_NS', '-1')),\n"
+        "    'lib_dir': os.environ.get('LIB_DIR'),\n"
+        "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
+        "    'virtual_env': os.environ.get('VIRTUAL_ENV'),\n"
+        "    'uv_cache_dir': os.environ.get('UV_CACHE_DIR'),\n"
+        "    'imagesize_file': imagesize.__file__,\n"
+        "}))\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        "run",
+        "--script",
+        "python3",
+        str(script),
+        env_overrides={
+            "LIB_DIR": str(lib),
+            "ABXPKG_BINPROVIDERS": "env,uv",
+            "ACTIVE_PY_ENV": str(Path(sys.executable).parent.parent),
+            "VIRTUAL_ENV": str(lib / "uv" / "packages" / "hook-runtime" / "venv"),
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["fast"] == "1"
+    assert 0 <= payload["overhead_ns"] < 10_000_000
+    assert Path(payload["lib_dir"]) == lib
+    assert Path(payload["abxpkg_lib_dir"]) == lib.resolve()
+    assert Path(payload["virtual_env"]) == (lib / "uv" / "venv")
+    assert Path(payload["uv_cache_dir"]).name == "uv"
+    assert str(lib / "uv" / "venv") in payload["imagesize_file"]
+
+
+def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cache(
+    tmp_path,
+):
+    """Managed uv script execution must not hide packages from the caller runtime."""
+
+    lib = tmp_path / "lib"
+
+    install_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=uv",
+        "--postinstall-scripts=False",
+        "--min-release-age=0",
+        '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
+        "install",
+        "imagesize",
+    )
+    assert install_proc.returncode == 0, install_proc.stderr
+
+    script = tmp_path / "fast_import_runtime_and_uv_packages.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        "# ///\n"
+        "import abxpkg, imagesize, json, os, rich_click, sys\n"
+        "print(json.dumps({\n"
+        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
+        "    'abxpkg_file': abxpkg.__file__,\n"
+        "    'executable': sys.executable,\n"
+        "    'imagesize_file': imagesize.__file__,\n"
+        "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    'rich_click_file': rich_click.__file__,\n"
+        "}))\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        "run",
+        "--script",
+        "python3",
+        str(script),
+        env_overrides={
+            "LIB_DIR": str(lib),
+            "ABXPKG_BINPROVIDERS": "env,uv",
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["fast"] == "1"
+    assert (
+        Path(payload["abxpkg_file"]).resolve()
+        == Path(cli_module.__file__).parents[0] / "__init__.py"
+    )
+    assert Path(payload["executable"]).resolve() == Path(sys.executable).resolve()
+    assert str(lib / "uv" / "venv") in payload["imagesize_file"]
+    assert str(Path(sys.executable).parent.parent / "lib") not in payload["pythonpath"]
+    assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
 
 @pytest.fixture()

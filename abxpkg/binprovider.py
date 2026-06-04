@@ -1494,6 +1494,36 @@ class BinProvider(BaseModel):
             save_derived_cache(derived_env_path, cache)
         return has_valid_cache
 
+    def cached_binary_install_args_mismatch(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+    ) -> bool:
+        """Return True when a managed binary cache was made with different install args."""
+        derived_env_path = self.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            return False
+
+        cache = load_derived_cache(derived_env_path)
+        cache_key = self._cache_key(bin_name, abspath)
+        cached_record = cache.get(cache_key)
+        if not isinstance(cached_record, dict):
+            return False
+
+        cached_install_args = cached_record.get("install_args")
+        if not isinstance(cached_install_args, list) or not all(
+            isinstance(arg, str) for arg in cached_install_args
+        ):
+            return False
+
+        requested_install_args = list(
+            self.get_install_args(bin_name, quiet=True, no_cache=True),
+        )
+        if cached_install_args == requested_install_args:
+            return False
+
+        return True
+
     @log_method_call(include_result=True)
     def depends_on_binaries(self) -> list[ShallowBinary]:
         derived_env_path = self.derived_env_path
@@ -2206,7 +2236,24 @@ class BinProvider(BaseModel):
                 self.name,
             )
             postinstall_scripts = True
+        skip_preload = False
         if not no_cache:
+            try:
+                existing_abspath = self.get_abspath(
+                    bin_name,
+                    quiet=True,
+                    no_cache=False,
+                )
+            except Exception:
+                existing_abspath = None
+            skip_preload = bool(
+                existing_abspath
+                and self.cached_binary_install_args_mismatch(
+                    bin_name,
+                    existing_abspath,
+                ),
+            )
+        if not no_cache and not skip_preload:
             try:
                 installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
             except Exception:
@@ -2715,6 +2762,11 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
+        if not no_cache and self.cached_binary_install_args_mismatch(
+            bin_name,
+            installed_abspath,
+        ):
+            return None
         result = (
             None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
         )

@@ -2055,6 +2055,8 @@ def _run_command_impl(
         return
     if not script_mode:
         runtime_binproviders = resolved_runtime_binproviders
+    else:
+        runtime_binproviders = [*runtime_binproviders, *resolved_runtime_binproviders]
 
     if run_options.dry_run:
         # Provider exec honors dry_run and returns a no-op CompletedProcess;
@@ -2420,6 +2422,10 @@ def _expand_bare_bool_flags(argv: list[str]) -> list[str]:
 
 
 def main() -> None:
+    from .fastcli import try_fast_script_run
+
+    if try_fast_script_run(sys.argv[1:]):
+        return
     cli(_expand_bare_bool_flags(_normalize_binary_override_option_order(sys.argv[1:])))
 
 

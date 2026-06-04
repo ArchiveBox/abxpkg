@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,36 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
+    def test_self_bootstrap_installs_uv_when_host_uv_is_not_on_path(self, test_machine):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "uv-root"
+            old_path = os.environ.get("PATH", "")
+            os.environ["PATH"] = "/usr/bin:/bin"
+            try:
+                assert shutil.which("uv", path=os.environ["PATH"]) is None
+                provider = UvProvider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+                installed = provider.install("cowsay")
+            finally:
+                os.environ["PATH"] = old_path
+
+            assert installer.loaded_abspath is not None
+            assert installer.loaded_abspath.is_relative_to(
+                install_root / "pip",
+            )
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath == install_root / "venv" / "bin" / "cowsay"
+
     def test_installer_binary_is_cached_in_provider_local_derived_env(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             install_root = Path(tmpdir) / "uv-root"
@@ -162,6 +193,28 @@ class TestUvProvider:
             assert (install_root / "venv" / "bin" / "python").exists()
             # And the cowsay CLI got wired up inside the venv.
             assert (install_root / "venv" / "bin" / "cowsay").exists()
+
+    def test_install_root_module_dependency_loads_without_console_script(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "uv-venv"
+            provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=False,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"imagesize": {"install_args": ["imagesize>=2.0.0"]}},
+            )
+
+            installed = provider.install("imagesize")
+
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.name in {"__init__.py", "imagesize.py"}
+            assert "site-packages" in str(installed.loaded_abspath)
+            assert installed.loaded_version is not None
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,

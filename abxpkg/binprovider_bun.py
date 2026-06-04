@@ -138,7 +138,7 @@ class BunProvider(BinProvider):
     ) -> InstallArgs:
         if str(bin_name) == "puppeteer":
             return ("puppeteer", "@puppeteer/browsers")
-        if str(bin_name) == "puppeteer-browsers":
+        if str(bin_name) in {"browsers", "puppeteer-browsers"}:
             return ("@puppeteer/browsers",)
         return TypeAdapter(InstallArgs).validate_python(
             super().default_install_args_handler(bin_name, **context)

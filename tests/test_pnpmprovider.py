@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -10,6 +11,52 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
+    def test_self_bootstrap_installs_pnpm_when_host_pnpm_is_not_on_path(
+        self,
+        test_machine,
+    ):
+        npm_binary = shutil.which("npm")
+        node_binary = shutil.which("node")
+        if not npm_binary or not node_binary:
+            pytest.skip("npm and node are required for pnpm self-bootstrap")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            install_root = Path(temp_dir) / "pnpm-root"
+            node_bin_dir = Path(node_binary).resolve().parent
+            constrained_path = os.pathsep.join([str(node_bin_dir), "/usr/bin", "/bin"])
+            old_path = os.environ.get("PATH", "")
+            old_npm_binary = os.environ.get("NPM_BINARY")
+            os.environ["PATH"] = constrained_path
+            os.environ["NPM_BINARY"] = npm_binary
+            try:
+                assert shutil.which("pnpm", path=os.environ["PATH"]) is None
+                provider = PnpmProvider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+                installed = provider.install("zx")
+            finally:
+                os.environ["PATH"] = old_path
+                if old_npm_binary is None:
+                    os.environ.pop("NPM_BINARY", None)
+                else:
+                    os.environ["NPM_BINARY"] = old_npm_binary
+
+            assert installer.loaded_abspath is not None
+            assert installer.loaded_abspath.is_relative_to(
+                install_root / "npm",
+            )
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert (
+                installed.loaded_abspath
+                == install_root / "node_modules" / ".bin" / "zx"
+            )
+
     def test_install_args_win_for_ignore_scripts_and_min_release_age(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             pnpm_prefix = Path(temp_dir) / "pnpm"
@@ -155,6 +202,127 @@ class TestPnpmProvider:
             )
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.is_relative_to(provider.install_root)
+
+    def test_scoped_package_resolves_all_pnpm_exposed_clis(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            provider = PnpmProvider(
+                install_root=Path(temp_dir) / "pnpm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"lit": {"install_args": ["@llamaindex/liteparse"]}},
+            )
+
+            installed = provider.install("lit")
+
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_version is not None
+            assert provider.bin_dir is not None
+            assert provider.install_root is not None
+            assert (
+                installed.loaded_abspath.resolve()
+                == (provider.bin_dir / "lit").resolve()
+            )
+            assert (provider.bin_dir / "lit").is_file()
+            assert (provider.bin_dir / "liteparse").is_file()
+            package_json = (
+                provider.install_root
+                / "node_modules"
+                / "@llamaindex"
+                / "liteparse"
+                / "package.json"
+            )
+            assert package_json.exists()
+            import json as _json
+
+            assert (
+                str(installed.loaded_version)
+                == _json.loads(package_json.read_text())["version"]
+            )
+            exposed_bins = provider._available_cli_paths()
+            assert set(exposed_bins) >= {"lit", "liteparse"}
+            assert exposed_bins["lit"].resolve() == (provider.bin_dir / "lit").resolve()
+            assert (
+                exposed_bins["liteparse"].resolve()
+                == (provider.bin_dir / "liteparse").resolve()
+            )
+
+            lit_proc = installed.exec(cmd=("--version",), quiet=True)
+            assert lit_proc.returncode == 0, lit_proc.stderr
+            assert "2." in (lit_proc.stdout + lit_proc.stderr)
+
+            liteparse = provider.load("liteparse")
+            test_machine.assert_shallow_binary_loaded(
+                liteparse,
+                assert_version_command=False,
+            )
+            assert liteparse is not None
+            assert liteparse.loaded_abspath is not None
+            assert (
+                liteparse.loaded_abspath.resolve()
+                == (provider.bin_dir / "liteparse").resolve()
+            )
+            liteparse_proc = liteparse.exec(cmd=("--version",), quiet=True)
+            assert liteparse_proc.returncode == 0, liteparse_proc.stderr
+            assert "2." in (liteparse_proc.stdout + liteparse_proc.stderr)
+
+    def test_global_mode_resolves_pnpm_global_bin_dir_and_exposed_clis(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pnpm_home = (Path(temp_dir) / "pnpm-home").resolve()
+            previous_home = os.environ.get("PNPM_HOME")
+            previous_path = os.environ.get("PATH", "")
+            os.environ["PNPM_HOME"] = str(pnpm_home)
+            os.environ["PATH"] = os.pathsep.join([str(pnpm_home), previous_path])
+            try:
+                provider = PnpmProvider(
+                    install_root=None,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                ).get_provider_with_overrides(
+                    overrides={"lit": {"install_args": ["@llamaindex/liteparse"]}},
+                )
+
+                installed = provider.install("lit", no_cache=True)
+
+                test_machine.assert_shallow_binary_loaded(
+                    installed,
+                    assert_version_command=False,
+                )
+                assert installed is not None
+                provided_bin_dir = provider._provided_bin_dir(no_cache=True)
+                assert provided_bin_dir is not None
+                assert provided_bin_dir.resolve() == pnpm_home.resolve()
+                exposed_bins = provider._available_cli_paths(no_cache=True)
+                assert set(exposed_bins) >= {"lit", "liteparse"}
+                assert exposed_bins["lit"].resolve().is_relative_to(pnpm_home)
+                assert exposed_bins["liteparse"].resolve().is_relative_to(pnpm_home)
+
+                liteparse = provider.load("liteparse", no_cache=True)
+                test_machine.assert_shallow_binary_loaded(
+                    liteparse,
+                    assert_version_command=False,
+                )
+                assert liteparse is not None
+                assert liteparse.loaded_abspath is not None
+                assert liteparse.loaded_abspath.resolve().is_relative_to(pnpm_home)
+                assert provider.uninstall("lit", no_cache=True) is True
+            finally:
+                if previous_home is None:
+                    os.environ.pop("PNPM_HOME", None)
+                else:
+                    os.environ["PNPM_HOME"] = previous_home
+                os.environ["PATH"] = previous_path
 
     def test_provider_direct_min_version_revalidates_old_install_and_upgrades(
         self,

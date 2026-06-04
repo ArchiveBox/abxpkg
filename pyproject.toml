@@ -1,6 +1,6 @@
 [project]
 name = "abxpkg"
-version = "1.11.154"
+version = "1.11.157"
 description = "System package manager interfaces with Python type hints"
 authors = [{name = "Nick Sweeting"}, {name = "ArchiveBox"}]
 requires-python = ">=3.12,<3.15"
@@ -47,8 +47,8 @@ dependencies = [
 ]
 
 [project.scripts]
-abxpkg = "abxpkg.cli:main"
-abx = "abxpkg.cli:abx_main"
+abxpkg = "abxpkg.fastcli:main"
+abx = "abxpkg.fastcli:abx_main"
 
 [project.optional-dependencies]
 rich = [

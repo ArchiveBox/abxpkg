@@ -9,7 +9,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -31,6 +31,7 @@ from .binprovider import (
     log_method_call,
     remap_kwargs,
 )
+from .config import load_derived_cache
 from .logging import format_subprocess_output
 from .semver import SemVer
 
@@ -48,6 +49,7 @@ class PnpmProvider(BinProvider):
     name: BinProviderName = "pnpm"
     _log_emoji = "📦"
     INSTALLER_BIN: BinName = "pnpm"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or PNPM_HOME in global mode.
     postinstall_scripts: bool | None = Field(
@@ -134,7 +136,7 @@ class PnpmProvider(BinProvider):
     ) -> InstallArgs:
         if str(bin_name) == "puppeteer":
             return ("puppeteer", "@puppeteer/browsers")
-        if str(bin_name) == "puppeteer-browsers":
+        if str(bin_name) in {"browsers", "puppeteer-browsers"}:
             return ("@puppeteer/browsers",)
         return TypeAdapter(InstallArgs).validate_python(
             super().default_install_args_handler(bin_name, **context)
@@ -159,8 +161,14 @@ class PnpmProvider(BinProvider):
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         """Derive pnpm's managed node_modules/.bin dir from install_root."""
-        if self.bin_dir is None and self.install_root is not None:
-            self.bin_dir = self.install_root / "node_modules" / ".bin"
+        if self.install_root is not None:
+            expected_bin_dir = self.install_root / "node_modules" / ".bin"
+            if self.bin_dir is None or (
+                self.bin_dir.name == ".bin"
+                and self.bin_dir.parent.name == "node_modules"
+                and self.bin_dir != expected_bin_dir
+            ):
+                self.bin_dir = expected_bin_dir
         return self
 
     @property
@@ -184,9 +192,32 @@ class PnpmProvider(BinProvider):
             self.PATH = self._merge_PATH(pnpm_home, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+    def _cached_installer_binary(self, no_cache: bool = False):
+        if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
+            return self._INSTALLER_BINARY
 
+        derived_env_path = self.derived_env_path
+        if no_cache or not derived_env_path or not derived_env_path.is_file():
+            return None
+
+        cache = load_derived_cache(derived_env_path)
+        for cached_record in cache.values():
+            if not isinstance(cached_record, dict):
+                continue
+            if cached_record.get("provider_name") != self.name or cached_record.get(
+                "bin_name",
+            ) != str(self.INSTALLER_BIN):
+                continue
+            cached_abspath = cached_record.get("abspath")
+            if not isinstance(cached_abspath, str):
+                continue
+            loaded = self.load_cached_binary(self.INSTALLER_BIN, Path(cached_abspath))
+            if loaded and loaded.loaded_abspath:
+                self._INSTALLER_BINARY = loaded
+                return loaded
+        return None
+
+    def _cache_node_dependency(self, no_cache: bool = False) -> None:
         try:
             node_loaded = Binary(
                 name="node",
@@ -212,6 +243,113 @@ class PnpmProvider(BinProvider):
                 ),
                 cache_kind="dependency",
             )
+
+    def _installer_provider_root(self) -> Path:
+        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+        if (
+            self.install_root is not None
+            and lib_dir
+            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+        ):
+            return Path(lib_dir) / "npm" / "packages" / "pnpm"
+        if self.install_root is not None:
+            return self.install_root / "npm"
+        return self.cache_dir / "npm"
+
+    def _load_installer_at(self, abspath: Path, no_cache: bool = False):
+        loaded = EnvProvider(
+            PATH=str(abspath.parent),
+            install_root=None,
+            bin_dir=None,
+        ).load(bin_name=self.INSTALLER_BIN, no_cache=True)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            self._cache_node_dependency(no_cache=no_cache)
+            return loaded
+        return None
+
+    def _install_installer_binary(self, no_cache: bool = False):
+        from .binprovider_npm import NpmProvider
+
+        npm_root = self._installer_provider_root()
+        loaded = Binary(
+            name=self.INSTALLER_BIN,
+            binproviders=[
+                NpmProvider(
+                    install_root=npm_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                ),
+            ],
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).install(no_cache=no_cache)
+        if loaded and loaded.loaded_abspath:
+            if loaded.loaded_version and loaded.loaded_sha256:
+                self.write_cached_binary(
+                    self.INSTALLER_BIN,
+                    loaded.loaded_abspath,
+                    loaded.loaded_version,
+                    loaded.loaded_sha256,
+                    resolved_provider_name=(
+                        loaded.loaded_binprovider.name
+                        if loaded.loaded_binprovider is not None
+                        else self.name
+                    ),
+                    cache_kind="dependency",
+                )
+            self._INSTALLER_BINARY = loaded
+            self._cache_node_dependency(no_cache=no_cache)
+        return loaded
+
+    def INSTALLER_BINARY(self, no_cache: bool = False):
+        cached = self._cached_installer_binary(no_cache=no_cache)
+        if cached is not None:
+            return cached
+
+        env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
+        manual = os.environ.get(env_var)
+        if manual and os.path.isabs(manual) and Path(manual).is_file():
+            loaded = self._load_installer_at(Path(manual), no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        host_installer = bin_abspath(
+            self.INSTALLER_BIN,
+            PATH=os.environ.get("PATH", ""),
+        )
+        if host_installer:
+            loaded = self._load_installer_at(host_installer, no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        local_installer = (
+            self._installer_provider_root()
+            / "node_modules"
+            / ".bin"
+            / str(
+                self.INSTALLER_BIN,
+            )
+        )
+        if local_installer.is_file() and os.access(local_installer, os.X_OK):
+            loaded = self._load_installer_at(local_installer, no_cache=no_cache)
+            if loaded is not None:
+                return loaded
+
+        loaded = self._install_installer_binary(no_cache=no_cache)
         return loaded
 
     @log_method_call(include_result=True)
@@ -259,6 +397,81 @@ class PnpmProvider(BinProvider):
         if self.bin_dir is None:
             return None
         return self.bin_dir / str(bin_name)
+
+    @staticmethod
+    def _package_name_from_install_args(install_args: InstallArgs) -> str:
+        main_package = next(
+            (arg for arg in install_args if arg and not arg.startswith("-")),
+            "",
+        )
+        if not main_package:
+            return ""
+        if main_package.startswith("@"):
+            return "@" + main_package[1:].split("@", 1)[0]
+        return main_package.split("@", 1)[0]
+
+    def _node_modules_dir(self) -> Path | None:
+        if self.install_root:
+            return self.install_root / "node_modules"
+        try:
+            pnpm_abspath = self.INSTALLER_BINARY().loaded_abspath
+            assert pnpm_abspath
+            return Path(
+                self.exec(
+                    bin_name=pnpm_abspath,
+                    cmd=["root", "--global"],
+                    timeout=self.version_timeout,
+                    quiet=True,
+                ).stdout.strip(),
+            )
+        except Exception:
+            return None
+
+    def _installed_package_dir(self, bin_name: str) -> Path | None:
+        install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
+        package = self._package_name_from_install_args(install_args)
+        modules_dir = self._node_modules_dir()
+        if not package or modules_dir is None:
+            return None
+        package_dir = modules_dir / package
+        return package_dir if package_dir.is_dir() else None
+
+    def _installed_package_json(self, bin_name: str) -> dict:
+        package_dir = self._installed_package_dir(bin_name)
+        if package_dir is None:
+            return {}
+        package_json_path = package_dir / "package.json"
+        try:
+            loaded = json.loads(package_json_path.read_text())
+        except Exception:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
+    def _installed_package_version(self, bin_name: str) -> SemVer | None:
+        version = self._installed_package_json(bin_name).get("version")
+        return SemVer.parse(version) if isinstance(version, str) else None
+
+    def _provided_bin_dir(self, no_cache: bool = False) -> Path | None:
+        bin_dir = (
+            self.bin_dir if self.bin_dir is not None else Path(self.ENV["PNPM_HOME"])
+        )
+        return bin_dir if bin_dir.is_dir() else None
+
+    def _available_cli_paths(self, no_cache: bool = False) -> dict[str, HostBinPath]:
+        bin_dir = self._provided_bin_dir(no_cache=no_cache)
+        if bin_dir is None:
+            return {}
+        cli_paths: dict[str, HostBinPath] = {}
+        for entry in sorted(bin_dir.iterdir(), key=lambda path: path.name):
+            if not (entry.is_file() or entry.is_symlink()):
+                continue
+            if not os.access(entry, os.R_OK):
+                continue
+            try:
+                cli_paths[entry.name] = TypeAdapter(HostBinPath).validate_python(entry)
+            except Exception:
+                continue
+        return cli_paths
 
     def _refresh_bin_link(
         self,
@@ -517,49 +730,7 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
-        try:
-            abspath = super().default_abspath_handler(bin_name, **context)
-            if abspath:
-                return TypeAdapter(HostBinPath).validate_python(abspath)
-        except Exception:
-            pass
-
-        try:
-            pnpm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
-            assert pnpm_abspath
-        except Exception:
-            return None
-
-        # Fallback: ask `pnpm view` for the package's bin entries and look
-        # them up by name in our PATH.
-        try:
-            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
-            package_info = json.loads(
-                self.exec(
-                    bin_name=pnpm_abspath,
-                    cmd=["view", "--json", install_args[0], "bin"],
-                    timeout=self.version_timeout,
-                    quiet=True,
-                ).stdout.strip(),
-            )
-            alt_bin_names = (
-                package_info.get("bin", package_info)
-                if isinstance(package_info, dict)
-                else {}
-            ).keys()
-            for alt_bin_name in alt_bin_names:
-                abspath = bin_abspath(
-                    alt_bin_name,
-                    PATH=str(self.bin_dir) if self.bin_dir else self.PATH,
-                )
-                if abspath:
-                    direct_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
-                    if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
-                        return direct_abspath
-                    return self._refresh_bin_link(bin_name, direct_abspath)
-        except Exception:
-            pass
-        return None
+        return self._available_cli_paths(no_cache=no_cache).get(str(bin_name))
 
     def default_version_handler(
         self,
@@ -569,22 +740,15 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> SemVer | None:
-        try:
-            version = self._version_from_exec(
-                bin_name,
-                abspath=abspath,
-                timeout=timeout,
-            )
-            if version:
-                return version
-        except ValueError:
-            pass
+        installed_package_version = self._installed_package_version(str(bin_name))
+        if installed_package_version:
+            return installed_package_version
 
         try:
             pnpm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert pnpm_abspath
         except Exception:
-            return None
+            pnpm_abspath = None
 
         # Fallback: ask `pnpm ls --json` for the installed version of the
         # main package, and finally fall back to reading its package.json.
@@ -597,44 +761,40 @@ class PnpmProvider(BinProvider):
             if main_package.startswith("@")
             else main_package.split("@", 1)[0]
         )
-        try:
-            json_output = self.exec(
-                bin_name=pnpm_abspath,
-                cmd=[
-                    "ls",
-                    f"--dir={self.install_root}" if self.install_root else "--global",
-                    "--depth=0",
-                    "--json",
-                    package,
-                ],
-                timeout=timeout,
-                quiet=True,
-            ).stdout.strip()
-            listing = json.loads(json_output)
-            if isinstance(listing, list):
-                listing = listing[0] if listing else {}
-            return listing["dependencies"][package]["version"]
-        except Exception:
-            pass
-
-        try:
-            modules_dir = Path(
-                self.exec(
+        if pnpm_abspath is not None:
+            try:
+                json_output = self.exec(
                     bin_name=pnpm_abspath,
-                    cmd=(
-                        ["root", f"--dir={self.install_root}"]
+                    cmd=[
+                        "ls",
+                        f"--dir={self.install_root}"
                         if self.install_root
-                        else ["root", "--global"]
-                    ),
+                        else "--global",
+                        "--depth=0",
+                        "--json",
+                        package,
+                    ],
                     timeout=timeout,
                     quiet=True,
-                ).stdout.strip(),
+                ).stdout.strip()
+                listing = json.loads(json_output)
+                if isinstance(listing, list):
+                    listing = listing[0] if listing else {}
+                return listing["dependencies"][package]["version"]
+            except Exception:
+                pass
+
+        try:
+            version = self._version_from_exec(
+                bin_name,
+                abspath=abspath,
+                timeout=timeout,
             )
-            return json.loads((modules_dir / package / "package.json").read_text())[
-                "version"
-            ]
-        except Exception:
+            if version:
+                return version
+        except ValueError:
             return None
+        return None
 
 
 if __name__ == "__main__":

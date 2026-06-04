@@ -86,12 +86,33 @@ def build_exec_env(
 
     env = dict(os.environ if base_env is None else base_env)
     path_layers: list[str] = []
+    pathlike_prepend_layers: dict[str, list[str]] = {
+        "NODE_PATH": [],
+        "PYTHONPATH": [],
+    }
+    pathlike_append_layers: dict[str, list[str]] = {
+        "NODE_PATH": [],
+        "PYTHONPATH": [],
+    }
+
+    def consume_pathlike_env(layer: MutableMapping[str, str]) -> None:
+        for key in pathlike_append_layers:
+            value = layer.pop(key, None)
+            if not value:
+                continue
+            if value.startswith(":"):
+                pathlike_append_layers[key].append(value[1:])
+            elif value.endswith(":"):
+                pathlike_prepend_layers[key].append(value[:-1])
+            else:
+                pathlike_append_layers[key].append(value)
 
     if extra_env:
         extra_layer = dict(extra_env)
         extra_path = extra_layer.pop("PATH", None)
         if extra_path:
             path_layers.append(extra_path)
+        consume_pathlike_env(extra_layer)
         apply_exec_env(extra_layer, env)
 
     seen_providers: set[int] = set()
@@ -108,11 +129,20 @@ def build_exec_env(
             path_layers.append(provider_path)
         if provider.PATH:
             path_layers.append(provider.PATH)
+        consume_pathlike_env(provider_env)
         apply_exec_env(provider_env, env)
 
     merged_path = merge_exec_path(*path_layers, base_path=env.get("PATH", ""))
     if merged_path:
         env["PATH"] = merged_path
+    for key, append_layers in pathlike_append_layers.items():
+        merged_pathlike = merge_exec_path(
+            *pathlike_prepend_layers[key],
+            env.get(key, ""),
+            *append_layers,
+        )
+        if merged_pathlike:
+            env[key] = merged_pathlike
 
     return env
 
