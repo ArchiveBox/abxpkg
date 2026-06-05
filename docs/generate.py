@@ -502,6 +502,10 @@ PROVIDER_ENV_VARS: dict[str, list[dict[str, str]]] = {
             "name": "ABXPKG_PLAYWRIGHT_ROOT",
             "description": "Overrides playwright_root AND pins PLAYWRIGHT_BROWSERS_PATH to it.",
         },
+        {
+            "name": "ABXPKG_PLAYWRIGHT_INSTALL_TIMEOUT",
+            "description": "Overrides Playwright browser/dependency install timeout (defaults to 300s).",
+        },
     ],
 }
 

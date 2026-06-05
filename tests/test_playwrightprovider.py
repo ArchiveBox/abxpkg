@@ -50,6 +50,7 @@ class TestPlaywrightProvider:
     def test_chrome_aliases_install_chromium(self):
         provider = PlaywrightProvider()
 
+        assert provider.install_timeout >= 300
         assert provider.get_install_args("chromium") == ("chromium",)
         assert provider.get_install_args("chrome") == ("chromium",)
         assert provider._normalize_install_args(

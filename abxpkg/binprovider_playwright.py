@@ -90,6 +90,15 @@ class PlaywrightProvider(BinProvider):
     # ``playwright install --with-deps``. On macOS and elsewhere,
     # run as the normal user by default.
     euid: int | None = 0 if platform.system().lower() == "linux" else None
+    install_timeout: int = Field(
+        default_factory=lambda: int(
+            os.environ.get(
+                "ABXPKG_PLAYWRIGHT_INSTALL_TIMEOUT",
+                os.environ.get("ABXPKG_INSTALL_TIMEOUT", "300"),
+            ),
+        ),
+        repr=False,
+    )
 
     @computed_field
     @property
