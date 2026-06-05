@@ -85,7 +85,10 @@ def build_exec_env(
     """
 
     env = dict(os.environ if base_env is None else base_env)
-    path_layers: list[str] = []
+    provider_path_prepend_layers: list[str] = []
+    provider_path_append_layers: list[str] = []
+    extra_path_prepend_layers: list[str] = []
+    extra_path_append_layers: list[str] = []
     pathlike_prepend_layers: dict[str, list[str]] = {
         "NODE_PATH": [],
         "PYTHONPATH": [],
@@ -94,6 +97,22 @@ def build_exec_env(
         "NODE_PATH": [],
         "PYTHONPATH": [],
     }
+
+    def consume_PATH_env(
+        layer: MutableMapping[str, str],
+        *,
+        prepend_layers: list[str],
+        append_layers: list[str],
+    ) -> None:
+        value = layer.pop("PATH", None)
+        if not value:
+            return
+        if value.startswith(":"):
+            append_layers.append(value[1:])
+        elif value.endswith(":"):
+            prepend_layers.append(value[:-1])
+        else:
+            prepend_layers.append(value)
 
     def consume_pathlike_env(layer: MutableMapping[str, str]) -> None:
         for key in pathlike_append_layers:
@@ -109,9 +128,11 @@ def build_exec_env(
 
     if extra_env:
         extra_layer = dict(extra_env)
-        extra_path = extra_layer.pop("PATH", None)
-        if extra_path:
-            path_layers.append(extra_path)
+        consume_PATH_env(
+            extra_layer,
+            prepend_layers=extra_path_prepend_layers,
+            append_layers=extra_path_append_layers,
+        )
         consume_pathlike_env(extra_layer)
         apply_exec_env(extra_layer, env)
 
@@ -124,15 +145,23 @@ def build_exec_env(
 
         provider.setup_PATH()
         provider_env = dict(provider.ENV)
-        provider_path = provider_env.pop("PATH", None)
-        if provider_path:
-            path_layers.append(provider_path)
+        consume_PATH_env(
+            provider_env,
+            prepend_layers=provider_path_prepend_layers,
+            append_layers=provider_path_append_layers,
+        )
         if provider.PATH:
-            path_layers.append(provider.PATH)
+            provider_path_prepend_layers.append(provider.PATH)
         consume_pathlike_env(provider_env)
         apply_exec_env(provider_env, env)
 
-    merged_path = merge_exec_path(*path_layers, base_path=env.get("PATH", ""))
+    merged_path = merge_exec_path(
+        *provider_path_prepend_layers,
+        *extra_path_prepend_layers,
+        env.get("PATH", ""),
+        *provider_path_append_layers,
+        *extra_path_append_layers,
+    )
     if merged_path:
         env["PATH"] = merged_path
     for key, append_layers in pathlike_append_layers.items():

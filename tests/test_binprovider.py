@@ -303,6 +303,40 @@ class TestBinProvider:
             str(second_site_packages),
         ]
 
+    def test_build_exec_env_keeps_provider_path_before_ambient_path(
+        self,
+        tmp_path,
+    ):
+        provider_bin = tmp_path / "provider" / "bin"
+        ambient_bin = tmp_path / "ambient" / "bin"
+        extra_prepend_bin = tmp_path / "extra-prepend" / "bin"
+        extra_append_bin = tmp_path / "extra-append" / "bin"
+        for path in (provider_bin, ambient_bin, extra_prepend_bin, extra_append_bin):
+            path.mkdir(parents=True)
+
+        provider = EnvProvider(PATH=str(provider_bin), install_root=None)
+        prepend_env = BinProvider.build_exec_env(
+            providers=[provider],
+            base_env={"PATH": str(ambient_bin)},
+            extra_env={"PATH": f"{extra_prepend_bin}{os.pathsep}"},
+        )
+        append_env = BinProvider.build_exec_env(
+            providers=[provider],
+            base_env={"PATH": str(ambient_bin)},
+            extra_env={"PATH": f"{os.pathsep}{extra_append_bin}"},
+        )
+
+        assert prepend_env["PATH"].split(os.pathsep) == [
+            str(provider_bin),
+            str(extra_prepend_bin),
+            str(ambient_bin),
+        ]
+        assert append_env["PATH"].split(os.pathsep) == [
+            str(provider_bin),
+            str(ambient_bin),
+            str(extra_append_bin),
+        ]
+
     def test_get_provider_with_overrides_changes_real_install_behavior(
         self,
         test_machine,
