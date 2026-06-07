@@ -51,8 +51,8 @@ class TestPlaywrightProvider:
         provider = PlaywrightProvider()
 
         assert provider.install_timeout >= 300
-        assert provider.get_install_args("chromium") == ("chromium",)
-        assert provider.get_install_args("chrome") == ("chromium",)
+        assert provider.get_install_args("chromium") == ("--with-deps", "chromium")
+        assert provider.get_install_args("chrome") == ("--with-deps", "chromium")
         assert provider._normalize_install_args(
             ["chrome@latest", "--no-shell"],
         ) == ["chromium", "--no-shell"]
@@ -65,7 +65,7 @@ class TestPlaywrightProvider:
                 "chrome",
                 install_args=("chrome@latest", "--no-shell"),
             )
-            == "DRY_RUN would run: playwright install --with-deps chromium --no-shell"
+            == "DRY_RUN would run: playwright install chromium --no-shell"
         )
 
     @staticmethod

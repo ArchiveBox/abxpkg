@@ -45,8 +45,8 @@ CLAUDE_SANDBOX_NO_PROXY = (
 class PlaywrightProvider(BinProvider):
     """Playwright browser installer provider.
 
-    Drives ``playwright install --with-deps <install_args>`` against the
-    ``playwright`` package. When ``playwright_root`` is set it acts
+    Drives ``playwright install <install_args>`` against the ``playwright``
+    package. When ``playwright_root`` is set it acts
     as the abxpkg install root: a dedicated pnpm project is nested under
     it, ``bin_dir`` surfaces each requested browser so ``load(bin_name)``
     finds it directly, and ``PLAYWRIGHT_BROWSERS_PATH`` is pinned to
@@ -594,7 +594,7 @@ class PlaywrightProvider(BinProvider):
 
     def default_install_args_handler(self, bin_name: BinName, **context) -> InstallArgs:
         if str(bin_name) in ("chrome", "chromium"):
-            return ("chromium",)
+            return ("--with-deps", "chromium")
         return TypeAdapter(InstallArgs).validate_python(
             super().default_install_args_handler(bin_name, **context)
             or [str(bin_name)],
@@ -751,7 +751,7 @@ class PlaywrightProvider(BinProvider):
             install_args or self.get_install_args(bin_name),
         )
         browser_name = self._browser_name(bin_name, install_args)
-        merged_args = ["--with-deps", *install_args]
+        merged_args = install_args
         if no_cache and "--force" not in merged_args:
             merged_args = ["--force", *merged_args]
 
