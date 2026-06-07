@@ -628,18 +628,11 @@ class UvProvider(BinProvider):
                     # though package metadata has advanced. Remove pyc caches
                     # before reinstalling so the loaded CLI and metadata agree.
                     self._clear_venv_site_packages_pycache()
-            # ``--compile-bytecode`` tells uv to compile ``.pyc`` files at
-            # install time, overwriting any stale bytecode that Python may
-            # have previously auto-generated for an older version of the
-            # same package (wheel-provided source mtimes can collide with
-            # existing ``.pyc`` headers and defeat Python's mtime-based
-            # invalidation). See ``default_update_handler`` for context.
             cmd = [
                 "pip",
                 "install",
                 "--python",
                 str(self.install_root / "venv" / "bin" / "python"),
-                "--compile-bytecode",
                 cache_arg,
                 *flags,
                 *install_args,
@@ -700,11 +693,6 @@ class UvProvider(BinProvider):
             # ``uv pip install --upgrade --reinstall`` so the venv's
             # site-packages is fully repopulated from scratch (uv's
             # in-place upgrade path can leave stale files otherwise).
-            # ``--compile-bytecode`` forces uv to write fresh ``.pyc``
-            # files at install time, which overwrites any stale bytecode
-            # Python auto-generated earlier (wheel-provided source mtimes
-            # can collide with existing ``.pyc`` headers and defeat
-            # Python's mtime-based invalidation).
             tool_names = self._package_names_from_install_args(
                 install_args,
                 bin_name,
@@ -725,22 +713,15 @@ class UvProvider(BinProvider):
                 uninstall_proc.stderr or ""
             ):
                 self._raise_proc_error("update", tool_names, uninstall_proc)
-            # Belt-and-suspenders: ``--compile-bytecode`` below makes uv
-            # rewrite ``.pyc`` files at install time, but on older uv
-            # releases (and on some wheel layouts where the source mtime
-            # is preserved across versions) the rewrite can be skipped if
-            # uv decides the ``.pyc`` is "already up to date" against the
-            # newly-written source. Wipe every ``__pycache__`` under the
-            # venv's site-packages between the uninstall and the install
-            # so Python is forced to recompile from the freshly-written
-            # source. Targeted, not the whole venv.
+            # Existing installs may contain bytecode from older abxpkg
+            # versions. Remove it before reinstalling so stale bytecode cannot
+            # shadow the freshly installed source.
             self._clear_venv_site_packages_pycache()
             cmd = [
                 "pip",
                 "install",
                 "--python",
                 str(self.install_root / "venv" / "bin" / "python"),
-                "--compile-bytecode",
                 cache_arg,
                 *flags,
                 *install_args,
