@@ -1,0 +1,22 @@
+tests/test_playwrightprovider.py
+  s_7cc75db5230061::t_e4b4b394a6974d 54-55
+  s_7cc75db5230061::t_73a2ed0c4eaedb 68
+abxpkg/binprovider_playwright.py
+  s_7cc75db5230061::t_73a2ed0c4eaedb 48-49,597,754
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "596b14bbb3cde0e5771f02c1b1ce553c950b4d07",
+  "prompts": {},
+  "sessions": {
+    "s_7cc75db5230061": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e9181-9d0e-7f61-a8dc-95dc82bc59e7",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
