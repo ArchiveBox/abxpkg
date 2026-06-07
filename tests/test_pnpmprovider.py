@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -11,6 +12,33 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
+    def test_refresh_bin_link_preserves_pnpm_shim_basedir_behavior(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            package_bin_dir = temp_path / "package" / "node_modules" / ".bin"
+            exposed_bin_dir = temp_path / "bin"
+            target = package_bin_dir / "demo"
+            package_bin_dir.mkdir(parents=True)
+            target.write_text('#!/bin/sh\ncat "$(dirname "$0")/payload.txt"\n')
+            target.chmod(0o755)
+            (package_bin_dir / "payload.txt").write_text("ok")
+
+            provider = PnpmProvider(
+                install_root=temp_path / "pnpm",
+                bin_dir=exposed_bin_dir,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            exposed = provider._refresh_bin_link("demo", target)
+            result = subprocess.run(
+                [str(exposed)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            assert result.stdout == "ok"
+
     def test_self_bootstrap_installs_pnpm_when_host_pnpm_is_not_on_path(
         self,
         test_machine,

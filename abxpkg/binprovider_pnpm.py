@@ -4,6 +4,7 @@ __package__ = "abxpkg"
 
 import json
 import os
+import shlex
 import sys
 import tempfile
 import urllib.parse
@@ -485,22 +486,25 @@ class PnpmProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         target: HostBinPath,
     ) -> HostBinPath:
-        """Recreate the managed shim symlink pointing at the resolved pnpm executable."""
+        """Recreate the managed shim wrapper pointing at the resolved pnpm executable."""
         link_path = self._linked_bin_path(bin_name)
         assert link_path is not None, "_refresh_bin_link requires bin_dir to be set"
         link_path.parent.mkdir(parents=True, exist_ok=True)
-        # Idempotent refresh: skip when shim already points at target.
+        target_path = Path(target).expanduser().resolve(strict=False)
+        wrapper = f'#!/bin/sh\nexec {shlex.quote(str(target_path))} "$@"\n'
+        # Idempotent refresh: skip when shim already runs the target.
         # Rewriting on every load() bumps mtime and churns the inode,
         # which invalidates fingerprint caches unnecessarily.
-        if link_path.is_symlink():
+        if link_path.is_file() and not link_path.is_symlink():
             try:
-                if link_path.readlink() == Path(target):
+                if link_path.read_text() == wrapper:
                     return TypeAdapter(HostBinPath).validate_python(link_path)
             except OSError:
                 pass
         if link_path.exists() or link_path.is_symlink():
             link_path.unlink(missing_ok=True)
-        link_path.symlink_to(target)
+        link_path.write_text(wrapper)
+        link_path.chmod(0o755)
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
     def default_search_handler(
