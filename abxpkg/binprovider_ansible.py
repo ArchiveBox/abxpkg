@@ -309,7 +309,7 @@ class AnsibleProvider(BinProvider):
                 if raw_provider_names
                 else list(DEFAULT_PROVIDER_NAMES)
             )
-            dependency_providers = [
+            dependency_providers: list[BinProvider] = [
                 EnvProvider(install_root=None, bin_dir=None)
                 if provider_name == "env"
                 else PROVIDER_CLASS_BY_NAME[provider_name]()

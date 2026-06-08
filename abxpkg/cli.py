@@ -1180,7 +1180,7 @@ def shared_options(command):
             "lib_dir",
             metavar="PATH",
             default=None,
-            help="Base library directory. Defaults to ABXPKG_LIB_DIR or $XDG_CONFIG_HOME/abx/lib.",
+            help="Base library directory. Defaults to ABXPKG_LIB_DIR or the platformdirs user config abx/lib path.",
         ),
     ):
         command = decorator(command)

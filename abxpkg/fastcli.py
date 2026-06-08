@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 import time
-import tomllib
-from pathlib import Path
-from typing import Any
-
-from .base_types import DEFAULT_LIB_DIR
+from typing import cast
 
 
 _OPTS_WITH_VALUES = {
@@ -52,12 +47,19 @@ class _Fallback(Exception):
     pass
 
 
+def _default_lib_dir() -> str:
+    from platformdirs import user_config_path
+
+    return os.fspath(user_config_path("abx") / "lib")
+
+
 def _parse_script_metadata(
-    script_path: Path,
+    script_path: str,
     max_lines: int = 50,
-) -> dict[str, Any] | None:
+) -> dict[str, object] | None:
     try:
-        lines = script_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        with open(script_path, encoding="utf-8", errors="replace") as source_file:
+            lines = source_file.read().splitlines()
     except OSError:
         return None
     scan_limit = min(len(lines), max_lines)
@@ -82,7 +84,12 @@ def _parse_script_metadata(
         parts = stripped.split(None, 1)
         toml_lines.append(parts[1] if len(parts) > 1 else "")
     try:
-        return tomllib.loads("\n".join(toml_lines))
+        toml_text = "\n".join(toml_lines)
+        if "dependencies" not in toml_text and "[tool." not in toml_text:
+            return {}
+        import tomllib
+
+        return tomllib.loads(toml_text)
     except Exception:
         return None
 
@@ -105,7 +112,7 @@ def _bool_option_is_true(argv: list[str], index: int) -> tuple[bool, int]:
     return True, index + 1
 
 
-def _parse_fast_argv(argv: list[str]) -> tuple[dict[str, str], str, Path, list[str]]:
+def _parse_fast_argv(argv: list[str]) -> tuple[dict[str, str], str, str, list[str]]:
     options: dict[str, str] = {}
     i = 0
     while i < len(argv):
@@ -157,14 +164,14 @@ def _parse_fast_argv(argv: list[str]) -> tuple[dict[str, str], str, Path, list[s
     script_args = argv[i + 1 :]
     if not script_args:
         raise _Fallback
-    return options, binary_name, Path(script_args[0]), script_args
+    return options, binary_name, script_args[0], script_args
 
 
-def _prepend_path(env: dict[str, str], *paths: Path) -> None:
+def _prepend_path(env: dict[str, str], *paths: str) -> None:
     existing = [part for part in env.get("PATH", "").split(os.pathsep) if part]
     merged: list[str] = []
     seen: set[str] = set()
-    for raw_path in [*(str(path) for path in paths if path.exists()), *existing]:
+    for raw_path in [*(path for path in paths if os.path.exists(path)), *existing]:
         if raw_path in seen:
             continue
         seen.add(raw_path)
@@ -172,33 +179,39 @@ def _prepend_path(env: dict[str, str], *paths: Path) -> None:
     env["PATH"] = os.pathsep.join(merged)
 
 
-def _append_env_path(env: dict[str, str], key: str, value: Path) -> None:
-    value_str = str(value)
+def _append_env_path(env: dict[str, str], key: str, value: str) -> None:
+    value_str = value
     existing = [part for part in env.get(key, "").split(os.pathsep) if part]
     if value_str not in existing:
         env[key] = os.pathsep.join([*existing, value_str]) if existing else value_str
 
 
-def _venv_site_packages(venv_root: Path) -> list[Path]:
-    lib_dir = venv_root / "lib"
-    if not lib_dir.is_dir():
+def _venv_site_packages(venv_root: str) -> list[str]:
+    lib_dir = os.path.join(venv_root, "lib")
+    if not os.path.isdir(lib_dir):
         return []
     return [
-        site_packages
-        for site_packages in sorted(lib_dir.glob("python*/site-packages"))
-        if site_packages.is_dir()
+        os.path.join(lib_dir, python_dir, "site-packages")
+        for python_dir in sorted(os.listdir(lib_dir))
+        if python_dir.startswith("python")
+        and os.path.isdir(os.path.join(lib_dir, python_dir, "site-packages"))
     ]
 
 
-def _site_packages_pth_paths(site_packages: Path) -> list[Path]:
-    paths: list[Path] = []
+def _site_packages_pth_paths(site_packages: str) -> list[str]:
+    paths: list[str] = []
     try:
-        pth_files = sorted(site_packages.glob("*.pth"))
+        pth_files = sorted(
+            os.path.join(site_packages, filename)
+            for filename in os.listdir(site_packages)
+            if filename.endswith(".pth")
+        )
     except OSError:
         return paths
     for pth_file in pth_files:
         try:
-            lines = pth_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            with open(pth_file, encoding="utf-8", errors="replace") as pth_file_obj:
+                lines = pth_file_obj.read().splitlines()
         except OSError:
             continue
         for line in lines:
@@ -210,33 +223,30 @@ def _site_packages_pth_paths(site_packages: Path) -> list[Path]:
                 or entry.startswith("import\t")
             ):
                 continue
-            path = Path(entry).expanduser()
-            if not path.is_absolute():
-                path = site_packages / path
-            try:
-                resolved = path.resolve()
-            except OSError:
-                continue
-            if resolved.exists():
+            path = os.path.expanduser(entry)
+            if not os.path.isabs(path):
+                path = os.path.join(site_packages, path)
+            resolved = os.path.realpath(path)
+            if os.path.exists(resolved):
                 paths.append(resolved)
     return paths
 
 
-def _append_venv_import_paths(env: dict[str, str], venv_root: Path) -> None:
+def _append_venv_import_paths(env: dict[str, str], venv_root: str) -> None:
     for site_packages in _venv_site_packages(venv_root):
         _append_env_path(env, "PYTHONPATH", site_packages)
         for pth_path in _site_packages_pth_paths(site_packages):
             _append_env_path(env, "PYTHONPATH", pth_path)
 
 
-def _uv_package_venvs(uv_root: Path) -> list[Path]:
-    packages_root = uv_root / "packages"
-    if not packages_root.is_dir():
+def _uv_package_venvs(uv_root: str) -> list[str]:
+    packages_root = os.path.join(uv_root, "packages")
+    if not os.path.isdir(packages_root):
         return []
     return [
-        package_venv
-        for package_venv in sorted(packages_root.glob("*/venv"))
-        if package_venv.is_dir()
+        os.path.join(packages_root, package_name, "venv")
+        for package_name in sorted(os.listdir(packages_root))
+        if os.path.isdir(os.path.join(packages_root, package_name, "venv"))
     ]
 
 
@@ -249,23 +259,23 @@ def _apply_abxpkg_lib_env(
     options: dict[str, str],
     binary_name: str,
 ) -> None:
-    raw_lib = (
+    raw_lib = str(
         options.get("--lib")
         or env.get("ABXPKG_LIB_DIR")
         or env.get("LIB_DIR")
-        or DEFAULT_LIB_DIR
+        or _default_lib_dir(),
     )
-    lib_dir = Path(raw_lib).expanduser().resolve()
+    lib_dir = os.path.realpath(os.path.expanduser(raw_lib))
     inherited_venvs = []
     for key in ("VIRTUAL_ENV", "ACTIVE_PY_ENV"):
         if not env.get(key):
             continue
-        inherited_venv = Path(env[key]).expanduser().resolve()
+        inherited_venv = os.path.realpath(os.path.expanduser(env[key]))
         if inherited_venv not in inherited_venvs:
             inherited_venvs.append(inherited_venv)
-    env["ABXPKG_LIB_DIR"] = str(lib_dir)
+    env["ABXPKG_LIB_DIR"] = lib_dir
     if env.get("LIB_DIR"):
-        env["LIB_DIR"] = str(Path(env["LIB_DIR"]).expanduser().resolve())
+        env["LIB_DIR"] = os.path.realpath(os.path.expanduser(env["LIB_DIR"]))
 
     providers = options.get("--binproviders") or env.get("ABXPKG_BINPROVIDERS", "")
     provider_names = {name.strip() for name in providers.split(",") if name.strip()}
@@ -273,41 +283,60 @@ def _apply_abxpkg_lib_env(
         provider_names = {"env", "uv", "pnpm", "npm"}
 
     path_entries = []
-    lib_bin_dir = Path(env.get("LIB_BIN_DIR", lib_dir / "bin"))
+    lib_bin_dir = env.get("LIB_BIN_DIR", os.path.join(lib_dir, "bin"))
     path_entries.append(lib_bin_dir)
     if "env" in provider_names:
-        path_entries.append(lib_dir / "env" / "bin")
+        path_entries.append(os.path.join(lib_dir, "env", "bin"))
     if "uv" in provider_names:
-        uv_root = Path(env.get("ABXPKG_UV_ROOT", lib_dir / "uv"))
-        uv_venv = uv_root / "venv"
+        uv_root = env.get("ABXPKG_UV_ROOT", os.path.join(lib_dir, "uv"))
+        uv_venv = os.path.join(uv_root, "venv")
         env["UV_ACTIVE"] = "1"
         default_cache_root = (
-            Path.home() / "Library" / "Caches"
+            os.path.join(os.path.expanduser("~"), "Library", "Caches")
             if sys.platform == "darwin"
-            else Path(env.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+            else env.get(
+                "XDG_CACHE_HOME",
+                os.path.join(os.path.expanduser("~"), ".cache"),
+            )
         )
-        env["UV_CACHE_DIR"] = str(default_cache_root / "abxpkg" / "uv")
-        env["VIRTUAL_ENV"] = str(uv_venv)
-        path_entries.append(uv_venv / "bin")
+        env["UV_CACHE_DIR"] = os.path.join(default_cache_root, "abxpkg", "uv")
+        env["VIRTUAL_ENV"] = uv_venv
+        path_entries.append(os.path.join(uv_venv, "bin"))
         _append_venv_import_paths(env, uv_venv)
         for package_venv in _uv_package_venvs(uv_root):
-            path_entries.append(package_venv / "bin")
+            path_entries.append(os.path.join(package_venv, "bin"))
             _append_venv_import_paths(env, package_venv)
         for inherited_venv in inherited_venvs:
             if inherited_venv == uv_venv:
                 continue
             _append_venv_import_paths(env, inherited_venv)
     if "pnpm" in provider_names:
-        pnpm_root = Path(env.get("ABXPKG_PNPM_ROOT", lib_dir / "pnpm"))
-        pnpm_bin = pnpm_root / "node_modules" / ".bin"
-        env.setdefault("PNPM_HOME", str(pnpm_bin))
+        pnpm_root = env.get("ABXPKG_PNPM_ROOT", os.path.join(lib_dir, "pnpm"))
+        pnpm_bin = os.path.join(pnpm_root, "node_modules", ".bin")
+        env.setdefault("PNPM_HOME", pnpm_bin)
         path_entries.append(pnpm_bin)
-        _append_env_path(env, "NODE_PATH", pnpm_root / "node_modules")
+        _append_env_path(env, "NODE_PATH", os.path.join(pnpm_root, "node_modules"))
     if "npm" in provider_names:
-        npm_root = Path(env.get("ABXPKG_NPM_ROOT", lib_dir / "npm"))
-        path_entries.append(npm_root / "node_modules" / ".bin")
-        _append_env_path(env, "NODE_PATH", npm_root / "node_modules")
+        npm_root = env.get("ABXPKG_NPM_ROOT", os.path.join(lib_dir, "npm"))
+        path_entries.append(os.path.join(npm_root, "node_modules", ".bin"))
+        _append_env_path(env, "NODE_PATH", os.path.join(npm_root, "node_modules"))
     _prepend_path(env, *path_entries)
+
+
+def _apply_current_process_env(env: dict[str, str]) -> None:
+    os.environ.clear()
+    os.environ.update(env)
+    for import_path in reversed(env.get("PYTHONPATH", "").split(os.pathsep)):
+        if import_path and import_path not in sys.path:
+            sys.path.insert(0, import_path)
+
+
+def _run_python_script_in_process(script_args: list[str], env: dict[str, str]) -> None:
+    import runpy
+
+    _apply_current_process_env(env)
+    sys.argv = list(script_args)
+    runpy.run_path(script_args[0], run_name="__main__")
 
 
 def try_fast_script_run(argv: list[str] | None = None) -> bool:
@@ -315,15 +344,19 @@ def try_fast_script_run(argv: list[str] | None = None) -> bool:
     argv = list(sys.argv[1:] if argv is None else argv)
     try:
         options, binary_name, script_path, script_args = _parse_fast_argv(argv)
-        if not script_path.is_file():
+        if not os.path.isfile(script_path):
             raise _Fallback
         meta = _parse_script_metadata(script_path)
         if meta is None or meta.get("dependencies"):
             raise _Fallback
         tool_section = meta.get("tool")
         tool_config = (
-            tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
+            cast(dict[str, object], tool_section).get("abxpkg")
+            if isinstance(tool_section, dict)
+            else {}
         )
+        if tool_config is None:
+            tool_config = {}
         if not isinstance(tool_config, dict):
             raise _Fallback
 
@@ -339,14 +372,21 @@ def try_fast_script_run(argv: list[str] | None = None) -> bool:
         _apply_abxpkg_lib_env(env, options, binary_name)
         active_py_bin = env.get("ACTIVE_PY_BIN")
         if active_py_bin and _is_python_binary(binary_name):
-            active_py_path = Path(active_py_bin).expanduser()
-            executable = str(active_py_path) if active_py_path.is_file() else None
+            active_py_path = os.path.expanduser(active_py_bin)
+            executable = active_py_path if os.path.isfile(active_py_path) else None
         else:
+            import shutil
+
             executable = shutil.which(binary_name, path=env.get("PATH"))
         if executable is None:
             raise _Fallback
         env["ABXPKG_FAST_SCRIPT"] = "1"
         env["ABXPKG_FAST_SCRIPT_OVERHEAD_NS"] = str(time.perf_counter_ns() - started_at)
+        if _is_python_binary(binary_name) and os.path.realpath(
+            executable,
+        ) == os.path.realpath(sys.executable):
+            _run_python_script_in_process(script_args, env)
+            return True
         os.execvpe(executable, [executable, *script_args], env)
     except _Fallback:
         return False

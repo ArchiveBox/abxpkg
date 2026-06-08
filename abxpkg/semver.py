@@ -1,14 +1,15 @@
+from __future__ import annotations
+
 __package__ = "abxpkg"
 
 import re
 import subprocess
 from collections import namedtuple
 
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
-from pydantic_core import ValidationError
-
-from .base_types import HostBinPath
+if TYPE_CHECKING:
+    from .base_types import HostBinPath
 
 
 def is_semver_str(semver: Any) -> bool:
@@ -22,7 +23,7 @@ def semver_to_str(semver: tuple[int, int, int] | str) -> str:
         return ".".join(str(chunk) for chunk in semver)
     if is_semver_str(semver):
         return semver
-    raise ValidationError(f"Tried to convert invalid SemVer: {semver}")
+    raise ValueError(f"Tried to convert invalid SemVer: {semver}")
 
 
 SemVerTuple = namedtuple("SemVerTuple", ("major", "minor", "patch"), defaults=(0, 0, 0))
@@ -60,7 +61,7 @@ class SemVer(SemVerTuple):
         return result
 
     @classmethod
-    def parse(cls, version_stdout: SemVerParsableTypes) -> Optional["SemVer"]:
+    def parse(cls, version_stdout: SemVerParsableTypes) -> SemVer | None:
         """
         parses a version tag string formatted like into (major, minor, patch) ints
         'Google Chrome 124.0.6367.208'             -> (124, 0, 6367)

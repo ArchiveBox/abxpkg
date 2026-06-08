@@ -107,7 +107,7 @@ class GemProvider(BinProvider):
             installer_binproviders = self.INSTALLER_BINPROVIDERS
             assert installer_binproviders is not None
             preferred_provider_names = list(installer_binproviders)
-        dependency_providers = [
+        dependency_providers: list[BinProvider] = [
             EnvProvider(install_root=None, bin_dir=None)
             if provider_name == "env"
             else PROVIDER_CLASS_BY_NAME[provider_name]()

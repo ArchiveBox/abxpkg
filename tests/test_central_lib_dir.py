@@ -63,6 +63,38 @@ class TestAbxPkgLibDir:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.strip() == "None"
 
+    def test_default_lib_dir_matches_platformdirs_in_cli_and_fastcli(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                textwrap.dedent(
+                    """
+                    import json, os
+                    from abxpkg.cli import resolve_lib_dir
+                    from abxpkg.fastcli import _default_lib_dir
+                    from platformdirs import user_config_path
+
+                    os.environ.pop("ABXPKG_LIB_DIR", None)
+                    payload = {
+                        "expected": str((user_config_path("abx") / "lib").expanduser().resolve()),
+                        "cli": str(resolve_lib_dir(None)),
+                        "fastcli": _default_lib_dir(),
+                    }
+                    print(json.dumps(payload))
+                    """,
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert payload["cli"] == payload["expected"]
+        assert (
+            str(Path(payload["fastcli"]).expanduser().resolve()) == payload["expected"]
+        )
+
     @pytest.mark.parametrize(
         "lib_dir_value",
         ["./lib", "~/.config/abx/lib", "/tmp/abxlib"],

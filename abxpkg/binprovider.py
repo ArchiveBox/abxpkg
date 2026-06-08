@@ -959,7 +959,7 @@ class BinProvider(BaseModel):
                             cache_kind="dependency",
                         )
                     self._INSTALLER_BINARY = loaded
-                    return self._INSTALLER_BINARY
+                    return loaded
             except Exception:
                 pass
 
@@ -983,7 +983,7 @@ class BinProvider(BaseModel):
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
-                return self._INSTALLER_BINARY
+                return loaded
         except Exception:
             pass
 

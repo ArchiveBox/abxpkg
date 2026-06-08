@@ -215,7 +215,7 @@ class YarnProvider(BinProvider):
                 if raw_provider_names
                 else list(DEFAULT_PROVIDER_NAMES)
             )
-            installer_providers = [
+            installer_providers: list[BinProvider] = [
                 env_provider
                 if provider_name == "env"
                 else PROVIDER_CLASS_BY_NAME[provider_name]()

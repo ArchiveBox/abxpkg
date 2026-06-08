@@ -87,6 +87,16 @@ function parseArrayValue(rawValue, defaultValue) {
     return trimmed.split(',').map(item => item.trim()).filter(Boolean);
 }
 
+function getPlatformUserConfigDir() {
+    if (process.platform === 'darwin') {
+        return path.join(os.homedir(), 'Library', 'Application Support', 'abx');
+    }
+    if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'abx');
+    }
+    return path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'abx');
+}
+
 function parseConfigValue(rawValue, prop = {}) {
     const { schemaType, nullable } = normalizeSchemaType(prop);
     const defaultValue = Object.prototype.hasOwnProperty.call(prop, 'default')
@@ -171,7 +181,7 @@ function loadConfig(configPath = null) {
     }
 
     if (!config.PERSONAS_DIR) {
-        config.PERSONAS_DIR = path.join(os.homedir(), '.config', 'abx', 'personas');
+        config.PERSONAS_DIR = path.join(getPlatformUserConfigDir(), 'personas');
     }
 
     configCache.set(cacheKey, {
@@ -229,7 +239,7 @@ function getEnvArray(name, defaultValue = []) {
 function getLibDir() {
     const configured = (loadConfig(BASE_CONFIG_PATH).LIB_DIR || '').trim();
     if (configured) return path.resolve(configured);
-    return path.resolve(path.join(os.homedir(), '.config', 'abx', 'lib'));
+    return path.resolve(path.join(getPlatformUserConfigDir(), 'lib'));
 }
 
 function getNodeModulesDir() {
@@ -391,6 +401,7 @@ module.exports = {
     getEnvInt,
     getEnvArray,
     getExtraContext,
+    getPlatformUserConfigDir,
     getLibDir,
     getNodeModulesDir,
     ensureNodeModuleResolution,

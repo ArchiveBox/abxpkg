@@ -25,6 +25,7 @@ const {
     getEnvBool,
     getEnvInt,
     getEnvArray,
+    getPlatformUserConfigDir,
     getNodeModulesDir: getNodeModulesDirFromBaseUtils,
     ensureNodeModuleResolution,
     loadConfig,
@@ -2134,9 +2135,8 @@ function getMachineType() {
 
 /**
  * Get LIB_DIR path for shared binaries and caches.
- * Returns the chrome-hook legacy default (~/.config/abx/lib) if LIB_DIR is
- * unset. This is separate from the main abxpkg CLI's platform-specific
- * default library root handling.
+ * Returns the same platform user-config default used by abxpkg/archivebox if
+ * LIB_DIR is unset.
  *
  * @returns {string} - Absolute path to lib directory
  */
@@ -2144,8 +2144,7 @@ function getLibDir() {
     if (process.env.LIB_DIR) {
         return path.resolve(process.env.LIB_DIR);
     }
-    const defaultRoot = path.join(os.homedir(), '.config', 'abx', 'lib');
-    return path.resolve(defaultRoot);
+    return path.resolve(path.join(getPlatformUserConfigDir(), 'lib'));
 }
 
 /**
