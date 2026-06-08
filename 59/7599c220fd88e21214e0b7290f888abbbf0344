@@ -1,0 +1,54 @@
+abxpkg/binprovider.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 962,986
+abxpkg/cli.py
+  s_ccefc8ac08198c::t_78611b2994dfdd 1183
+abxpkg/js/base/utils.js
+  s_ccefc8ac08198c::t_b48f3847b4176e 184
+  s_ccefc8ac08198c::t_78611b2994dfdd 242
+  s_ccefc8ac08198c::t_91098631924f5f 90-99,404
+abxpkg/semver.py
+  s_ccefc8ac08198c::t_53e130c67d72c7 1-2,9,11-12,26
+abxpkg/binprovider_pyinfra.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 243
+abxpkg/__init__.py
+  s_ccefc8ac08198c::t_479cddddec11e8 51
+  s_ccefc8ac08198c::t_7af6026c590a8e 10-13,63-65,76,81,108-110,115-116,119-121,125,139-141,158-159,162,178-179,189,221-223,228-229
+  s_ccefc8ac08198c::t_f5d773535395f8 1-2,5,7-9,14-21,23-48,50,52-54,58-62,66-75,77-80,82-107,111-114,117-118,122-124,126-132,134-135,138,142-157,160-161,163-177,180-188,190-204,209-213,215,217-220,224-227,230-243
+  s_ccefc8ac08198c::t_946167af1421c0 6,208
+abxpkg/binprovider_ansible.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 312
+abxpkg/binprovider_yarn.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 218
+abxpkg/fastcli.py
+  s_ccefc8ac08198c::t_81836fe6637628 266,297-300,358-359,385-387
+  s_ccefc8ac08198c::t_5d204d8901be8e 347
+  s_ccefc8ac08198c::t_2a71ca64c10696 50,57,59,61-62,90-91,115,167,170,174,182-183,189-191,194-197,201-202,204-208,213-214,226-230,235,242-244,247-249,262,268,273,276,278,286,289,291-292,295,302-304,307,314-316,318,320-322,326-341,375-376,378-379,388-389
+  s_ccefc8ac08198c::t_d7776d980f3073 87-89,92
+  s_ccefc8ac08198c::t_61a6777b1e76f5 6,354-356
+  s_ccefc8ac08198c::t_78611b2994dfdd 51-53
+abxpkg/binprovider_gem.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 110
+abxpkg/js/chrome/chrome_utils.js
+  s_ccefc8ac08198c::t_91098631924f5f 28
+  s_ccefc8ac08198c::t_78611b2994dfdd 2138-2139,2147
+abxpkg/binprovider_pip.py
+  s_ccefc8ac08198c::t_c5fd0ac7ff1cb7 247
+tests/test_central_lib_dir.py
+  s_ccefc8ac08198c::t_c46a1880fc2618 66-93,95-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.3",
+  "base_commit_sha": "597599c220fd88e21214e0b7290f888abbbf0344",
+  "prompts": {},
+  "sessions": {
+    "s_ccefc8ac08198c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e86b5-1bab-7df2-80cb-660ce277c3ec",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
