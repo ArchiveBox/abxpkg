@@ -258,7 +258,12 @@ class UvProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return uv's shared download/build cache dir."""
-        return Path(USER_CACHE_PATH)
+        return Path(os.environ.get("UV_CACHE_DIR") or USER_CACHE_PATH)
+
+    def _cache_args(self, *, no_cache: bool = False) -> list[str]:
+        if no_cache or not self._ensure_writable_cache_dir(self.cache_dir):
+            return ["--no-cache"]
+        return [f"--cache-dir={self.cache_dir}"]
 
     @property
     def tool_dir(self) -> Path:
@@ -343,16 +348,11 @@ class UvProvider(BinProvider):
         self.install_root.parent.mkdir(parents=True, exist_ok=True)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        cache_arg = (
-            "--no-cache"
-            if no_cache or not self._ensure_writable_cache_dir(self.cache_dir)
-            else f"--cache-dir={self.cache_dir}"
-        )
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
+                *self._cache_args(no_cache=no_cache),
                 "venv",
-                cache_arg,
                 str(venv_root),
             ],
             quiet=True,
@@ -458,6 +458,7 @@ class UvProvider(BinProvider):
             proc = self.exec(
                 bin_name=uv_abspath,
                 cmd=[
+                    *self._cache_args(no_cache=no_cache),
                     "pip",
                     "show",
                     "--python",
@@ -474,7 +475,7 @@ class UvProvider(BinProvider):
             return None
         proc = self.exec(
             bin_name=uv_abspath,
-            cmd=["tool", "list"],
+            cmd=[*self._cache_args(no_cache=no_cache), "tool", "list"],
             timeout=timeout,
             quiet=True,
         )
@@ -584,11 +585,6 @@ class UvProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-        cache_arg = (
-            "--no-cache"
-            if no_cache or not self._ensure_writable_cache_dir(self.cache_dir)
-            else f"--cache-dir={self.cache_dir}"
-        )
         if self.install_root:
             if min_version:
                 tool_names = self._package_names_from_install_args(
@@ -629,20 +625,20 @@ class UvProvider(BinProvider):
                     # before reinstalling so the loaded CLI and metadata agree.
                     self._clear_venv_site_packages_pycache()
             cmd = [
+                *self._cache_args(no_cache=no_cache),
                 "pip",
                 "install",
                 "--python",
                 str(self.install_root / "venv" / "bin" / "python"),
-                cache_arg,
                 *flags,
                 *install_args,
             ]
         else:
             cmd = [
+                *self._cache_args(no_cache=no_cache),
                 "tool",
                 "install",
                 "--force",
-                cache_arg,
                 *flags,
                 *install_args,
             ]
@@ -683,11 +679,6 @@ class UvProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
-        cache_arg = (
-            "--no-cache"
-            if no_cache or not self._ensure_writable_cache_dir(self.cache_dir)
-            else f"--cache-dir={self.cache_dir}"
-        )
         if self.install_root:
             # Do an explicit uninstall + install cycle instead of
             # ``uv pip install --upgrade --reinstall`` so the venv's
@@ -718,11 +709,11 @@ class UvProvider(BinProvider):
             # shadow the freshly installed source.
             self._clear_venv_site_packages_pycache()
             cmd = [
+                *self._cache_args(no_cache=no_cache),
                 "pip",
                 "install",
                 "--python",
                 str(self.install_root / "venv" / "bin" / "python"),
-                cache_arg,
                 *flags,
                 *install_args,
             ]
@@ -730,10 +721,10 @@ class UvProvider(BinProvider):
             # ``uv tool install --force`` creates a fresh per-tool venv each
             # time, so there's no stale-compiled-artifact hazard.
             cmd = [
+                *self._cache_args(no_cache=no_cache),
                 "tool",
                 "install",
                 "--force",
-                cache_arg,
                 *flags,
                 *install_args,
             ]

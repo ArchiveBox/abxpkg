@@ -1751,7 +1751,28 @@ class BinProvider(BaseModel):
         except PermissionError:
             pass
 
-        return cache_dir.is_dir() and os.access(cache_dir, os.W_OK)
+        if not (cache_dir.is_dir() and os.access(cache_dir, os.W_OK)):
+            return False
+
+        for root, dirs, files in os.walk(cache_dir):
+            root_path = Path(root)
+            for child in [
+                root_path,
+                *(root_path / dirname for dirname in dirs),
+                *(root_path / filename for filename in files),
+            ]:
+                try:
+                    os.chown(child, self.EUID, pw_record.pw_gid)
+                except PermissionError:
+                    pass
+                try:
+                    child.chmod(child.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP)
+                except PermissionError:
+                    pass
+                if not os.access(child, os.W_OK):
+                    return False
+
+        return True
 
     def _raise_proc_error(
         self,
