@@ -1763,12 +1763,14 @@ class BinProvider(BaseModel):
             ]:
                 try:
                     os.chown(child, self.EUID, pw_record.pw_gid)
-                except PermissionError:
+                except (FileNotFoundError, PermissionError):
                     pass
                 try:
                     child.chmod(child.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP)
-                except PermissionError:
+                except (FileNotFoundError, PermissionError):
                     pass
+                if not child.exists():
+                    continue
                 if not os.access(child, os.W_OK):
                     return False
 
