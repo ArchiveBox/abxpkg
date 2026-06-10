@@ -2766,7 +2766,7 @@ class BinProvider(BaseModel):
             bin_name,
             installed_abspath,
         ):
-            return None
+            self.invalidate_cache(bin_name)
         result = (
             None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
         )

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from abxpkg import Binary, EnvProvider, PipProvider, SemVer
-from abxpkg.config import load_derived_cache
+from abxpkg.config import load_derived_cache, save_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
 
 
@@ -157,6 +157,33 @@ class TestEnvProvider:
             assert linked_binary.is_symlink()
             assert load_derived_cache(derived_env_path) == {}
             assert provider.load("python3", no_cache=True) is not None
+
+    def test_provider_load_recovers_when_cached_install_args_change(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "env"
+            provider = EnvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            loaded = provider.load("python3")
+
+            assert loaded is not None
+            assert loaded.loaded_abspath is not None
+            derived_env_path = install_root / "derived.env"
+            cache = load_derived_cache(derived_env_path)
+            assert cache
+            cache_key, cached_record = next(iter(cache.items()))
+            assert cached_record["install_args"] == ["python3"]
+            cached_record["install_args"] = ["old-python3-package-name"]
+            save_derived_cache(derived_env_path, cache)
+
+            reloaded = provider.load("python3")
+
+            assert reloaded is not None
+            assert reloaded.loaded_abspath == loaded.loaded_abspath
+            refreshed = load_derived_cache(derived_env_path)
+            assert refreshed[cache_key]["install_args"] == ["python3"]
 
     def test_provider_does_not_cache_binaries_managed_by_other_providers(self):
         with tempfile.TemporaryDirectory() as tmpdir:
