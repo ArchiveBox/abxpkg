@@ -1,0 +1,31 @@
+abxpkg/binprovider.py
+  s_15f59ac80abb8e::t_dace4edda02a7b 2769
+tests/test_envprovider.py
+  s_15f59ac80abb8e::t_a0546f676aaf59 8,161-186
+abxpkg/js/chrome/chrome_utils.js
+  s_cdb7ab28cd51df::t_9bd91a61d77501 3453,3582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "23c3a2f715a0787876ec8768032ab6f5011f2b3a",
+  "prompts": {},
+  "sessions": {
+    "s_15f59ac80abb8e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eaa8a-3bcf-7290-a54d-15bd828c06a5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    },
+    "s_cdb7ab28cd51df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eaa76-c893-7193-bd47-d91b6111304f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
