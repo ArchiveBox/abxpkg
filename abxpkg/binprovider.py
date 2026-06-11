@@ -2265,7 +2265,7 @@ class BinProvider(BaseModel):
                 existing_abspath = self.get_abspath(
                     bin_name,
                     quiet=True,
-                    no_cache=False,
+                    no_cache=True,
                 )
             except Exception:
                 existing_abspath = None

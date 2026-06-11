@@ -13,7 +13,6 @@ from abxpkg import (
     PuppeteerProvider,
     SemVer,
 )
-from abxpkg.exceptions import BinaryLoadError
 
 
 class TestNpmProvider:
@@ -185,9 +184,18 @@ class TestNpmProvider:
             assert (
                 pnpm_root / "node_modules" / "@puppeteer" / "browsers" / "package.json"
             ).exists()
-            assert not (
-                pnpm_root / "node_modules" / "puppeteer" / "package.json"
-            ).exists()
+            before_proc = subprocess.run(
+                [
+                    "node",
+                    "-e",
+                    "require(require.resolve('puppeteer', {paths: [process.argv[1]]}));",
+                    str(pnpm_root / "node_modules"),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert before_proc.returncode != 0, before_proc.stdout or before_proc.stderr
 
             binary = Binary(
                 name="browsers",
@@ -208,8 +216,16 @@ class TestNpmProvider:
                 min_release_age=0,
             )
 
-            with pytest.raises(BinaryLoadError):
-                binary.load()
+            loaded = binary.load()
+            test_machine.assert_shallow_binary_loaded(loaded)
+            assert loaded.loaded_abspath is not None
+            assert (
+                loaded.loaded_abspath.resolve()
+                == (pnpm_root / "node_modules" / ".bin" / "browsers").resolve()
+            )
+            assert not (
+                pnpm_root / "node_modules" / "puppeteer" / "package.json"
+            ).exists()
 
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
@@ -219,7 +235,6 @@ class TestNpmProvider:
                 installed.loaded_abspath.resolve()
                 == (pnpm_root / "node_modules" / ".bin" / "browsers").resolve()
             )
-            assert (pnpm_root / "node_modules" / "puppeteer" / "package.json").exists()
             assert list(
                 (pnpm_root / "node_modules" / ".pnpm").glob(
                     "puppeteer-core@*/node_modules/puppeteer-core/package.json",

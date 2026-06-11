@@ -102,18 +102,12 @@ class PnpmProvider(BinProvider):
         if cache_info is None or self.install_root is None:
             return cache_info
 
-        install_args = self.get_install_args(str(bin_name), quiet=True) or [
-            str(bin_name),
-        ]
-        main_package = install_args[0]
-        package = (
-            "@" + main_package[1:].split("@", 1)[0]
-            if main_package.startswith("@")
-            else main_package.split("@", 1)[0]
-        )
-        package_json = self.install_root / "node_modules" / package / "package.json"
-        if package_json.exists():
-            cache_info["fingerprint_paths"].append(package_json)
+        for package in self._package_names_from_install_args(
+            self.get_install_args(str(bin_name), quiet=True) or [str(bin_name)],
+        ):
+            package_json = self.install_root / "node_modules" / package / "package.json"
+            if package_json.exists():
+                cache_info["fingerprint_paths"].append(package_json)
         return cache_info
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
@@ -409,14 +403,44 @@ class PnpmProvider(BinProvider):
     @staticmethod
     def _package_name_from_install_args(install_args: InstallArgs) -> str:
         main_package = next(
-            (arg for arg in install_args if arg and not arg.startswith("-")),
+            iter(PnpmProvider._package_names_from_install_args(install_args)),
             "",
         )
         if not main_package:
             return ""
-        if main_package.startswith("@"):
-            return "@" + main_package[1:].split("@", 1)[0]
-        return main_package.split("@", 1)[0]
+        return main_package
+
+    @staticmethod
+    def _package_names_from_install_args(install_args: InstallArgs) -> list[str]:
+        packages: list[str] = []
+        for arg in install_args:
+            if not arg or arg.startswith("-"):
+                continue
+            package = (
+                "@" + arg[1:].split("@", 1)[0]
+                if arg.startswith("@")
+                else arg.split("@", 1)[0]
+            )
+            if package and package not in packages:
+                packages.append(package)
+        return packages
+
+    def cached_binary_install_args_mismatch(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+    ) -> bool:
+        if super().cached_binary_install_args_mismatch(bin_name, abspath):
+            return True
+        if self.install_root is None:
+            return False
+        modules_dir = self.install_root / "node_modules"
+        for package in self._package_names_from_install_args(
+            self.get_install_args(bin_name, quiet=True, no_cache=True),
+        ):
+            if not (modules_dir / package / "package.json").exists():
+                return True
+        return False
 
     def _node_modules_dir(self) -> Path | None:
         if self.install_root:
