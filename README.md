@@ -1274,8 +1274,8 @@ uv build && uv publish --username=__token__
 
 ## Other Packages We Like
 
-- https://github.com/jdx/mise
-- https://github.com/pyinfra-dev/pyinfra
+- ⭐️ https://github.com/jdx/mise https://mise.jdx.dev/
+- ⭐️ https://github.com/pyinfra-dev/pyinfra
 - https://github.com/astral-sh/uv
 - https://github.com/MrThearMan/django-signal-webhooks
 - https://github.com/MrThearMan/django-admin-data-views
