@@ -1876,8 +1876,15 @@ class BinProvider(BaseModel):
 
         def drop_privileges():
             try:
-                os.setuid(run_as_uid)
+                # ArchiveBox may start under sudo, lower only its effective uid,
+                # then spawn installers from that mixed ruid=0/euid=user state.
+                # Permanently drop the child before exec so tools like unzip
+                # cannot create root-owned cache files that later hook code
+                # running as the user cannot chmod/remove.
+                if os.getuid() == 0 and os.geteuid() != 0:
+                    os.seteuid(0)
                 os.setgid(run_as_gid)
+                os.setuid(run_as_uid)
             except Exception:
                 pass
 
