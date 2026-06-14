@@ -19,8 +19,7 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on:
-      group: Default
+    runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
@@ -55,8 +54,7 @@ jobs:
 
   discover-standard-tests:
     needs: precheck
-    runs-on:
-      group: Default
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
@@ -95,8 +93,7 @@ jobs:
       max-parallel: 20
       matrix:
         target:
-        - os:
-            group: Default
+        - os: ubuntu-latest
           os_name: linux
           python_version: '3.12'
         - os: macOS-latest
@@ -284,8 +281,7 @@ jobs:
 
   discover-live-tests:
     needs: precheck
-    runs-on:
-      group: Default
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
