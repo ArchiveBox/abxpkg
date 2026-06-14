@@ -41,7 +41,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="hello")
 
@@ -52,7 +52,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             first = provider.install("hello", no_cache=True)
@@ -91,7 +91,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             with pytest.raises(ValueError):
                 provider.install("hello", min_version=SemVer("999.0.0"))
@@ -115,7 +115,7 @@ class TestNixProvider:
             ambient_provider = NixProvider(
                 install_root=temp_dir_path / "ambient-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             ambient_installed = ambient_provider.install("hello")
             assert ambient_installed is not None
@@ -125,7 +125,7 @@ class TestNixProvider:
                 PATH=f"{ambient_provider.bin_dir}:{NixProvider().PATH}",
                 install_root=nix_profile,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("hello")
@@ -146,7 +146,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "hello": {"install_args": ["hello", "figlet"]},
@@ -213,12 +213,12 @@ class TestNixProvider:
                         NixProvider(
                             install_root=Path(temp_dir) / "nix-profile",
                             postinstall_scripts=True,
-                            min_release_age=0,
+                            min_release_age=3,
                         ),
                     ],
                 ),
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -229,7 +229,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="hello")
 
@@ -239,7 +239,7 @@ class TestNixProvider:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("hello")
             assert results, "nix search nixpkgs hello should return matches"

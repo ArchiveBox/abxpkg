@@ -11,7 +11,7 @@ from abxpkg.exceptions import BinaryUninstallError
 
 class TestEnvProvider:
     def test_installer_binary_uses_fixed_version_override(self):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
@@ -24,7 +24,7 @@ class TestEnvProvider:
         assert installer.loaded_version == expected_version
 
     def test_provider_direct_methods_use_real_host_binaries(self, test_machine):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         install_args = provider.get_install_args("python")
         assert install_args == ("python",)
@@ -56,7 +56,7 @@ class TestEnvProvider:
         self,
         test_machine,
     ):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         with pytest.raises(ValueError):
             provider.install("python", min_version=SemVer("999.0.0"))
@@ -67,11 +67,11 @@ class TestEnvProvider:
         binary = Binary(
             name="python",
             binproviders=[
-                EnvProvider(postinstall_scripts=True, min_release_age=0),
+                EnvProvider(postinstall_scripts=True, min_release_age=3),
             ],
             min_version=SemVer("3.0.0"),
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
 
         installed = binary.install()
@@ -84,7 +84,7 @@ class TestEnvProvider:
         test_machine.assert_shallow_binary_loaded(binary.load())
 
     def test_provider_dry_run_does_not_change_host_python(self, test_machine):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
         before = provider.load("python", quiet=True, no_cache=True)
         test_machine.assert_shallow_binary_loaded(
             before,
@@ -124,7 +124,7 @@ class TestEnvProvider:
             provider = EnvProvider(
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             loaded = provider.load("python3")
@@ -164,7 +164,7 @@ class TestEnvProvider:
             provider = EnvProvider(
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             loaded = provider.load("python3")
 
@@ -191,7 +191,7 @@ class TestEnvProvider:
             pip_provider = PipProvider(
                 install_root=lib_dir / "pip",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = pip_provider.install("black")
 
@@ -203,7 +203,7 @@ class TestEnvProvider:
                 install_root=lib_dir / "env",
                 PATH=str(pip_provider.bin_dir),
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             loaded = env_provider.load("black", no_cache=True)
 
@@ -233,7 +233,7 @@ class TestEnvProvider:
             provider = EnvProvider(
                 install_root=lib_dir / "env",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             linked_path = provider._link_loaded_binary("demo", shared_shim)

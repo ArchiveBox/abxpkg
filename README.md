@@ -174,7 +174,7 @@ Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scr
 // /// script
 // dependencies = [
 //     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},
-//     {name = "playwright", binproviders = ["pnpm", "npm"]},
+//     {name = "playwright", binproviders = ["pnpm", "npm"], install_args = ["playwright@next"]},
 //     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},
 // ]
 // [tool.abxpkg]
@@ -206,7 +206,7 @@ abxpkg --install-root=/tmp/yt-dlp-root --bin-dir=/tmp/yt-dlp-bin install yt-dlp
 abxpkg --overrides='{"pip":{"install_args":["yt-dlp[default]"]}}' install yt-dlp
 abxpkg --install-timeout=600 --version-timeout=20 --euid=1000 install yt-dlp
 abxpkg --global install yt-dlp
-abx --min-version=2024.1.1 --min-release-age=0 yt-dlp --help
+abx --min-version=2024.1.1 --min-release-age=3 yt-dlp --help
 ```
 
 | Flag | Type | Meaning |
@@ -278,7 +278,7 @@ These are instantiated on first access and cached for reuse. If you need custom 
 from pathlib import Path
 from abxpkg import PipProvider
 
-custom_pip = PipProvider(install_root=Path("/tmp/abxpkg-pip"), min_release_age=0)
+custom_pip = PipProvider(install_root=Path("/tmp/abxpkg-pip"), min_release_age=3)
 ```
 
 Use the `Binary` class to declare a package that can be installed by one of several ordered providers, with an optional version floor:

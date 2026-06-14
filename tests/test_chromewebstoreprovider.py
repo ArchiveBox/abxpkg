@@ -130,7 +130,7 @@ class TestChromeWebstoreProvider:
                 install_root=Path(temp_dir) / "chromewebstore-root",
                 bin_dir=Path(temp_dir) / "chromewebstore-root/extensions",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "ublock": {
@@ -141,7 +141,7 @@ class TestChromeWebstoreProvider:
 
             provider.setup(
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=None,
             )
             assert provider.load("ublock", quiet=True, no_cache=True) is None
@@ -181,7 +181,7 @@ class TestChromeWebstoreProvider:
                         install_root=Path(temp_dir) / "chromewebstore-root",
                         bin_dir=Path(temp_dir) / "chromewebstore-root/extensions",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 overrides={
@@ -190,7 +190,7 @@ class TestChromeWebstoreProvider:
                     },
                 },
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             fresh = test_machine.unloaded_binary(binary)

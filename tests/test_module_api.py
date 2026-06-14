@@ -6,7 +6,7 @@ class TestModuleApi:
     def test_provider_class_normalization_accepts_classes_and_instances(self):
         normalized_from_class = _provider_class(EnvProvider)
         normalized_from_instance = _provider_class(
-            EnvProvider(postinstall_scripts=True, min_release_age=0),
+            EnvProvider(postinstall_scripts=True, min_release_age=3),
         )
 
         assert normalized_from_class is EnvProvider
@@ -17,7 +17,7 @@ class TestModuleApi:
     def test_mixed_provider_entries_produce_valid_names_class_names_and_classes(self):
         providers = [
             EnvProvider,
-            EnvProvider(postinstall_scripts=True, min_release_age=0),
+            EnvProvider(postinstall_scripts=True, min_release_age=3),
         ]
 
         provider_names = [

@@ -12,7 +12,7 @@ class TestAptProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
 
-        provider = AptProvider(postinstall_scripts=True, min_release_age=0)
+        provider = AptProvider(postinstall_scripts=True, min_release_age=3)
         test_machine.exercise_provider_lifecycle(
             provider,
             bin_name=test_machine.pick_missing_apt_package(),
@@ -55,16 +55,16 @@ class TestAptProvider:
         binary = Binary(
             name=test_machine.pick_missing_apt_package(),
             binproviders=[
-                AptProvider(postinstall_scripts=True, min_release_age=0),
+                AptProvider(postinstall_scripts=True, min_release_age=3),
             ],
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         test_machine.exercise_binary_lifecycle(binary)
 
     def test_provider_dry_run_does_not_install_package(self, test_machine):
         test_machine.require_tool("apt-get")
-        provider = AptProvider(postinstall_scripts=True, min_release_age=0)
+        provider = AptProvider(postinstall_scripts=True, min_release_age=3)
         test_machine.exercise_provider_dry_run(
             provider,
             bin_name=test_machine.pick_missing_apt_package(),
@@ -72,7 +72,7 @@ class TestAptProvider:
 
     def test_search_finds_real_apt_package_and_install_works(self, test_machine):
         test_machine.require_tool("apt-get")
-        provider = AptProvider(postinstall_scripts=True, min_release_age=0)
+        provider = AptProvider(postinstall_scripts=True, min_release_age=3)
         results = provider.search("wget")
         assert results, "apt-cache search wget should return matches"
         names = [r.name for r in results]
@@ -96,7 +96,7 @@ class TestAptProvider:
 
         provider = AptProvider(
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         ).get_provider_with_overrides(
             overrides={primary: {"install_args": [primary, extra]}},
         )

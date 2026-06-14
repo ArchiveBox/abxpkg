@@ -721,7 +721,6 @@ async function launchChromium(options = {}) {
     const {
         binary = findChromium(),
         outputDir = 'chrome',
-        userDataDir = getEnv('CHROME_USER_DATA_DIR'),
         resolution = getEnv('CHROME_RESOLUTION') || getEnv('RESOLUTION', '1440,2000'),
         userAgent = getEnv('CHROME_USER_AGENT') || getEnv('USER_AGENT', ''),
         headless = getEnvBool('CHROME_HEADLESS', true),
@@ -729,6 +728,8 @@ async function launchChromium(options = {}) {
         checkSsl = getEnvBool('CHROME_CHECK_SSL_VALIDITY', getEnvBool('CHECK_SSL_VALIDITY', true)),
         enableExtensionDebugging = false,
     } = options;
+    const activePersona = getEnv('ACTIVE_PERSONA', 'Default') || 'Default';
+    const userDataDir = path.join(getPersonasDir(), activePersona, 'chrome_profile');
     const config = loadConfig(path.join(__dirname, 'config.json'));
     const maxLaunchAttempts = Math.max(1, Number(config.CHROME_LAUNCH_ATTEMPTS) || 1);
 
@@ -1442,8 +1443,7 @@ async function loadOrInstallExtension(ext, extensions_dir = null, force_install 
         throw new Error('Extension must have either {webstore_id} or {unpacked_path}');
     }
 
-    // Determine extensions directory
-    // Use provided dir, or fall back to getExtensionsDir() which handles env vars and defaults
+    // Determine extensions directory.
     const EXTENSIONS_DIR = extensions_dir || getExtensionsDir();
 
     // Set statically computable extension metadata
@@ -2132,16 +2132,12 @@ function findAnyChromiumBinary() {
  * Get the extensions directory path.
  * Centralized path calculation used by extension installers and chrome launch.
  *
- * Path is derived from environment variables in this priority:
- * 1. CHROME_EXTENSIONS_DIR (explicit override)
- * 2. ABXPKG_LIB_DIR/chromewebstore/extensions (provider-managed default)
+ * Path is derived from ABXPKG_LIB_DIR/chromewebstore/extensions.
  *
  * @returns {string} - Absolute path to extensions directory
  */
 function getExtensionsDir() {
-    const config = loadConfig(path.join(__dirname, 'config.json'));
-    return config.CHROME_EXTENSIONS_DIR ||
-        path.join(getLibDir(), 'chromewebstore', 'extensions');
+    return path.join(getLibDir(), 'chromewebstore', 'extensions');
 }
 
 /**
@@ -2225,7 +2221,6 @@ function getTestEnv() {
         NODE_MODULES_DIR: nodeModulesDir,
         NODE_PATH: nodeModulesDir,  // Node.js uses NODE_PATH for module resolution
         NPM_BIN_DIR: path.join(libDir, 'npm', '.bin'),
-        CHROME_EXTENSIONS_DIR: getExtensionsDir(),
     };
 }
 
@@ -3615,14 +3610,16 @@ async function ensureChromeSession(options = {}) {
         puppeteer = resolvePuppeteerModule(),
         processIsLocal = getEnv('CHROME_CDP_URL', '') ? false : getEnvBool('CHROME_IS_LOCAL', true),
         cdpUrl = getEnv('CHROME_CDP_URL', ''),
-        userDataDir = getEnv('CHROME_USER_DATA_DIR'),
-        downloadsDir = getEnv('CHROME_DOWNLOADS_DIR'),
         cookiesFile = getEnv('COOKIES_FILE'),
         extensionsDir = getExtensionsDir(),
         timeoutMs = getEnvInt('CHROME_TIMEOUT', 60) * 1000,
         reuseExisting = !cdpUrl,
         binary = null,
     } = options;
+    const activePersona = getEnv('ACTIVE_PERSONA', 'Default') || 'Default';
+    const personaDir = path.join(getPersonasDir(), activePersona);
+    const userDataDir = path.join(personaDir, 'chrome_profile');
+    const downloadsDir = path.join(personaDir, 'chrome_downloads');
 
     if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
@@ -4196,14 +4193,18 @@ if (require.main === module) {
                 }
 
                 case 'installExtensionWithCache': {
-                    const [webstore_id, name, maybeNoCache] = commandArgs;
+                    const [webstore_id, name, maybeExtensionsDir, maybeNoCache] = commandArgs;
                     if (!webstore_id || !name) {
-                        console.error('Usage: installExtensionWithCache <webstore_id> <name> [--no-cache]');
+                        console.error('Usage: installExtensionWithCache <webstore_id> <name> [extensions_dir] [--no-cache]');
                         process.exit(1);
                     }
+                    const extensionsDir = maybeExtensionsDir && maybeExtensionsDir !== '--no-cache'
+                        ? maybeExtensionsDir
+                        : undefined;
+                    const noCache = maybeExtensionsDir === '--no-cache' || maybeNoCache === '--no-cache';
                     const ext = await installExtensionWithCache(
                         { webstore_id, name },
-                        { noCache: maybeNoCache === '--no-cache' },
+                        { extensionsDir, noCache },
                     );
                     if (ext) {
                         console.log(JSON.stringify(ext, null, 2));

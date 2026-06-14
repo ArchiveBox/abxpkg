@@ -488,7 +488,7 @@ class TestPlaywrightProvider:
             provider = PlaywrightProvider(
                 install_root=Path(temp_dir) / "playwright",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("chromium")
             assert results, (

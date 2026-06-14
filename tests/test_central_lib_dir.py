@@ -344,31 +344,31 @@ class TestAbxPkgLibDir:
                 _lib = os.environ.get("ABXPKG_LIB_DIR", "").strip()
                 results = {"lib_dir": str(Path(_lib).expanduser().resolve()) if _lib else "None"}
 
-                pip = PipProvider(postinstall_scripts=True, min_release_age=0)
+                pip = PipProvider(postinstall_scripts=True, min_release_age=3)
                 results["pip"] = str(pip.install_root)
                 pip.install("cowsay")
 
-                uv = UvProvider(postinstall_scripts=True, min_release_age=0)
+                uv = UvProvider(postinstall_scripts=True, min_release_age=3)
                 results["uv"] = str(uv.install_root)
                 uv.install("cowsay")
 
-                npm = NpmProvider(postinstall_scripts=True, min_release_age=0)
+                npm = NpmProvider(postinstall_scripts=True, min_release_age=3)
                 results["npm"] = str(npm.install_root)
                 npm.install("cowsay")
 
-                pnpm = PnpmProvider(postinstall_scripts=True, min_release_age=0)
+                pnpm = PnpmProvider(postinstall_scripts=True, min_release_age=3)
                 results["pnpm"] = str(pnpm.install_root)
                 pnpm.install("cowsay")
 
-                yarn = YarnProvider(postinstall_scripts=True, min_release_age=0)
+                yarn = YarnProvider(postinstall_scripts=True, min_release_age=3)
                 results["yarn"] = str(yarn.install_root)
                 yarn.install("cowsay")
 
-                bun = BunProvider(postinstall_scripts=True, min_release_age=0)
+                bun = BunProvider(postinstall_scripts=True, min_release_age=3)
                 results["bun"] = str(bun.install_root)
                 bun.install("cowsay")
 
-                deno = DenoProvider(postinstall_scripts=True, min_release_age=0)
+                deno = DenoProvider(postinstall_scripts=True, min_release_age=3)
                 results["deno"] = str(deno.install_root)
                 deno.install("cowsay")
 

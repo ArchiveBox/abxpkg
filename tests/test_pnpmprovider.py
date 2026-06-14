@@ -26,7 +26,7 @@ class TestPnpmProvider:
                 install_root=temp_path / "pnpm",
                 bin_dir=exposed_bin_dir,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             exposed = provider._refresh_bin_link("demo", target)
@@ -65,7 +65,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
 
                 installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -108,7 +108,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
 
                 installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -211,7 +211,7 @@ class TestPnpmProvider:
             ambient_provider = PnpmProvider(
                 install_root=temp_dir_path / "ambient-pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -228,7 +228,7 @@ class TestPnpmProvider:
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("zx", min_version=SemVer("8.8.0"))
@@ -258,7 +258,7 @@ class TestPnpmProvider:
             provider = PnpmProvider(
                 install_root=tmp_path / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("zx")
@@ -271,7 +271,7 @@ class TestPnpmProvider:
             provider = PnpmProvider(
                 install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed, _ = test_machine.exercise_provider_lifecycle(
                 provider,
@@ -288,7 +288,7 @@ class TestPnpmProvider:
             provider = PnpmProvider(
                 install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"lit": {"install_args": ["@llamaindex/liteparse"]}},
             )
@@ -365,7 +365,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=None,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 ).get_provider_with_overrides(
                     overrides={"lit": {"install_args": ["@llamaindex/liteparse"]}},
                 )
@@ -410,7 +410,7 @@ class TestPnpmProvider:
             old_provider = PnpmProvider(
                 install_root=pnpm_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -421,7 +421,7 @@ class TestPnpmProvider:
             upgraded = PnpmProvider(
                 install_root=pnpm_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).install("zx", min_version=SemVer("8.8.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
@@ -447,7 +447,7 @@ class TestPnpmProvider:
                 PnpmProvider(
                     install_root=pnpm_prefix,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 ).update("zx", min_version=SemVer("999.0.0"))
 
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
@@ -466,9 +466,9 @@ class TestPnpmProvider:
                 strict_provider.install("zx")
             test_machine.assert_provider_missing(strict_provider, "zx")
 
-            direct_override = strict_provider.install("zx", min_release_age=0)
+            direct_override = strict_provider.install("zx", min_release_age=3)
             test_machine.assert_shallow_binary_loaded(direct_override)
-            assert strict_provider.uninstall("zx", min_release_age=0)
+            assert strict_provider.uninstall("zx", min_release_age=3)
 
             binary = Binary(
                 name="zx",
@@ -480,7 +480,7 @@ class TestPnpmProvider:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
@@ -493,7 +493,7 @@ class TestPnpmProvider:
             strict_provider = PnpmProvider(
                 install_root=Path(tmpdir) / "strict-pnpm",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -518,7 +518,7 @@ class TestPnpmProvider:
             override_provider = PnpmProvider(
                 install_root=Path(tmpdir) / "override-pnpm",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -542,13 +542,13 @@ class TestPnpmProvider:
                     PnpmProvider(
                         install_root=Path(tmpdir) / "binary-pnpm",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ).get_provider_with_overrides(
                         overrides={"optipng": {"install_args": ["optipng-bin"]}},
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             assert installed is not None
@@ -562,13 +562,13 @@ class TestPnpmProvider:
                     PnpmProvider(
                         install_root=Path(tmpdir) / "failing-pnpm",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ).get_provider_with_overrides(
                         overrides={"optipng": {"install_args": ["optipng-bin"]}},
                     ),
                 ],
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             failing_installed = failing_binary.install()
             assert failing_installed is not None
@@ -583,11 +583,11 @@ class TestPnpmProvider:
                     PnpmProvider(
                         install_root=Path(temp_dir) / "pnpm",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -596,7 +596,7 @@ class TestPnpmProvider:
             provider = PnpmProvider(
                 install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
             # dry_run must not have actually installed anything.
@@ -617,7 +617,7 @@ class TestPnpmProvider:
                 "zx",
                 dry_run=False,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -637,7 +637,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=None,  # global mode
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("zx", no_cache=True)
                 test_machine.assert_shallow_binary_loaded(installed)
@@ -670,7 +670,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("zx", no_cache=True)
             finally:
@@ -716,7 +716,7 @@ class TestPnpmProvider:
                 provider = PnpmProvider(
                     install_root=Path(tmpdir) / "pnpm",
                     postinstall_scripts=False,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("zx")
                 assert installed is not None
@@ -750,7 +750,7 @@ class TestPnpmProvider:
             provider = PnpmProvider(
                 install_root=Path(temp_dir) / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("zx")
             assert results, "pnpm search zx should return registry matches"

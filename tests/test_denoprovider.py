@@ -43,7 +43,7 @@ class TestDenoProvider:
             provider = DenoProvider(
                 install_root=Path(temp_dir) / "deno",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed, _ = test_machine.exercise_provider_lifecycle(
                 provider,
@@ -73,7 +73,7 @@ class TestDenoProvider:
 
             direct_override = strict_provider.install(
                 "cowsay",
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.assert_shallow_binary_loaded(
                 direct_override,
@@ -83,7 +83,7 @@ class TestDenoProvider:
                 strict_provider.install_root is not None
                 and (strict_provider.install_root / "bin" / "cowsay").exists()
             )
-            assert strict_provider.uninstall("cowsay", min_release_age=0)
+            assert strict_provider.uninstall("cowsay", min_release_age=3)
 
             binary = Binary(
                 name="cowsay",
@@ -98,7 +98,7 @@ class TestDenoProvider:
                     ],
                 ),
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(
@@ -127,7 +127,7 @@ class TestDenoProvider:
             provider = DenoProvider(
                 install_root=Path(tmpdir) / "deno",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("cowsay")
             test_machine.assert_shallow_binary_loaded(
@@ -143,7 +143,7 @@ class TestDenoProvider:
             provider = DenoProvider(
                 install_root=Path(tmpdir) / "deno",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "fileserver": {
@@ -174,12 +174,12 @@ class TestDenoProvider:
                         DenoProvider(
                             install_root=Path(temp_dir) / "deno",
                             postinstall_scripts=False,
-                            min_release_age=0,
+                            min_release_age=3,
                         ),
                     ],
                 ),
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(
                 binary,
@@ -191,7 +191,7 @@ class TestDenoProvider:
             provider = DenoProvider(
                 install_root=Path(temp_dir) / "deno",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="cowsay")
             shim = Path(temp_dir) / "deno" / "bin" / "cowsay"
@@ -203,7 +203,7 @@ class TestDenoProvider:
                 provider = DenoProvider(
                     install_root=Path(tmpdir) / "deno",
                     postinstall_scripts=False,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("cowsay")
                 assert installed is not None
@@ -235,7 +235,7 @@ class TestDenoProvider:
             provider = DenoProvider(
                 install_root=Path(temp_dir) / "deno",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("zx")
             assert results, "deno search zx (via npm registry) should return matches"

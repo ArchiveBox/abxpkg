@@ -11,7 +11,7 @@ from abxpkg.exceptions import BinaryInstallError
 
 
 def _pick_formula_for_live_cycle() -> str:
-    probe = BrewProvider(postinstall_scripts=True, min_release_age=0)
+    probe = BrewProvider(postinstall_scripts=True, min_release_age=3)
     assert probe.is_valid
     brew_bin = probe.INSTALLER_BINARY().loaded_abspath
     candidates = ("hello", "jq", "watch", "fzy")
@@ -59,7 +59,7 @@ class TestBrewProvider:
             provider = BrewProvider(
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install(formula, no_cache=True)
@@ -81,7 +81,7 @@ class TestBrewProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")
         formula = _pick_formula_for_live_cycle()
-        provider = BrewProvider(postinstall_scripts=True, min_release_age=0)
+        provider = BrewProvider(postinstall_scripts=True, min_release_age=3)
 
         installed, _ = test_machine.exercise_provider_lifecycle(
             provider,
@@ -102,7 +102,7 @@ class TestBrewProvider:
 
         provider_for_cleanup = BrewProvider(
             postinstall_scripts=False,
-            min_release_age=0,
+            min_release_age=3,
         )
         try:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
@@ -133,12 +133,12 @@ class TestBrewProvider:
     ):
         test_machine.require_tool("brew")
         formula = _pick_formula_for_live_cycle()
-        provider = BrewProvider(postinstall_scripts=True, min_release_age=0)
+        provider = BrewProvider(postinstall_scripts=True, min_release_age=3)
 
         installed = provider.install(
             formula,
             postinstall_scripts=False,
-            min_release_age=0,
+            min_release_age=3,
             no_cache=True,
         )
         test_machine.assert_shallow_binary_loaded(installed)
@@ -146,7 +146,7 @@ class TestBrewProvider:
         updated = provider.update(
             formula,
             postinstall_scripts=False,
-            min_release_age=0,
+            min_release_age=3,
             no_cache=True,
         )
         test_machine.assert_shallow_binary_loaded(updated)
@@ -155,7 +155,7 @@ class TestBrewProvider:
             provider.update(
                 formula,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("999.0.0"),
                 no_cache=True,
             )
@@ -163,10 +163,10 @@ class TestBrewProvider:
         too_new = Binary(
             name=formula,
             binproviders=[
-                BrewProvider(postinstall_scripts=True, min_release_age=0),
+                BrewProvider(postinstall_scripts=True, min_release_age=3),
             ],
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
             min_version=SemVer("999.0.0"),
         )
         with pytest.raises(BinaryInstallError):
@@ -179,7 +179,7 @@ class TestBrewProvider:
 
         provider = BrewProvider(
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         ).get_provider_with_overrides(
             overrides={primary: {"install_args": [primary, extra]}},
         )
@@ -207,16 +207,16 @@ class TestBrewProvider:
         binary = Binary(
             name=formula,
             binproviders=[
-                BrewProvider(postinstall_scripts=True, min_release_age=0),
+                BrewProvider(postinstall_scripts=True, min_release_age=3),
             ],
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         test_machine.exercise_binary_lifecycle(binary)
 
     def test_provider_dry_run_does_not_install_formula(self, test_machine):
         test_machine.require_tool("brew")
-        provider = BrewProvider(postinstall_scripts=False, min_release_age=0)
+        provider = BrewProvider(postinstall_scripts=False, min_release_age=3)
         test_machine.exercise_provider_dry_run(
             provider,
             bin_name=test_machine.pick_missing_brew_formula(),
@@ -224,7 +224,7 @@ class TestBrewProvider:
 
     def test_search_finds_real_brew_formula_and_install_works(self, test_machine):
         test_machine.require_tool("brew")
-        provider = BrewProvider(postinstall_scripts=True, min_release_age=0)
+        provider = BrewProvider(postinstall_scripts=True, min_release_age=3)
         results = provider.search("jq")
         assert results, "brew search jq should return matches"
         names = [r.name for r in results]

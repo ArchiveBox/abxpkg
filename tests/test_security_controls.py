@@ -62,11 +62,11 @@ class TestSecurityControls:
         binary = Binary(
             name="python",
             binproviders=[
-                EnvProvider(postinstall_scripts=True, min_release_age=0),
+                EnvProvider(postinstall_scripts=True, min_release_age=3),
             ],
             min_version=SemVer("999.0.0"),
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
 
         with pytest.raises(BinaryLoadError):
@@ -86,7 +86,7 @@ class TestSecurityControls:
                 name="saws",
                 binproviders=[provider],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(
@@ -107,7 +107,7 @@ class TestSecurityControls:
                 name="optipng",
                 binproviders=[provider],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             assert installed is not None
@@ -124,7 +124,7 @@ class TestSecurityControls:
                     ),
                 ],
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).install()
 
     def test_nullable_provider_security_fields_resolve_before_handlers_run(self):

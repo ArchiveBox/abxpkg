@@ -15,7 +15,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo-root",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "choose": {"install_args": ["choose", "--version", "1.3.6"]},
@@ -56,7 +56,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="choose")
 
@@ -70,7 +70,7 @@ class TestCargoProvider:
             old_provider = CargoProvider(
                 install_root=cargo_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "choose": {"install_args": ["choose", "--version", "1.3.6"]},
@@ -83,7 +83,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=cargo_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             upgraded = provider.install("choose", min_version=SemVer("1.3.7"))
             test_machine.assert_shallow_binary_loaded(
@@ -103,7 +103,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "choose": {"install_args": ["choose", "--version", "1.3.6"]},
@@ -129,7 +129,7 @@ class TestCargoProvider:
             ambient_provider = CargoProvider(
                 install_root=temp_dir_path / "ambient-cargo",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "choose": {"install_args": ["choose", "--version", "1.3.6"]},
@@ -149,7 +149,7 @@ class TestCargoProvider:
                 PATH=f"{ambient_provider.bin_dir}:{cargo_bin_dir}",
                 install_root=cargo_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("choose", min_version=SemVer("1.3.7"))
@@ -214,12 +214,12 @@ class TestCargoProvider:
                         CargoProvider(
                             install_root=Path(temp_dir) / "cargo",
                             postinstall_scripts=True,
-                            min_release_age=0,
+                            min_release_age=3,
                         ),
                     ],
                 ),
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -229,7 +229,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="choose")
 
@@ -239,7 +239,7 @@ class TestCargoProvider:
             provider = CargoProvider(
                 install_root=Path(temp_dir) / "cargo",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("choose")
             assert results, "cargo search choose should return matches"

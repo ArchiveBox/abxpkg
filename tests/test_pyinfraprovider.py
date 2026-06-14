@@ -17,7 +17,7 @@ def _pyinfra_provider_for_host(test_machine):
         test_machine.require_tool("brew")
     provider = PyinfraProvider(
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     return provider, test_machine.pick_missing_provider_binary(
         provider,
@@ -56,7 +56,7 @@ class TestPyinfraProvider:
         test_machine.require_tool("pyinfra")
         provider = PyinfraProvider(
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         installer = provider.INSTALLER_BINARY().loaded_abspath
         assert installer is not None
@@ -95,7 +95,7 @@ class TestPyinfraProvider:
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
 
-        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=0)
+        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=3)
         try:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = PyinfraProvider().install(
@@ -129,12 +129,12 @@ class TestPyinfraProvider:
     ):
         del test_machine_dependencies
         provider, package = _pyinfra_provider_for_host(test_machine)
-        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=0)
+        cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=3)
         try:
             installed = provider.install(
                 package,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 no_cache=True,
             )
             test_machine.assert_shallow_binary_loaded(installed)
@@ -143,7 +143,7 @@ class TestPyinfraProvider:
                 provider.update(
                     package,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                     min_version=SemVer("999.0.0"),
                     no_cache=True,
                 )
@@ -152,7 +152,7 @@ class TestPyinfraProvider:
                 name=package,
                 binproviders=[provider],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("999.0.0"),
             )
             with pytest.raises(BinaryInstallError):
@@ -171,7 +171,7 @@ class TestPyinfraProvider:
             name=package,
             binproviders=cast(list[BinProvider], [provider]),
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         test_machine.exercise_binary_lifecycle(binary)
 

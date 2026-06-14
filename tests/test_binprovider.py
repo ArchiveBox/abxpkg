@@ -80,7 +80,7 @@ class TestBinProvider:
                 install_root=Path(tmpdir) / "install-root",
                 euid=None,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             assert provider.euid is None
@@ -107,7 +107,7 @@ class TestBinProvider:
         installer_bin,
     ):
         test_machine.require_tool(installer_bin)
-        provider = provider_cls(postinstall_scripts=True, min_release_age=0)
+        provider = provider_cls(postinstall_scripts=True, min_release_age=3)
 
         abspath = provider.get_abspath(installer_bin, quiet=True, no_cache=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -132,7 +132,7 @@ class TestBinProvider:
 
             installer = BlackInstallerProvider(
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).INSTALLER_BINARY(no_cache=True)
 
             assert installer.loaded_binprovider is not None
@@ -144,7 +144,7 @@ class TestBinProvider:
             assert installer.loaded_version is not None
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         assert provider.get_install_args("python") == ("python",)
         assert provider.get_packages("python") == ("python",)
@@ -169,39 +169,39 @@ class TestBinProvider:
             pip_provider = PipProvider(
                 install_root=tmpdir_path / "pip",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             uv_provider = UvProvider(
                 install_root=tmpdir_path / "uv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             monkeypatch.setenv("UV_TOOL_DIR", str(tmpdir_path / "uv-tools"))
             uv_tool_provider = UvProvider(
                 install_root=None,
                 bin_dir=tmpdir_path / "uv-bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             pnpm_provider = PnpmProvider(
                 install_root=tmpdir_path / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             yarn_provider = YarnProvider(
                 install_root=tmpdir_path / "yarn",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             bun_provider = BunProvider(
                 install_root=tmpdir_path / "bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             deno_provider = DenoProvider(
                 install_root=tmpdir_path / "deno",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             assert {"VIRTUAL_ENV"} <= set(pip_provider.ENV)
@@ -254,22 +254,22 @@ class TestBinProvider:
         first_pnpm = PnpmProvider(
             install_root=tmp_path / "pnpm" / "packages" / "singlefile",
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         second_pnpm = PnpmProvider(
             install_root=tmp_path / "pnpm" / "packages" / "chrome",
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         first_pip = PipProvider(
             install_root=tmp_path / "pip" / "first",
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
         second_pip = PipProvider(
             install_root=tmp_path / "pip" / "second",
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
 
         first_event_env = BinProvider.build_exec_env(
@@ -345,7 +345,7 @@ class TestBinProvider:
             base_provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             overridden = base_provider.get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
@@ -364,7 +364,7 @@ class TestBinProvider:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("black")
             assert installed is not None
@@ -387,7 +387,7 @@ class TestBinProvider:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("black")
             assert installed is not None
@@ -411,7 +411,7 @@ class TestBinProvider:
             ambient_provider = PipProvider(
                 install_root=tmpdir_path / "ambient-venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
             )
@@ -424,7 +424,7 @@ class TestBinProvider:
             provider = PipProvider(
                 install_root=tmpdir_path / "provider-venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("black", min_version=SemVer("24.0.0"))
             assert installed is not None
@@ -445,7 +445,7 @@ class TestBinProvider:
             assert str(ambient_installed.loaded_version) not in proc.stdout
 
     def test_exec_timeout_is_enforced_for_real_commands(self):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         with pytest.raises(subprocess.TimeoutExpired):
             provider.exec(

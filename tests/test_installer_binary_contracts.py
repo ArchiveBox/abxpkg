@@ -32,7 +32,7 @@ class TestInstallerBinaryContracts:
             assert "super().INSTALLER_BINARY" in _installer_source(provider_cls)
 
     def test_pnpm_provider_resolves_installer_without_base_recursion(self):
-        provider = PnpmProvider(postinstall_scripts=True, min_release_age=0)
+        provider = PnpmProvider(postinstall_scripts=True, min_release_age=3)
         abspath = provider.get_abspath("pnpm", quiet=True, no_cache=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 

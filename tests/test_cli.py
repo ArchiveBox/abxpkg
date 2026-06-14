@@ -950,17 +950,17 @@ def test_build_command_exec_env_without_names_includes_installers_and_cached_bin
     installer_provider = InstallerEnvProvider(
         install_root=tmp_path / "installer-provider",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     installed_provider = ExtraEnvProvider(
         install_root=tmp_path / "installed-provider",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     cache_owner = CacheOwnerProvider(
         install_root=tmp_path / "cache-owner",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
 
     installer_binary = installer_provider.load("python3")
@@ -1212,7 +1212,7 @@ def test_list_command_reads_provider_local_derived_env(tmp_path):
     provider = EnvProvider(
         install_root=tmp_path / "env",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     loaded = provider.load("python3")
 
@@ -1239,7 +1239,7 @@ def test_list_command_includes_installer_binaries_by_default(tmp_path):
     env_provider = EnvProvider(
         install_root=tmp_path / "env",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     loaded = env_provider.load("python3")
 
@@ -1289,7 +1289,7 @@ def test_version_report_includes_provider_local_cached_binary_list(tmp_path):
     provider = EnvProvider(
         install_root=tmp_path / "env",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     loaded = provider.load("python3")
 
@@ -1316,7 +1316,7 @@ def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
     env_provider = EnvProvider(
         install_root=tmp_path / "env",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
     )
     loaded = env_provider.load("python3")
 
@@ -1838,7 +1838,7 @@ def test_upgrade_command_dispatches_to_update(monkeypatch):
                 "--binproviders=pip",
                 '--install-args=["black==25.0.0"]',
                 '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
-                "--min-release-age=0",
+                "--min-release-age=3",
                 "upgrade",
                 "black",
             ],
@@ -1850,7 +1850,7 @@ def test_upgrade_command_dispatches_to_update(monkeypatch):
                 "--binproviders=pip",
                 '--install-args=["black==25.0.0"]',
                 '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
-                "--min-release-age=0",
+                "--min-release-age=3",
                 "black",
             ],
             "after-subcommand",
@@ -1932,7 +1932,7 @@ def test_install_postinstall_scripts_false_warns_on_unsupporting_providers(tmp_p
         f"--lib={tmp_path}",
         "--binproviders=env",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--dry-run=True",
         "install",
         "python3",
@@ -1953,7 +1953,7 @@ def test_install_min_version_too_high_fails_loudly(tmp_path):
         f"--lib={tmp_path}",
         "--binproviders=pip",
         "--min-version=9999.0.0",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "install",
         "black",
         timeout=900,
@@ -1971,7 +1971,7 @@ def test_install_with_install_root_override_installs_there(tmp_path):
         f"--lib={tmp_path}",
         "--binproviders=pip",
         f"--install-root={custom_root}",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "install",
         "black",
         timeout=900,
@@ -1992,7 +1992,7 @@ def test_install_with_overrides_json_uses_custom_install_args(tmp_path):
         f"--lib={tmp_path}",
         "--binproviders=pip",
         '--overrides={"pip":{"install_args":["black==24.2.0"]}}',
-        "--min-release-age=0",
+        "--min-release-age=3",
         "install",
         "black",
         timeout=900,
@@ -2103,8 +2103,8 @@ def test_expand_bare_bool_flags_rewrites_bare_forms_in_place(argv, expected):
         ("--postinstall-scripts=1",),
         ("--postinstall-scripts=0",),
         ("--postinstall-scripts=None",),
-        ("--min-release-age=0",),
-        ("--min-release-age=0.5",),
+        ("--min-release-age=3",),
+        ("--min-release-age=3.5",),
         ("--min-release-age=None",),
         ("--install-timeout=60",),
         ("--install-timeout=60.0",),
@@ -2154,7 +2154,7 @@ def test_every_subcommand_accepts_the_full_option_surface(subcommand, tmp_path):
         "--binproviders=env",
         "--min-version=0.0.0",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--no-cache=False",
         "--install-timeout=60",
         "--version-timeout=10",
@@ -2175,7 +2175,7 @@ def test_update_subcommand_accepts_the_full_option_surface(tmp_path):
         "--binproviders=env",
         "--min-version=0.0.0",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--install-timeout=60",
         "--version-timeout=10",
         "--dry-run=False",
@@ -2212,7 +2212,7 @@ def test_subcommand_level_option_overrides_group_level():
     [
         "--min-version=0.0.0",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--global",
         "--install-timeout=60",
         "--version-timeout=10",
@@ -2251,7 +2251,7 @@ def test_run_command_honours_group_level_options(flag, tmp_path):
         "--min-version=0.0.0",
         "--postinstall-scripts=True",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--global",
         "--install-timeout=60",
         "--version-timeout=10",
@@ -2586,7 +2586,7 @@ def test_run_script_dependency_provider_path_is_available_inside_script(tmp_path
         f"--lib={lib}",
         "--binproviders=env,pip",
         "--postinstall-scripts=True",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "run",
         "--script",
         "--install",
@@ -2598,6 +2598,48 @@ def test_run_script_dependency_provider_path_is_available_inside_script(tmp_path
     assert "black" in proc.stdout.lower()
 
 
+def test_run_script_applies_install_args_to_side_dependency(tmp_path):
+    """Shebang metadata should configure non-interpreter dependencies fully."""
+
+    lib = tmp_path / "lib"
+    install_root = tmp_path / "black-pip-root"
+    script = tmp_path / "black_pinned.py"
+    script.write_text(
+        "# /// script\n"
+        "# [[dependencies]]\n"
+        '# name = "black"\n'
+        '# binproviders = ["pip"]\n'
+        '# install_args = ["black==24.2.0"]\n'
+        f'# install_root = "{install_root}"\n'
+        "# ///\n"
+        "import shutil\n"
+        "import subprocess\n"
+        "import sys\n"
+        "black = shutil.which('black')\n"
+        "print(f'black_path={black}')\n"
+        "proc = subprocess.run(['black', '--version'], capture_output=True, text=True)\n"
+        "sys.stdout.write(proc.stdout or proc.stderr)\n"
+        "sys.exit(proc.returncode)\n",
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env,pip",
+        "--postinstall-scripts=True",
+        "--min-release-age=3",
+        "run",
+        "--script",
+        "--install",
+        "python3",
+        str(script),
+        timeout=240,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert f"black_path={install_root / 'venv' / 'bin' / 'black'}" in proc.stdout
+    assert "24.2.0" in proc.stdout
+
+
 def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
     """Plain run should merge runtime PATH/ENV from all selected providers."""
 
@@ -2607,7 +2649,7 @@ def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
         f"--lib={lib}",
         "--binproviders=pip",
         "--postinstall-scripts=True",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "install",
         "black",
     )
@@ -2644,7 +2686,7 @@ def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
         f"--lib={lib}",
         "--binproviders=uv",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
         "install",
         "imagesize",
@@ -2684,7 +2726,7 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
         f"--lib={lib}",
         "--binproviders=uv",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
         "install",
         "imagesize",
@@ -2747,7 +2789,7 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         f"--lib={lib}",
         "--binproviders=uv",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         '--overrides={"uv":{"install_args":["imagesize>=2.0.0"]}}',
         "install",
         "imagesize",
@@ -2757,7 +2799,7 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         f"--lib={lib}",
         "--binproviders=uv",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         f'--overrides={{"uv":{{"install_root":"{lib / "uv" / "packages" / "hook-runtime"}","install_args":["humanize>=4.0.0"]}}}}',
         "install",
         "humanize",
@@ -2818,7 +2860,7 @@ def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path
     install_proc = _run_abxpkg_cli(
         "--binproviders=uv",
         "--postinstall-scripts=False",
-        "--min-release-age=0",
+        "--min-release-age=3",
         f'--overrides={{"uv":{{"install_root":"{default_lib / "uv" / "packages" / "hook-runtime"}","install_args":["humanize>=4.0.0"]}}}}',
         "install",
         "humanize",
@@ -2884,7 +2926,7 @@ def abx_e2e_lib():
             f"--lib={lib}",
             "--binproviders=npm",
             "--postinstall-scripts=True",
-            "--min-release-age=0",
+            "--min-release-age=3",
             "install",
             "playwright",
             timeout=900,
@@ -2900,7 +2942,7 @@ def abx_e2e_lib():
             f"--lib={lib}",
             "--binproviders=playwright",
             "--postinstall-scripts=True",
-            "--min-release-age=0",
+            "--min-release-age=3",
             "--install-timeout=600",
             "install",
             "chromium",
@@ -2928,7 +2970,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "// /// script\n"
         "// dependencies = [\n"
         '//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},\n'
-        '//     {name = "playwright", binproviders = ["npm", "pnpm"]},\n'
+        '//     {name = "playwright", binproviders = ["npm", "pnpm"], install_args = ["playwright@next"]},\n'
         '//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},\n'
         "// ]\n"
         "// [tool.abxpkg]\n"
@@ -2991,7 +3033,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         f"--lib={abx_e2e_lib}",
         "--binproviders=env,npm,playwright",
         "--postinstall-scripts=True",
-        "--min-release-age=0",
+        "--min-release-age=3",
         "--install-timeout=600",
         "--install",
         "run",

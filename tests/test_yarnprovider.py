@@ -102,7 +102,7 @@ class TestYarnProvider:
             ambient_provider = YarnProvider(
                 install_root=temp_dir_path / "ambient-yarn",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -119,7 +119,7 @@ class TestYarnProvider:
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("zx", min_version=SemVer("8.8.0"))
@@ -140,7 +140,7 @@ class TestYarnProvider:
             provider = YarnProvider(
                 install_root=Path(temp_dir) / "yarn",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed, _ = test_machine.exercise_provider_lifecycle(
                 provider,
@@ -160,7 +160,7 @@ class TestYarnProvider:
             old_provider = YarnProvider(
                 install_root=yarn_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -171,7 +171,7 @@ class TestYarnProvider:
             upgraded = YarnProvider(
                 install_root=yarn_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).install("zx", min_version=SemVer("8.8.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
@@ -203,9 +203,9 @@ class TestYarnProvider:
             assert yarnrc.exists()
             assert "npmMinimalAgeGate: 36500d" in yarnrc.read_text()
 
-            direct_override = strict_provider.install("zx", min_release_age=0)
+            direct_override = strict_provider.install("zx", min_release_age=3)
             test_machine.assert_shallow_binary_loaded(direct_override)
-            assert strict_provider.uninstall("zx", min_release_age=0)
+            assert strict_provider.uninstall("zx", min_release_age=3)
 
             # After the override, the .yarnrc.yml entry must have been
             # rewritten away (no longer enforces the strict gate).
@@ -221,7 +221,7 @@ class TestYarnProvider:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
@@ -253,7 +253,7 @@ class TestYarnProvider:
             strict_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "strict-yarn",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -275,7 +275,7 @@ class TestYarnProvider:
             override_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "override-yarn",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -298,13 +298,13 @@ class TestYarnProvider:
                     self._berry_provider(
                         install_root=Path(tmpdir) / "binary-yarn",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ).get_provider_with_overrides(
                         overrides={"optipng": {"install_args": ["optipng-bin"]}},
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             assert installed is not None
@@ -320,7 +320,7 @@ class TestYarnProvider:
             strict_provider = self._berry_provider(
                 install_root=install_root,
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -338,7 +338,7 @@ class TestYarnProvider:
                 self._berry_provider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 .get_provider_with_overrides(
                     overrides={"optipng": {"install_args": ["optipng-bin"]}},
@@ -366,7 +366,7 @@ class TestYarnProvider:
             strict_provider = self._berry_provider(
                 install_root=install_root,
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -384,7 +384,7 @@ class TestYarnProvider:
                 self._berry_provider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 .get_provider_with_overrides(
                     overrides={"optipng": {"install_args": ["optipng-bin"]}},
@@ -412,11 +412,11 @@ class TestYarnProvider:
                     YarnProvider(
                         install_root=Path(temp_dir) / "yarn",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -425,7 +425,7 @@ class TestYarnProvider:
             provider = YarnProvider(
                 install_root=Path(temp_dir) / "yarn",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
             modules_dir = Path(temp_dir) / "yarn" / "node_modules"
@@ -441,7 +441,7 @@ class TestYarnProvider:
             provider = self._berry_provider(
                 install_root=yarn_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             provider.setup()
             yarnrc = yarn_prefix / ".yarnrc.yml"
@@ -461,7 +461,7 @@ class TestYarnProvider:
                 provider = self._berry_provider(
                     install_root=Path(tmpdir) / "yarn",
                     postinstall_scripts=False,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("zx")
                 assert installed is not None
@@ -520,7 +520,7 @@ class TestYarnProvider:
             provider = YarnProvider(
                 install_root=Path(temp_dir) / "yarn",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("zx")
             assert results, "yarn search zx (via npm registry) should return matches"

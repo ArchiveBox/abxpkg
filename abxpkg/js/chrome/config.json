@@ -88,11 +88,6 @@
       "x-fallback": "RESOLUTION",
       "description": "Browser viewport resolution (width,height)"
     },
-    "CHROME_USER_DATA_DIR": {
-      "type": "string",
-      "default": "",
-      "description": "Path to Chrome user data directory for persistent sessions (derived from ACTIVE_PERSONA if not set)"
-    },
     "CHROME_USER_AGENT": {
       "type": "string",
       "default": "",

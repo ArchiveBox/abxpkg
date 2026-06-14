@@ -8,7 +8,7 @@ import re
 import shutil
 import sys
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from importlib import metadata
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -66,6 +66,10 @@ class CliOptions:
 
 _NONE_STRINGS = frozenset({"", "none", "null"})
 _ACTIVATE_SHELL_NAMES = frozenset({"bash", "zsh", "fish"})
+_CLI_OPTION_FIELD_NAMES = frozenset(field.name for field in fields(CliOptions))
+_SCRIPT_DEPENDENCY_HANDLER_KEYS = frozenset(
+    {"abspath", "version", "install_args", "packages"},
+)
 
 
 def _none_or_stripped(raw: str | None) -> str | None:
@@ -1174,6 +1178,64 @@ def get_command_options(
     return build_cli_options(ctx, **shared_kwargs)
 
 
+def apply_script_dependency_options(
+    options: CliOptions,
+    dep: dict[str, Any],
+) -> CliOptions:
+    """Apply one ``/// script`` dependency dict to a dependency's CliOptions.
+
+    The script header is the dependency declaration, so each dependency must
+    carry its own install/version/package/provider metadata into build_binary().
+    ``name`` identifies the Binary and ``binproviders`` is normalized before this
+    helper; every other key that is a real CliOptions field flows through here
+    with the same CLI-wins precedence as the existing runtime dependency path.
+    """
+
+    replacement_kwargs: dict[str, Any] = {}
+    dep_handler_overrides: dict[str, Any] = {}
+
+    for key, value in dep.items():
+        if value is None:
+            continue
+        if key in _SCRIPT_DEPENDENCY_HANDLER_KEYS:
+            dep_handler_overrides[key] = value
+            continue
+        if key == "overrides":
+            merged_overrides = json.loads(json.dumps(value))
+            if options.overrides:
+                stack: list[tuple[dict[str, Any], dict[str, Any]]] = [
+                    (merged_overrides, options.overrides),
+                ]
+                while stack:
+                    base_dict, override_dict = stack.pop()
+                    for override_key, override_value in override_dict.items():
+                        existing = base_dict.get(override_key)
+                        if isinstance(existing, dict) and isinstance(
+                            override_value,
+                            dict,
+                        ):
+                            stack.append((existing, override_value))
+                        else:
+                            base_dict[override_key] = override_value
+            replacement_kwargs["overrides"] = merged_overrides
+            continue
+        if key in _CLI_OPTION_FIELD_NAMES and getattr(options, key) is None:
+            if key in {"install_root", "bin_dir"}:
+                value = Path(value).expanduser().resolve()
+            replacement_kwargs[key] = value
+
+    if dep_handler_overrides:
+        replacement_kwargs["handler_overrides"] = cast(
+            HandlerDict,
+            {
+                **dep_handler_overrides,
+                **(options.handler_overrides or {}),
+            },
+        )
+
+    return replace(options, **replacement_kwargs) if replacement_kwargs else options
+
+
 def run_binary_command(
     binary_name: str,
     *,
@@ -1854,8 +1916,7 @@ def _run_command_impl(
                         dep_options,
                         provider_names=dep["binproviders"],
                     )
-                if "min_version" in dep:
-                    dep_options = replace(dep_options, min_version=dep["min_version"])
+                dep_options = apply_script_dependency_options(dep_options, dep)
             else:
                 continue
 
@@ -1871,65 +1932,7 @@ def _run_command_impl(
                         binary_options,
                         provider_names=dep["binproviders"],
                     )
-                replacement_kwargs: dict[str, Any] = {}
-                for field_name in (
-                    "min_version",
-                    "postinstall_scripts",
-                    "min_release_age",
-                    "euid",
-                    "install_timeout",
-                    "version_timeout",
-                ):
-                    if (
-                        field_name in dep
-                        and getattr(binary_options, field_name) is None
-                    ):
-                        replacement_kwargs[field_name] = dep[field_name]
-                for field_name in ("install_root", "bin_dir"):
-                    if (
-                        field_name in dep
-                        and getattr(binary_options, field_name) is None
-                        and dep[field_name] is not None
-                    ):
-                        replacement_kwargs[field_name] = (
-                            Path(
-                                dep[field_name],
-                            )
-                            .expanduser()
-                            .resolve()
-                        )
-                if "overrides" in dep and dep["overrides"] is not None:
-                    merged_overrides = json.loads(
-                        json.dumps(dep["overrides"]),
-                    )
-                    if binary_options.overrides:
-                        stack: list[tuple[dict[str, Any], dict[str, Any]]] = [
-                            (merged_overrides, binary_options.overrides),
-                        ]
-                        while stack:
-                            base_dict, override_dict = stack.pop()
-                            for key, value in override_dict.items():
-                                existing = base_dict.get(key)
-                                if isinstance(existing, dict) and isinstance(
-                                    value,
-                                    dict,
-                                ):
-                                    stack.append((existing, value))
-                                else:
-                                    base_dict[key] = value
-                    replacement_kwargs["overrides"] = merged_overrides
-                dep_handler_overrides = {
-                    key: dep[key]
-                    for key in ("abspath", "version", "install_args", "packages")
-                    if key in dep and dep[key] is not None
-                }
-                if dep_handler_overrides:
-                    replacement_kwargs["handler_overrides"] = {
-                        **dep_handler_overrides,
-                        **(binary_options.handler_overrides or {}),
-                    }
-                if replacement_kwargs:
-                    binary_options = replace(binary_options, **replacement_kwargs)
+                binary_options = apply_script_dependency_options(binary_options, dep)
                 continue
 
             try:

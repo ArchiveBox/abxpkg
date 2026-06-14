@@ -473,7 +473,6 @@ class PlaywrightProvider(BinProvider):
         cli = Binary(
             name="playwright",
             binproviders=[cli_provider],
-            overrides={"pnpm": {"install_args": ["playwright@next"]}},
             postinstall_scripts=effective_postinstall,
             min_release_age=effective_min_release_age,
         ).install(no_cache=no_cache)

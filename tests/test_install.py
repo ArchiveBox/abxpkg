@@ -6,7 +6,7 @@ from abxpkg import Binary, EnvProvider, NpmProvider, PipProvider
 
 class TestInstall:
     def test_env_provider_install_surface_uses_real_python(self, test_machine):
-        provider = EnvProvider(postinstall_scripts=True, min_release_age=0)
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
         loaded = provider.load("python")
         installed = provider.install("python")
         loaded_or_installed = provider.install("python")
@@ -27,11 +27,11 @@ class TestInstall:
                     PipProvider(
                         install_root=Path(tmpdir) / "venv",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -43,10 +43,10 @@ class TestInstall:
                     NpmProvider(
                         install_root=Path(tmpdir) / "npm",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)

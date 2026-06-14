@@ -84,7 +84,7 @@ class TestBunProvider:
             ambient_provider = BunProvider(
                 install_root=temp_dir_path / "ambient-bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -101,7 +101,7 @@ class TestBunProvider:
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("zx", min_version=SemVer("8.8.0"))
@@ -126,7 +126,7 @@ class TestBunProvider:
             provider = BunProvider(
                 install_root=tmp_path / "bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("zx")
@@ -138,7 +138,7 @@ class TestBunProvider:
             provider = BunProvider(
                 install_root=Path(temp_dir) / "bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed, _ = test_machine.exercise_provider_lifecycle(
                 provider,
@@ -156,7 +156,7 @@ class TestBunProvider:
             old_provider = BunProvider(
                 install_root=bun_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"zx": {"install_args": ["zx@7.2.3"]}},
             )
@@ -167,7 +167,7 @@ class TestBunProvider:
             upgraded = BunProvider(
                 install_root=bun_prefix,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).install("zx", min_version=SemVer("8.8.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
@@ -194,9 +194,9 @@ class TestBunProvider:
                 strict_provider.install("zx")
             test_machine.assert_provider_missing(strict_provider, "zx")
 
-            direct_override = strict_provider.install("zx", min_release_age=0)
+            direct_override = strict_provider.install("zx", min_release_age=3)
             test_machine.assert_shallow_binary_loaded(direct_override)
-            assert strict_provider.uninstall("zx", min_release_age=0)
+            assert strict_provider.uninstall("zx", min_release_age=3)
 
             binary = Binary(
                 name="zx",
@@ -208,7 +208,7 @@ class TestBunProvider:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
@@ -236,7 +236,7 @@ class TestBunProvider:
             strict_provider = BunProvider(
                 install_root=Path(tmpdir) / "strict-bun",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -250,7 +250,7 @@ class TestBunProvider:
             override_provider = BunProvider(
                 install_root=Path(tmpdir) / "override-bun",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"optipng": {"install_args": ["optipng-bin"]}},
             )
@@ -286,11 +286,11 @@ class TestBunProvider:
                     BunProvider(
                         install_root=Path(temp_dir) / "bun",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -299,7 +299,7 @@ class TestBunProvider:
             provider = BunProvider(
                 install_root=Path(temp_dir) / "bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="zx")
             global_modules = (
@@ -321,7 +321,7 @@ class TestBunProvider:
                 "zx",
                 dry_run=False,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
@@ -334,7 +334,7 @@ class TestBunProvider:
                 provider = BunProvider(
                     install_root=Path(tmpdir) / "bun",
                     postinstall_scripts=False,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("zx")
                 assert installed is not None
@@ -366,7 +366,7 @@ class TestBunProvider:
             provider = BunProvider(
                 install_root=Path(temp_dir) / "bun",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("zx")
             assert results, "bun search zx (via npm registry) should return matches"

@@ -13,7 +13,7 @@ class TestGemProvider:
             provider = GemProvider(
                 install_root=Path(temp_dir) / "gem-home",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "lolcat": {"install_args": ["lolcat", "--version", "99.9.99"]},
@@ -91,7 +91,7 @@ class TestGemProvider:
                 install_root=temp_dir_path / "ambient-gem-home",
                 bin_dir=temp_dir_path / "ambient-gem-home/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "lolcat": {"install_args": ["lolcat", "--version", "99.9.99"]},
@@ -110,7 +110,7 @@ class TestGemProvider:
                 install_root=gem_home,
                 bin_dir=gem_bindir,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("lolcat", min_version=SemVer("100.0.0"))
@@ -133,7 +133,7 @@ class TestGemProvider:
                 install_root=Path(temp_dir) / "gem-home",
                 bin_dir=Path(temp_dir) / "gem-home/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="lolcat")
 
@@ -150,7 +150,7 @@ class TestGemProvider:
                 install_root=gem_home,
                 bin_dir=gem_bindir,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "lolcat": {"install_args": ["lolcat", "--version", "99.9.99"]},
@@ -164,7 +164,7 @@ class TestGemProvider:
                 install_root=gem_home,
                 bin_dir=gem_bindir,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             upgraded = provider.install("lolcat", min_version=SemVer("100.0.0"))
             test_machine.assert_shallow_binary_loaded(
@@ -237,11 +237,11 @@ class TestGemProvider:
                         install_root=Path(temp_dir) / "gem-home",
                         bin_dir=Path(temp_dir) / "gem-home/bin",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -253,7 +253,7 @@ class TestGemProvider:
                 install_root=Path(temp_dir) / "gem-home",
                 bin_dir=Path(temp_dir) / "gem-home/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="cowsay")
 
@@ -264,7 +264,7 @@ class TestGemProvider:
                 install_root=Path(temp_dir) / "gem-home",
                 bin_dir=Path(temp_dir) / "gem-home/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("lolcat")
             assert results, "gem search lolcat should return rubygems matches"

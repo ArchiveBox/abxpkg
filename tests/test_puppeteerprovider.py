@@ -29,7 +29,7 @@ class TestPuppeteerProvider:
                 install_root=puppeteer_root,
                 bin_dir=puppeteer_root / "bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"chrome": {"install_args": ["chromium@latest"]}},
             )
@@ -140,7 +140,7 @@ class TestPuppeteerProvider:
                 install_root=temp_dir_path / "ambient-root",
                 bin_dir=temp_dir_path / "ambient-root/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "chromedriver": {"install_args": PUPPETEER_CHROMEDRIVER_ARGS},
@@ -154,7 +154,7 @@ class TestPuppeteerProvider:
                 install_root=temp_dir_path / "puppeteer-root",
                 bin_dir=temp_dir_path / "custom-bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "chromedriver": {"install_args": PUPPETEER_CHROMEDRIVER_ARGS},
@@ -180,7 +180,7 @@ class TestPuppeteerProvider:
                 install_root=Path(temp_dir) / "puppeteer-root",
                 bin_dir=Path(temp_dir) / "puppeteer-root/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "chromedriver": {"install_args": PUPPETEER_CHROMEDRIVER_ARGS},
@@ -201,12 +201,12 @@ class TestPuppeteerProvider:
                         install_root=Path(temp_dir) / "puppeteer-root",
                         bin_dir=Path(temp_dir) / "puppeteer-root/bin",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 overrides={"puppeteer": {"install_args": PUPPETEER_CHROMEDRIVER_ARGS}},
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             test_machine.exercise_binary_lifecycle(binary)
@@ -218,7 +218,7 @@ class TestPuppeteerProvider:
             provider = PuppeteerProvider(
                 install_root=Path(temp_dir) / "puppeteer",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("chrome-headless-shell")
             assert results, "puppeteer search should match its hardcoded browser list"

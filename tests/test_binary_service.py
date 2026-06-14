@@ -131,7 +131,7 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
         binproviders="pip",
         min_version="2.0.0",
         postinstall_scripts=True,
-        min_release_age=0,
+        min_release_age=3,
         overrides={"pip": {"install_args": ["event-package"]}},
         extra_env={"DEFAULT_EXTRA_ENV": "event", "EVENT_EXTRA_ENV": "event"},
     )
@@ -823,7 +823,7 @@ def test_binary_service_installs_real_pip_binary_from_request(tmp_path: Path) ->
                 name="black",
                 binproviders="pip",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={
                     "pip": {
                         "install_args": ["black"],

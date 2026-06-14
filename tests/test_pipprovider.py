@@ -17,7 +17,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("black")
 
@@ -91,7 +91,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("black")
 
@@ -115,7 +115,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("saws")
 
@@ -191,7 +191,7 @@ class TestPipProvider:
             ambient_provider = PipProvider(
                 install_root=temp_dir_path / "ambient-venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
             )
@@ -206,7 +206,7 @@ class TestPipProvider:
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("black", min_version=SemVer("24.0.0"))
@@ -230,7 +230,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=tmp_path / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("black")
@@ -242,7 +242,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_lifecycle(provider, bin_name="black")
 
@@ -255,7 +255,7 @@ class TestPipProvider:
             old_provider = PipProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
             )
@@ -269,7 +269,7 @@ class TestPipProvider:
             upgraded = PipProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).install("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
@@ -279,7 +279,7 @@ class TestPipProvider:
             updated = PipProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).update("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 updated,
@@ -295,7 +295,7 @@ class TestPipProvider:
             old_provider = PipProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
             )
@@ -306,7 +306,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==24.4.2"]}},
             )
@@ -337,7 +337,7 @@ class TestPipProvider:
                 strict_provider.install("black")
             test_machine.assert_provider_missing(strict_provider, "black")
 
-            direct_override = strict_provider.install("black", min_release_age=0)
+            direct_override = strict_provider.install("black", min_release_age=3)
             test_machine.assert_shallow_binary_loaded(direct_override)
             assert strict_provider.uninstall("black")
 
@@ -351,7 +351,7 @@ class TestPipProvider:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
@@ -364,7 +364,7 @@ class TestPipProvider:
             strict_provider = PipProvider(
                 install_root=Path(tmpdir) / "strict-venv",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             with pytest.raises(Exception):
                 strict_provider.install("saws")
@@ -386,11 +386,11 @@ class TestPipProvider:
                     PipProvider(
                         install_root=Path(tmpdir) / "binary-venv",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(
@@ -404,11 +404,11 @@ class TestPipProvider:
                     PipProvider(
                         install_root=Path(tmpdir) / "failing-venv",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()
@@ -421,11 +421,11 @@ class TestPipProvider:
                     PipProvider(
                         install_root=Path(temp_dir) / "venv",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(binary)
 
@@ -434,7 +434,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="black")
 
@@ -451,7 +451,7 @@ class TestPipProvider:
                 "black",
                 dry_run=False,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.assert_shallow_binary_loaded(installed)
 
@@ -460,7 +460,7 @@ class TestPipProvider:
             provider = PipProvider(
                 install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("black")
             assert len(results) == 1

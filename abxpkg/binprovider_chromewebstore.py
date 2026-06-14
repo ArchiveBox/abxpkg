@@ -338,13 +338,13 @@ class ChromeWebstoreProvider(BinProvider):
                 "installExtensionWithCache",
                 webstore_id,
                 extension_name,
+                str(bin_dir),
                 *(["--no-cache"] if no_cache else []),
             ],
             cwd=install_root,
             timeout=timeout if timeout is not None else self.install_timeout,
             env={
                 **os.environ,
-                "CHROME_EXTENSIONS_DIR": str(bin_dir),
                 # Make node 22+ honor HTTP(S)_PROXY env vars when fetching
                 # extensions; ``undici``'s ``fetch`` does not consult them
                 # without this flag, which silently breaks downloads on any

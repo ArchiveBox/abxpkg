@@ -12,7 +12,7 @@ class TestGoGetProvider:
     def test_installer_binary_uses_go_version_override(self, test_machine):
         test_machine.require_tool("go")
 
-        provider = GoGetProvider(postinstall_scripts=True, min_release_age=0)
+        provider = GoGetProvider(postinstall_scripts=True, min_release_age=3)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
         assert installer is not None
@@ -160,7 +160,7 @@ class TestGoGetProvider:
                 bin_dir=temp_dir_path / "ambient-go/bin",
                 install_root=temp_dir_path / "ambient-go",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -181,7 +181,7 @@ class TestGoGetProvider:
                 bin_dir=gobin,
                 install_root=gopath,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -210,7 +210,7 @@ class TestGoGetProvider:
                 bin_dir=Path(temp_dir) / "go/bin",
                 install_root=Path(temp_dir) / "go",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -233,7 +233,7 @@ class TestGoGetProvider:
                 bin_dir=gobin,
                 install_root=gopath,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -249,7 +249,7 @@ class TestGoGetProvider:
                 bin_dir=gobin,
                 install_root=gopath,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -334,11 +334,11 @@ class TestGoGetProvider:
                         bin_dir=Path(temp_dir) / "go/bin",
                         install_root=Path(temp_dir) / "go",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={
                     "goget": {
                         "install_args": ["mvdan.cc/sh/v3/cmd/shfmt@latest"],
@@ -355,7 +355,7 @@ class TestGoGetProvider:
                 bin_dir=Path(temp_dir) / "go/bin",
                 install_root=Path(temp_dir) / "go",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shfmt": {
@@ -372,7 +372,7 @@ class TestGoGetProvider:
                 install_root=Path(temp_dir) / "go",
                 bin_dir=Path(temp_dir) / "go/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             # ``shfmt`` is the canonical "go-installable CLI" example —
             # the parent module is the unit ``go list -m -versions``

@@ -25,7 +25,7 @@ class TestBinary:
         binary = Binary(
             name="python",
             binproviders=[
-                EnvProvider(postinstall_scripts=True, min_release_age=0),
+                EnvProvider(postinstall_scripts=True, min_release_age=3),
             ],
         ).load(no_cache=True)
 
@@ -55,14 +55,14 @@ class TestBinary:
             pip_provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             binary = Binary(
                 name="black",
                 binproviders=[env_provider, pip_provider],
                 overrides={"pip": {"install_args": ["black"]}},
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             overridden_provider = binary.get_binprovider("pip")
@@ -118,11 +118,11 @@ class TestBinary:
         binary = Binary(
             name="python",
             binproviders=[
-                EnvProvider(postinstall_scripts=True, min_release_age=0),
+                EnvProvider(postinstall_scripts=True, min_release_age=3),
             ],
             min_version=SemVer("999.0.0"),
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
 
         with pytest.raises(BinaryLoadError):
@@ -146,11 +146,11 @@ class TestBinary:
                     PipProvider(
                         install_root=venv_path,
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={"pip": {"install_args": ["black==23.1.0"]}},
             )
             old_installed = old_binary.install()
@@ -165,11 +165,11 @@ class TestBinary:
                     PipProvider(
                         install_root=venv_path,
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("24.0.0"),
             ).install()
             test_machine.assert_shallow_binary_loaded(
@@ -183,11 +183,11 @@ class TestBinary:
                     PipProvider(
                         install_root=venv_path,
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("24.0.0"),
             ).update()
             test_machine.assert_shallow_binary_loaded(
@@ -204,10 +204,10 @@ class TestBinary:
         binary = Binary(
             name="python",
             binproviders=[
-                EnvProvider(postinstall_scripts=True, min_release_age=0),
+                EnvProvider(postinstall_scripts=True, min_release_age=3),
             ],
             postinstall_scripts=True,
-            min_release_age=0,
+            min_release_age=3,
         )
 
         assert binary.install(binproviders=[]) == binary
@@ -231,7 +231,7 @@ class TestBinary:
                 name="black",
                 binproviders=[provider],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={"pip": {"install_args": ["black==23.1.0"]}},
             )
 
@@ -251,7 +251,7 @@ class TestBinary:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("24.0.0"),
             ).install()
             test_machine.assert_shallow_binary_loaded(
@@ -275,7 +275,7 @@ class TestBinary:
                 name="black",
                 binproviders=providers,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = binary.install()
@@ -292,13 +292,13 @@ class TestBinary:
             provider = PipProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             binary = Binary(
                 name="black",
                 binproviders=[provider],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = binary.install(dry_run=True)
@@ -326,11 +326,11 @@ class TestBinary:
                     PipProvider(
                         install_root=venv_path,
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={"pip": {"install_args": ["black==23.1.0"]}},
             )
             old_installed = old_binary.install()
@@ -342,11 +342,11 @@ class TestBinary:
                     PipProvider(
                         install_root=venv_path,
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 min_version=SemVer("24.0.0"),
             )
             dry_installed = binary.install(dry_run=True)
@@ -368,11 +368,11 @@ class TestBinary:
                     PipProvider(
                         install_root=Path(tmpdir) / "venv",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             assert installed.is_valid
@@ -386,7 +386,7 @@ class TestBinary:
             npm_provider = NpmProvider(
                 install_root=tmp_path / "npm",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = npm_provider.install("zx")
 
@@ -399,12 +399,12 @@ class TestBinary:
                     UvProvider(
                         install_root=tmp_path / "uv",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                     npm_provider,
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             removed = binary.uninstall()
@@ -433,7 +433,7 @@ class TestBinary:
             installed = binary.install(
                 dry_run=False,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             test_machine.assert_shallow_binary_loaded(installed)

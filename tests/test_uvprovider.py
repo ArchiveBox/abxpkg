@@ -22,7 +22,7 @@ class TestUvProvider:
                 provider = UvProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
 
                 installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -48,7 +48,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -68,7 +68,7 @@ class TestUvProvider:
                 reloaded_provider = UvProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 cached_installer = reloaded_provider.INSTALLER_BINARY()
             finally:
@@ -84,7 +84,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = provider.install("saws")
 
@@ -203,7 +203,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=install_root,
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"imagesize": {"install_args": ["imagesize>=2.0.0"]}},
             )
@@ -225,7 +225,7 @@ class TestUvProvider:
             ambient_provider = UvProvider(
                 install_root=temp_dir_path / "ambient-venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"cowsay": {"install_args": ["cowsay==6.0"]}},
             )
@@ -240,7 +240,7 @@ class TestUvProvider:
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"cowsay": {"install_args": ["cowsay==6.1"]}},
             )
@@ -274,7 +274,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=tmp_path / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
 
             installed = provider.install("cowsay")
@@ -288,7 +288,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed, _ = test_machine.exercise_provider_lifecycle(
                 provider,
@@ -308,7 +308,7 @@ class TestUvProvider:
             old_provider = UvProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={"black": {"install_args": ["black==23.1.0"]}},
             )
@@ -322,7 +322,7 @@ class TestUvProvider:
             upgraded = UvProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).install("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 upgraded,
@@ -336,7 +336,7 @@ class TestUvProvider:
             updated = UvProvider(
                 install_root=venv_path,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).update("black", min_version=SemVer("24.0.0"))
             test_machine.assert_shallow_binary_loaded(
                 updated,
@@ -359,12 +359,12 @@ class TestUvProvider:
                 strict_provider.install("cowsay")
             test_machine.assert_provider_missing(strict_provider, "cowsay")
 
-            direct_override = strict_provider.install("cowsay", min_release_age=0)
+            direct_override = strict_provider.install("cowsay", min_release_age=3)
             test_machine.assert_shallow_binary_loaded(
                 direct_override,
                 assert_version_command=False,
             )
-            assert strict_provider.uninstall("cowsay", min_release_age=0)
+            assert strict_provider.uninstall("cowsay", min_release_age=3)
 
             binary = Binary(
                 name="cowsay",
@@ -376,7 +376,7 @@ class TestUvProvider:
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(
@@ -392,7 +392,7 @@ class TestUvProvider:
             strict_provider = UvProvider(
                 install_root=Path(tmpdir) / "strict-venv",
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             assert strict_provider.supports_postinstall_disable("install") is True
 
@@ -418,11 +418,11 @@ class TestUvProvider:
                     UvProvider(
                         install_root=Path(tmpdir) / "binary-venv",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(
@@ -436,11 +436,11 @@ class TestUvProvider:
                     UvProvider(
                         install_root=Path(tmpdir) / "failing-venv",
                         postinstall_scripts=False,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=False,
-                min_release_age=0,
+                min_release_age=3,
             )
             with pytest.raises(BinaryInstallError):
                 failing_binary.install()
@@ -481,11 +481,11 @@ class TestUvProvider:
                     UvProvider(
                         install_root=Path(temp_dir) / "venv",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_binary_lifecycle(
                 binary,
@@ -497,7 +497,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=Path(temp_dir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.exercise_provider_dry_run(provider, bin_name="cowsay")
             # dry_run must not have actually installed anything into the venv.
@@ -516,7 +516,7 @@ class TestUvProvider:
                 "cowsay",
                 dry_run=False,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             test_machine.assert_shallow_binary_loaded(
                 installed,
@@ -538,7 +538,7 @@ class TestUvProvider:
                     install_root=None,
                     bin_dir=tool_bin_dir,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
 
                 installed = provider.install("cowsay")
@@ -577,7 +577,7 @@ class TestUvProvider:
                 provider = UvProvider(
                     install_root=None,
                     postinstall_scripts=True,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
 
                 installed = provider.install("cowsay")
@@ -617,7 +617,7 @@ class TestUvProvider:
                 provider = UvProvider(
                     install_root=Path(tmpdir) / "venv",
                     postinstall_scripts=False,
-                    min_release_age=0,
+                    min_release_age=3,
                 )
                 installed = provider.install("cowsay")
                 assert installed is not None
@@ -646,7 +646,7 @@ class TestUvProvider:
             provider = UvProvider(
                 install_root=Path(tmpdir) / "venv",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("black")
             assert len(results) == 1

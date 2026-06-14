@@ -120,7 +120,7 @@ class TestDockerProvider:
             ambient_provider = DockerProvider(
                 bin_dir=temp_dir_path / "ambient-docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
@@ -134,7 +134,7 @@ class TestDockerProvider:
                 PATH=str(ambient_provider.bin_dir),
                 bin_dir=docker_shim_dir,
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
@@ -161,7 +161,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
@@ -179,7 +179,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
@@ -200,7 +200,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:latest"]},
@@ -221,7 +221,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             image_ref = "koalaman/shellcheck:latest"
             calls: list[list[str]] = []
@@ -330,11 +330,11 @@ class TestDockerProvider:
                     DockerProvider(
                         bin_dir=Path(temp_dir) / "docker/bin",
                         postinstall_scripts=True,
-                        min_release_age=0,
+                        min_release_age=3,
                     ),
                 ],
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
                 overrides={
                     "docker": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
                 },
@@ -348,7 +348,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             ).get_provider_with_overrides(
                 overrides={
                     "shellcheck": {"install_args": ["koalaman/shellcheck:v0.10.0"]},
@@ -362,7 +362,7 @@ class TestDockerProvider:
             provider = DockerProvider(
                 bin_dir=Path(temp_dir) / "docker/bin",
                 postinstall_scripts=True,
-                min_release_age=0,
+                min_release_age=3,
             )
             results = provider.search("koalaman/shellcheck")
             assert results, (

@@ -330,7 +330,7 @@ class TestMachine:
             assert after is None
 
     def pick_missing_brew_formula(self) -> str:
-        provider = BrewProvider(min_release_age=0)
+        provider = BrewProvider(min_release_age=3)
         for formula in ("hello", "tree", "rename", "jq", "watch", "fzy"):
             if provider.load(formula, quiet=True, no_cache=True) is not None:
                 continue
@@ -361,7 +361,7 @@ class TestMachine:
         )
 
     def pick_missing_apt_package(self) -> str:
-        provider = AptProvider(min_release_age=0)
+        provider = AptProvider(min_release_age=3)
         for package in ("tree", "rename", "jq", "tmux", "screen"):
             if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
@@ -379,7 +379,7 @@ class TestMachine:
         )
 
     def pick_missing_gem_package(self) -> str:
-        provider = GemProvider(min_release_age=0)
+        provider = GemProvider(min_release_age=3)
         for package in ("lolcat", "cowsay"):
             if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
