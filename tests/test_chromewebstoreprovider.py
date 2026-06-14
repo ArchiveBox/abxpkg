@@ -23,6 +23,7 @@ def assert_extension_binary_loaded(loaded) -> None:
     assert loaded.loaded_abspath is not None
     assert loaded.loaded_abspath.name == "manifest.json"
     assert loaded.loaded_abspath.exists()
+    assert not (loaded.loaded_abspath.parent / "_metadata").exists()
     assert loaded.loaded_version is not None
     assert loaded.loaded_sha256 is not None
 
