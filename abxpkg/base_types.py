@@ -3,6 +3,7 @@ __package__ = "abxpkg"
 import inspect
 import os
 import shutil
+import tempfile
 
 from pathlib import Path
 from typing import Any, Annotated
@@ -54,6 +55,22 @@ def abxpkg_cache_dir_default(provider_name: str) -> Path | None:
     if lib_dir:
         return Path(lib_dir).expanduser().resolve() / "cache" / provider_name
     return None
+
+
+def abxpkg_ephemeral_cache_home_default() -> Path:
+    """Resolve the stable cache root used for explicit no-cache operations."""
+    base = os.environ.get("ABXPKG_TMP_CACHE_DIR", "").strip()
+    if base:
+        return Path(base).expanduser().resolve()
+    return Path(tempfile.gettempdir()) / f"abxpkg-cache-{os.getuid()}"
+
+
+def abxpkg_ephemeral_cache_dir_default(provider_name: str) -> Path:
+    """Resolve a stable per-process cache dir outside ``ABXPKG_LIB_DIR``."""
+    specific = os.environ.get(f"ABXPKG_{provider_name.upper()}_CACHE_DIR", "").strip()
+    if specific:
+        return Path(specific).expanduser().resolve()
+    return abxpkg_ephemeral_cache_home_default() / provider_name
 
 
 def validate_binprovider_name(name: str) -> str:

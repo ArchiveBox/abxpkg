@@ -22,6 +22,7 @@ from .base_types import (
     InstallArgs,
     HostBinPath,
     abxpkg_cache_dir_default,
+    abxpkg_ephemeral_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
 )
@@ -83,7 +84,22 @@ class NpmProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return npm's shared package cache dir used for install/update mutations."""
+        if env_flag_is_true("ABXPKG_NO_CACHE"):
+            return abxpkg_ephemeral_cache_dir_default("npm")
         return abxpkg_cache_dir_default("npm") or Path(USER_CACHE_PATH)
+
+    def _cache_dir(self, no_cache: bool = False) -> Path:
+        if no_cache:
+            return abxpkg_ephemeral_cache_dir_default("npm")
+        return self.cache_dir
+
+    def _cache_arg(self, no_cache: bool = False) -> str:
+        cache_dir = self._cache_dir(no_cache)
+        return (
+            "--no-cache"
+            if not self._ensure_writable_cache_dir(cache_dir)
+            else f"--cache={cache_dir}"
+        )
 
     def get_cache_info(
         self,
@@ -312,7 +328,8 @@ class NpmProvider(BinProvider):
                 preserve_root=True,
             )
 
-        self._ensure_writable_cache_dir(self.cache_dir)
+        if not no_cache:
+            self._ensure_writable_cache_dir(self.cache_dir)
 
         if self.bin_dir:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
@@ -326,11 +343,7 @@ class NpmProvider(BinProvider):
         min_release_age: float,
     ) -> list[str]:
         """Shared ``install``/``update`` CLI args (security flags + prefix)."""
-        resolved_cache_arg = cache_arg or (
-            "--no-cache"
-            if not self._ensure_writable_cache_dir(self.cache_dir)
-            else f"--cache={self.cache_dir}"
-        )
+        resolved_cache_arg = cache_arg or self._cache_arg()
         explicit_args = [
             "--force",
             "--no-audit",
@@ -506,6 +519,7 @@ class NpmProvider(BinProvider):
 
         mutation_args = self._build_mutation_args(
             install_args,
+            cache_arg=self._cache_arg(no_cache),
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
@@ -569,6 +583,7 @@ class NpmProvider(BinProvider):
 
         mutation_args = self._build_mutation_args(
             install_args,
+            cache_arg=self._cache_arg(no_cache),
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
@@ -613,11 +628,7 @@ class NpmProvider(BinProvider):
         if self._install_args_have_option(install_args, "--ignore-scripts"):
             postinstall_scripts = False
 
-        cache_arg = (
-            "--no-cache"
-            if not self._ensure_writable_cache_dir(self.cache_dir)
-            else f"--cache={self.cache_dir}"
-        )
+        cache_arg = self._cache_arg(no_cache)
         explicit_args = [
             "--force",
             "--no-audit",
@@ -691,7 +702,13 @@ class NpmProvider(BinProvider):
             package_info = json.loads(
                 self.exec(
                     bin_name=npm_abspath,
-                    cmd=["show", "--json", main_package, "bin"],
+                    cmd=[
+                        "show",
+                        self._cache_arg(no_cache),
+                        "--json",
+                        main_package,
+                        "bin",
+                    ],
                     timeout=self.version_timeout,
                     quiet=True,
                 ).stdout.strip(),
@@ -771,6 +788,7 @@ class NpmProvider(BinProvider):
                 bin_name=npm_abspath,
                 cmd=[
                     "list",
+                    self._cache_arg(no_cache),
                     f"--prefix={self.install_root}"
                     if self.install_root
                     else "--global",

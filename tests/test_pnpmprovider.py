@@ -653,6 +653,42 @@ class TestPnpmProvider:
                 else:
                     os.environ["PNPM_HOME"] = previous
 
+    def test_no_cache_install_does_not_create_managed_store(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lib_dir = Path(temp_dir) / "lib"
+            install_root = lib_dir / "pnpm" / "packages" / "zx"
+            previous_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+            previous_xdg_cache_home = os.environ.get("XDG_CACHE_HOME")
+            os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+            os.environ["XDG_CACHE_HOME"] = str(lib_dir / "cache")
+            try:
+                provider = PnpmProvider(
+                    install_root=install_root,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                )
+                installed = provider.install("zx", no_cache=True)
+            finally:
+                if previous_lib_dir is None:
+                    os.environ.pop("ABXPKG_LIB_DIR", None)
+                else:
+                    os.environ["ABXPKG_LIB_DIR"] = previous_lib_dir
+                if previous_xdg_cache_home is None:
+                    os.environ.pop("XDG_CACHE_HOME", None)
+                else:
+                    os.environ["XDG_CACHE_HOME"] = previous_xdg_cache_home
+
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.resolve().is_relative_to(
+                install_root.resolve(),
+            )
+            assert not (lib_dir / "cache" / "pnpm").exists()
+
     def test_min_release_age_pins_to_older_version_when_strict(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PnpmProvider(
