@@ -8,6 +8,8 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from .base_types import is_forbidden_convenience_lib_bin
+
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 
@@ -23,7 +25,11 @@ class SupportsExecEnv(Protocol):
 
 
 def _split_path(path_value: str | None) -> list[str]:
-    return [entry for entry in str(path_value or "").split(":") if entry]
+    return [
+        entry
+        for entry in str(path_value or "").split(os.pathsep)
+        if entry and not is_forbidden_convenience_lib_bin(entry)
+    ]
 
 
 def apply_exec_env(

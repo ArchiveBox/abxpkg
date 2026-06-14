@@ -28,7 +28,7 @@
       "default": "",
       "description": "Base crawl directory for per-crawl hook output"
     },
-    "LIB_DIR": {
+    "ABXPKG_LIB_DIR": {
       "type": "string",
       "default": "",
       "description": "Shared tools and binary installation root"
@@ -83,26 +83,6 @@
       "type": "string",
       "default": "",
       "description": "Optional V8 coverage output directory for Node.js hooks"
-    },
-    "CHROME_BINARY": {
-      "type": "string",
-      "default": "",
-      "description": "Resolved Chromium/Chrome binary path shared across plugins"
-    },
-    "CHROME_USER_DATA_DIR": {
-      "type": "string",
-      "default": "",
-      "description": "Chrome user data directory for persistent browser state"
-    },
-    "CHROME_DOWNLOADS_DIR": {
-      "type": "string",
-      "default": "",
-      "description": "Chrome downloads directory shared by browser plugins"
-    },
-    "CHROME_EXTENSIONS_DIR": {
-      "type": "string",
-      "default": "",
-      "description": "Chrome extensions directory shared by browser plugins"
     }
   }
 }

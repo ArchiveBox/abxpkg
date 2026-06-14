@@ -21,10 +21,9 @@ from rich.text import Text
 from rich.theme import Theme
 
 from . import ALL_PROVIDER_NAMES, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
-from .base_types import DEFAULT_LIB_DIR
+from .base_types import DEFAULT_ABXPKG_LIB_DIR
 from .binprovider import DEFAULT_ENV_PATH, BinProvider, HandlerDict, env_flag_is_true
 from .semver import SemVer
-from .config import load_derived_cache
 from .exceptions import ABXPkgError
 from .logging import (
     RICH_INSTALLED,
@@ -250,12 +249,12 @@ def resolve_lib_dir(raw_value: str | Path | None) -> Path:
     raw_str = raw_value if isinstance(raw_value, str) else None
     if raw_str is not None and _none_or_stripped(raw_str) is None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
-        return DEFAULT_LIB_DIR.expanduser().resolve()
+        return DEFAULT_ABXPKG_LIB_DIR.expanduser().resolve()
     if env_value is not None and _none_or_stripped(env_value) is None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
-        return DEFAULT_LIB_DIR.expanduser().resolve()
+        return DEFAULT_ABXPKG_LIB_DIR.expanduser().resolve()
 
-    lib_dir = Path(raw_value or _none_or_stripped(env_value) or DEFAULT_LIB_DIR)
+    lib_dir = Path(raw_value or _none_or_stripped(env_value) or DEFAULT_ABXPKG_LIB_DIR)
     resolved = lib_dir.expanduser().resolve()
     os.environ["ABXPKG_LIB_DIR"] = str(resolved)
     return resolved
@@ -731,98 +730,6 @@ def format_error(err: Exception) -> str:
     return format_exception_with_output(err)
 
 
-def cached_binaries(
-    options: CliOptions,
-    names: tuple[str, ...] = (),
-    providers: Iterable[BinProvider] | None = None,
-) -> list[tuple[str, str, str, Path, str, str]]:
-    records: list[tuple[str, str, str, Path, str, str]] = []
-    selected_names = set(names)
-    provider_instances = tuple(
-        providers
-        if providers is not None
-        else build_providers(
-            options.provider_names,
-            dry_run=False,
-            install_root=options.install_root,
-            bin_dir=options.bin_dir,
-            euid=options.euid,
-            install_timeout=options.install_timeout,
-            version_timeout=options.version_timeout,
-        ),
-    )
-    for provider in provider_instances:
-        provider_name = provider.name
-        derived_env_path = provider.derived_env_path
-        if derived_env_path is None or not derived_env_path.is_file():
-            continue
-        cache = load_derived_cache(derived_env_path)
-        installer_bin = cast(
-            str,
-            type(provider).model_fields["INSTALLER_BIN"].default,
-        )
-        for cache_key, record in sorted(cache.items()):
-            if not isinstance(record, dict):
-                continue
-
-            cached_provider_name = record.get("provider_name")
-            cached_bin_name = record.get("bin_name")
-            cached_abspath = record.get("abspath")
-            if (
-                not isinstance(cached_provider_name, str)
-                or not isinstance(cached_bin_name, str)
-                or not isinstance(cached_abspath, str)
-            ):
-                try:
-                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
-                        cache_key,
-                    )
-                except Exception:
-                    continue
-            if (
-                cached_provider_name != provider_name
-                or not isinstance(cached_bin_name, str)
-                or not isinstance(cached_abspath, str)
-            ):
-                continue
-            if names:
-                if provider_name in selected_names:
-                    pass
-                elif cached_bin_name == installer_bin:
-                    continue
-                elif cached_bin_name not in selected_names:
-                    continue
-
-            version = record.get("loaded_version")
-            resolved_provider_name = record.get("resolved_provider_name")
-            cache_kind = record.get("cache_kind")
-            if not isinstance(version, str):
-                continue
-            if not isinstance(resolved_provider_name, str):
-                resolved_provider_name = provider_name
-            if not isinstance(cache_kind, str):
-                cache_kind = (
-                    "dependency" if cached_bin_name == installer_bin else "binary"
-                )
-
-            abspath_path = Path(cached_abspath)
-            if not abspath_path.exists():
-                continue
-
-            records.append(
-                (
-                    provider_name,
-                    resolved_provider_name,
-                    cached_bin_name,
-                    abspath_path,
-                    version,
-                    cache_kind,
-                ),
-            )
-
-    return records
-
-
 def list_cached_binaries(
     options: CliOptions,
     names: tuple[str, ...] = (),
@@ -842,30 +749,37 @@ def list_cached_binaries(
     binary_lines: list[str] = []
     seen_installer_lines: set[str] = set()
     seen_binary_lines: set[str] = set()
-    for (
-        _cache_owner,
-        resolved_provider_name,
-        _bin_name,
-        abspath,
-        version,
-        _cache_kind,
-    ) in cached_binaries(options, names, providers=providers):
-        line = format_loaded_binary_line(
-            version,
-            abspath,
-            resolved_provider_name,
-            _bin_name,
-        )
-        installer_bin = cast(
-            str,
-            PROVIDER_CLASS_BY_NAME[_cache_owner].model_fields["INSTALLER_BIN"].default,
-        )
-        if _bin_name == installer_bin:
+    selected_names = set(names)
+    for provider in providers:
+        provider_selected = provider.name in selected_names
+        for binary in provider.depends_on_binaries():
+            if names and not provider_selected:
+                continue
+            if binary.loaded_abspath is None or binary.loaded_version is None:
+                continue
+            resolved_provider = binary.loaded_binprovider or provider
+            line = format_loaded_binary_line(
+                binary.loaded_version,
+                binary.loaded_abspath,
+                resolved_provider.name,
+                binary.name,
+            )
             if line in seen_installer_lines:
                 continue
             seen_installer_lines.add(line)
             installer_lines.append(line)
-        else:
+        for binary in provider.installed_binaries():
+            if names and not (provider_selected or binary.name in selected_names):
+                continue
+            if binary.loaded_abspath is None or binary.loaded_version is None:
+                continue
+            resolved_provider = binary.loaded_binprovider or provider
+            line = format_loaded_binary_line(
+                binary.loaded_version,
+                binary.loaded_abspath,
+                resolved_provider.name,
+                binary.name,
+            )
             if line in seen_binary_lines or line in seen_installer_lines:
                 continue
             seen_binary_lines.add(line)

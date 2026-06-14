@@ -10,7 +10,7 @@ from typing import Any, Self
 from pydantic import Field, TypeAdapter, model_validator
 
 from .base_types import (
-    DEFAULT_LIB_DIR,
+    DEFAULT_ABXPKG_LIB_DIR,
     BinName,
     BinProviderName,
     HostBinPath,
@@ -30,7 +30,7 @@ from .logging import format_subprocess_output
 
 # Ultimate fallback when neither the constructor arg nor
 # ``ABXPKG_BASH_ROOT`` nor ``ABXPKG_LIB_DIR`` is set.
-DEFAULT_BASH_ROOT = DEFAULT_LIB_DIR / "bash"
+DEFAULT_BASH_ROOT = DEFAULT_ABXPKG_LIB_DIR / "bash"
 
 
 class BashProvider(EnvProvider):

@@ -1213,7 +1213,7 @@ async function installChromium(options = {}) {
  * Install puppeteer-core npm package.
  *
  * @param {Object} options - Install options
- * @param {string} [options.npmPrefix] - npm prefix directory (default: LIB_DIR/npm)
+ * @param {string} [options.npmPrefix] - npm prefix directory (default: ABXPKG_LIB_DIR/npm)
  * @param {number} [options.timeout=60000] - Timeout in milliseconds
  * @returns {Promise<Object>} - {success, path, error}
  */
@@ -1964,13 +1964,13 @@ function getExtensionTargets(browser) {
  * Resolution order matters because tests and runtime callers may override the
  * browser at the environment layer:
  * 1. `CHROME_BINARY`, if explicitly provided at runtime
- * 2. installs exposed under `LIB_DIR`
+ * 2. installs exposed under `ABXPKG_LIB_DIR`
  * 3. Puppeteer cache locations
  * 4. system Chromium locations
  *
  * This helper is intentionally Chromium-oriented. It should not guess at
  * unrelated branded browsers or `/Applications/*` installs when a runtime
- * override or `LIB_DIR` browser is expected to be authoritative.
+ * override or `ABXPKG_LIB_DIR` browser is expected to be authoritative.
  *
  * @returns {string|null} - Absolute path to browser binary or null if not found
  */
@@ -2064,8 +2064,8 @@ function findChromium() {
         return null;
     };
 
-    // 3. Search LIB_DIR for hook-installed Chromium
-    const libDir = getEnv('LIB_DIR');
+    // 3. Search ABXPKG_LIB_DIR for hook-installed Chromium
+    const libDir = getEnv('ABXPKG_LIB_DIR');
     if (libDir) {
         const libCandidates = [
             path.join(libDir, 'chrome-linux', 'chrome'),
@@ -2074,7 +2074,7 @@ function findChromium() {
         for (const c of libCandidates) {
             if (validateBinary(c)) return c;
         }
-        // Also search puppeteer cache under LIB_DIR
+        // Also search puppeteer cache under ABXPKG_LIB_DIR
         const libPuppeteerDirs = [
             path.join(libDir, 'puppeteer', 'chromium'),
             path.join(libDir, 'puppeteer', 'chrome'),
@@ -2134,7 +2134,7 @@ function findAnyChromiumBinary() {
  *
  * Path is derived from environment variables in this priority:
  * 1. CHROME_EXTENSIONS_DIR (explicit override)
- * 2. LIB_DIR/chromewebstore/extensions (provider-managed default)
+ * 2. ABXPKG_LIB_DIR/chromewebstore/extensions (provider-managed default)
  *
  * @returns {string} - Absolute path to extensions directory
  */
@@ -2171,15 +2171,15 @@ function getMachineType() {
 }
 
 /**
- * Get LIB_DIR path for shared binaries and caches.
+ * Get ABXPKG_LIB_DIR path for shared binaries and caches.
  * Returns the same platform user-config default used by abxpkg/archivebox if
- * LIB_DIR is unset.
+ * ABXPKG_LIB_DIR is unset.
  *
  * @returns {string} - Absolute path to lib directory
  */
 function getLibDir() {
-    if (process.env.LIB_DIR) {
-        return path.resolve(process.env.LIB_DIR);
+    if (process.env.ABXPKG_LIB_DIR) {
+        return path.resolve(process.env.ABXPKG_LIB_DIR);
     }
     return path.resolve(path.join(getPlatformUserConfigDir(), 'lib'));
 }
@@ -2204,7 +2204,7 @@ function getNodeModulesDir() {
  * This mirrors the runtime path layout closely enough that test helpers can
  * exercise the same launch/session code without re-implementing the path
  * calculation rules. Python should prefer this instead of reconstructing
- * `LIB_DIR`, `NODE_MODULES_DIR`, `CHROME_EXTENSIONS_DIR`, etc. on its own.
+ * `ABXPKG_LIB_DIR`, `NODE_MODULES_DIR`, `CHROME_EXTENSIONS_DIR`, etc. on its own.
  *
  * @returns {Object} - Object with all test environment paths
  */
@@ -2221,7 +2221,7 @@ function getTestEnv() {
         PERSONAS_DIR: getPersonasDir(),
         ACTIVE_PERSONA: loadConfig(path.join(__dirname, 'config.json')).ACTIVE_PERSONA,
         MACHINE_TYPE: machineType,
-        LIB_DIR: libDir,
+        ABXPKG_LIB_DIR: libDir,
         NODE_MODULES_DIR: nodeModulesDir,
         NODE_PATH: nodeModulesDir,  // Node.js uses NODE_PATH for module resolution
         NPM_BIN_DIR: path.join(libDir, 'npm', '.bin'),
@@ -3994,7 +3994,7 @@ if (require.main === module) {
         console.log('  killZombieChrome          Clean up zombie Chrome processes');
         console.log('');
         console.log('  getMachineType            Get machine type (e.g., x86_64-linux)');
-        console.log('  getLibDir                 Get LIB_DIR path');
+        console.log('  getLibDir                 Get ABXPKG_LIB_DIR path');
         console.log('  getNodeModulesDir         Get NODE_MODULES_DIR path');
         console.log('  getExtensionsDir          Get Chrome extensions directory');
         console.log('  getTestEnv                Get all paths as JSON (for tests)');
@@ -4008,7 +4008,7 @@ if (require.main === module) {
         console.log('  SNAP_DIR                  Base snapshot directory');
         console.log('  CRAWL_DIR                 Base crawl directory');
         console.log('  PERSONAS_DIR              Personas directory');
-        console.log('  LIB_DIR                   Library directory (computed if not set)');
+        console.log('  ABXPKG_LIB_DIR                   Library directory (computed if not set)');
         console.log('  MACHINE_TYPE              Machine type override');
         console.log('  NODE_MODULES_DIR          Node modules directory');
         console.log('  CHROME_BINARY             Chrome binary path');

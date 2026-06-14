@@ -281,7 +281,7 @@ class PlaywrightProvider(BinProvider):
         path_entries: list[Path] = []
         if self.bin_dir is not None:
             path_entries.append(self.bin_dir)
-        # In hermetic mode (install_root outside LIB_DIR), add our own
+        # In hermetic mode (install_root outside ABXPKG_LIB_DIR), add our own
         # pnpm bin dir. When install_root lives outside ABXPKG_LIB_DIR, this provider adds it directly.
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (
@@ -453,7 +453,7 @@ class PlaywrightProvider(BinProvider):
 
         # Determine where to install the playwright package.
         # Hermetic: install_root/pnpm
-        # Managed LIB_DIR: LIB_DIR/pnpm/packages/playwright
+        # Managed ABXPKG_LIB_DIR: ABXPKG_LIB_DIR/pnpm/packages/playwright
         # Global: no install_root (PnpmProvider picks global mode)
         if (
             self.install_root is not None
@@ -510,7 +510,7 @@ class PlaywrightProvider(BinProvider):
         """
         # Find the playwright module to call executablePath().
         # Hermetic: install_root/pnpm/node_modules/playwright
-        # Managed LIB_DIR: LIB_DIR/pnpm/packages/playwright/node_modules/playwright
+        # Managed ABXPKG_LIB_DIR: ABXPKG_LIB_DIR/pnpm/packages/playwright/node_modules/playwright
         # Global: let node's require() find it
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         hermetic = self.install_root is not None and (

@@ -20,7 +20,7 @@ from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationErr
 # ``<lib>/npm``, ``<lib>/pip``, ``<lib>/gem``). Per-provider
 # ``ABXPKG_<NAME>_ROOT`` env vars override this for their own
 # provider; explicit constructor kwargs override both.
-DEFAULT_LIB_DIR: Path = user_config_path("abx") / "lib"
+DEFAULT_ABXPKG_LIB_DIR: Path = user_config_path("abx") / "lib"
 
 
 def abxpkg_install_root_default(provider_name: str) -> Path | None:
@@ -55,6 +55,32 @@ def abxpkg_cache_dir_default(provider_name: str) -> Path | None:
     if lib_dir:
         return Path(lib_dir).expanduser().resolve() / "cache" / provider_name
     return None
+
+
+def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
+    """True only for flat abxpkg lib ``bin`` convenience directories.
+
+    Install flows can create that directory for humans, but abxpkg must not
+    use it for PATH-based discovery or runtime execution. Provider-owned dirs
+    like ``ABXPKG_LIB_DIR/env/bin`` and ``ABXPKG_LIB_DIR/playwright/bin``
+    remain valid runtime paths.
+    """
+    if path is None:
+        return False
+    try:
+        candidate = Path(path).expanduser().resolve(strict=False)
+        lib_dirs = (
+            [Path(os.environ["ABXPKG_LIB_DIR"])]
+            if os.environ.get("ABXPKG_LIB_DIR")
+            else []
+        )
+        lib_dirs.append(DEFAULT_ABXPKG_LIB_DIR)
+        forbidden_dirs = {
+            lib_dir.expanduser().resolve(strict=False) / "bin" for lib_dir in lib_dirs
+        }
+    except Exception:
+        return False
+    return candidate in forbidden_dirs
 
 
 def abxpkg_ephemeral_cache_home_default() -> Path:
@@ -233,7 +259,11 @@ def bin_abspath(
     if PATH is None:
         PATH = os.environ.get("PATH", "/bin")
     if PATH:
-        PATH = str(PATH)
+        PATH = os.pathsep.join(
+            entry
+            for entry in str(PATH).split(os.pathsep)
+            if not is_forbidden_convenience_lib_bin(entry)
+        )
     else:
         return None
 
@@ -246,7 +276,9 @@ def bin_abspath(
         # print(bin_path_or_name, PATH.split(':'), binpath, 'GOPINGNGN')
         if not binpath:
             # some bins dont show up with shutil.which (e.g. django-admin.py)
-            for path in PATH.split(":"):
+            for path in PATH.split(os.pathsep):
+                if is_forbidden_convenience_lib_bin(path):
+                    continue
                 bin_dir = Path(path)
                 # print('BIN_DIR', bin_dir, bin_dir.is_dir())
                 if not (os.path.isdir(bin_dir) and os.access(bin_dir, os.R_OK)):
@@ -259,7 +291,10 @@ def bin_abspath(
 
             return None
         # print(binpath, PATH)
-        if str(Path(binpath).parent) not in PATH:
+        if (
+            is_forbidden_convenience_lib_bin(Path(binpath).parent)
+            or str(Path(binpath).parent) not in PATH
+        ):
             # print('WARNING, found bin but not in PATH', binpath, PATH)
             # found bin but it was outside our search $PATH
             return None
@@ -278,7 +313,11 @@ def bin_abspaths(
 ) -> list[HostBinPath]:
     assert bin_path_or_name
 
-    PATH = PATH or os.environ.get("PATH", "/bin")
+    PATH = os.pathsep.join(
+        entry
+        for entry in str(PATH or os.environ.get("PATH", "/bin")).split(os.pathsep)
+        if not is_forbidden_convenience_lib_bin(entry)
+    )
     abspaths = []
 
     if str(bin_path_or_name).startswith("/"):
@@ -286,7 +325,7 @@ def bin_abspaths(
         abspaths.append(Path(bin_path_or_name).expanduser().absolute())
     else:
         # not a path yet, get path using shutil.which
-        for path in PATH.split(":"):
+        for path in PATH.split(os.pathsep):
             binpath = shutil.which(bin_path_or_name, mode=os.X_OK, path=path)
             if binpath and str(Path(binpath).parent) in PATH:
                 abspaths.append(binpath)

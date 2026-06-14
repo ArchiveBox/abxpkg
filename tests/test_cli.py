@@ -156,9 +156,11 @@ def test_default_cli_sets_managed_lib_dir(monkeypatch):
     assert result.exit_code == 0
     assert captured["binary_name"] == "python"
     assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
-    assert captured["env_lib_dir"] == str(cli_module.DEFAULT_LIB_DIR.resolve())
-    assert captured["install_root"] == cli_module.DEFAULT_LIB_DIR.resolve() / "pip"
+    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
+    assert captured["env_lib_dir"] == str(cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve())
+    assert (
+        captured["install_root"] == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve() / "pip"
+    )
 
 
 def test_cli_lib_none_disables_managed_mode(monkeypatch, tmp_path):
@@ -185,7 +187,7 @@ def test_cli_lib_none_disables_managed_mode(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert captured["binary_name"] == "python"
     assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
     assert captured["env_lib_dir"] is None
     assert captured["install_root"] is None
 
@@ -214,7 +216,7 @@ def test_cli_global_flag_disables_managed_mode(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert captured["binary_name"] == "python"
     assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
     assert captured["env_lib_dir"] is None
     assert captured["install_root"] is None
 
@@ -241,7 +243,7 @@ def test_env_lib_none_disables_managed_mode(monkeypatch):
         version_timeout=None,
     )
 
-    assert options.lib_dir == cli_module.DEFAULT_LIB_DIR.resolve()
+    assert options.lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
     assert os.environ.get("ABXPKG_LIB_DIR") is None
     assert cli_module.build_providers(["pip"], dry_run=True)[0].install_root is None
 
@@ -2674,7 +2676,7 @@ def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
 
 
 def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
-    """No-dependency script headers should hit the fast path and use caller LIB_DIR."""
+    """No-dependency script headers should hit the fast path and use caller ABXPKG_LIB_DIR."""
 
     lib = tmp_path / "lib"
 
@@ -2699,7 +2701,7 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
         "print(json.dumps({\n"
         "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
         "    'overhead_ns': int(os.environ.get('ABXPKG_FAST_SCRIPT_OVERHEAD_NS', '-1')),\n"
-        "    'lib_dir': os.environ.get('LIB_DIR'),\n"
+        "    'lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'path': os.environ.get('PATH', ''),\n"
         "    'virtual_env': os.environ.get('VIRTUAL_ENV'),\n"
@@ -2715,7 +2717,7 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
         "python3",
         str(script),
         env_overrides={
-            "LIB_DIR": str(lib),
+            "ABXPKG_LIB_DIR": str(lib),
             "ABXPKG_BINPROVIDERS": "env,uv",
             "ACTIVE_PY_ENV": str(Path(sys.executable).parent.parent),
             "VIRTUAL_ENV": str(lib / "uv" / "packages" / "hook-runtime" / "venv"),
@@ -2787,7 +2789,7 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         "python3",
         str(script),
         env_overrides={
-            "LIB_DIR": str(lib),
+            "ABXPKG_LIB_DIR": str(lib),
             "ABXPKG_BINPROVIDERS": "env,uv",
         },
     )
@@ -2955,7 +2957,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "    errors.push('chromium looks like system binary: ' + chromiumPath);\n"
         "const chromiumReal = fs.realpathSync(chromiumPath);\n"
         "if (!chromiumReal.includes('/playwright/'))\n"
-        "    errors.push('chromium does not resolve into LIB_DIR/playwright: ' + chromiumPath + ' -> ' + chromiumReal);\n"
+        "    errors.push('chromium does not resolve into ABXPKG_LIB_DIR/playwright: ' + chromiumPath + ' -> ' + chromiumReal);\n"
         "\n"
         "// 4. chromium version >= 131\n"
         "try {\n"

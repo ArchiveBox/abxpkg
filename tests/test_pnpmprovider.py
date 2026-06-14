@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -43,10 +42,8 @@ class TestPnpmProvider:
         self,
         test_machine,
     ):
-        npm_binary = shutil.which("npm")
-        node_binary = shutil.which("node")
-        if not npm_binary or not node_binary:
-            pytest.skip("npm and node are required for pnpm self-bootstrap")
+        npm_binary = test_machine.require_tool("npm")
+        node_binary = test_machine.require_tool("node")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pnpm-root"
@@ -57,7 +54,14 @@ class TestPnpmProvider:
             os.environ["PATH"] = constrained_path
             os.environ["NPM_BINARY"] = npm_binary
             try:
-                assert shutil.which("pnpm", path=os.environ["PATH"]) is None
+                assert (
+                    PnpmProvider(PATH=os.environ["PATH"]).load(
+                        "pnpm",
+                        quiet=True,
+                        no_cache=True,
+                    )
+                    is None
+                )
                 provider = PnpmProvider(
                     install_root=install_root,
                     postinstall_scripts=True,
@@ -89,10 +93,8 @@ class TestPnpmProvider:
         self,
         test_machine,
     ):
-        npm_binary = shutil.which("npm")
-        node_binary = shutil.which("node")
-        if not npm_binary or not node_binary:
-            pytest.skip("npm and node are required for pnpm self-bootstrap")
+        npm_binary = test_machine.require_tool("npm")
+        test_machine.require_tool("node")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pnpm-root"

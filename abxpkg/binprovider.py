@@ -50,7 +50,7 @@ from pydantic import (
 
 from .semver import SemVer
 from .base_types import (
-    DEFAULT_LIB_DIR,
+    DEFAULT_ABXPKG_LIB_DIR,
     BinName,
     BinDirPath,
     HostBinPath,
@@ -68,6 +68,7 @@ from .base_types import (
     path_is_executable,
     path_is_script,
     abxpkg_install_root_default,
+    is_forbidden_convenience_lib_bin,
     bin_abspath,
     bin_abspaths,
     func_takes_args_or_kwargs,
@@ -147,18 +148,40 @@ def binprovider_cache(binprovider_method):
 
     @functools.wraps(binprovider_method)
     def cached_function(self, bin_name: BinName, **kwargs):
+        if kwargs.get("no_cache"):
+            return binprovider_method(self, bin_name, **kwargs)
+
         self._cache = self._cache or {}
         self._cache[method_name] = self._cache.get(method_name, {})
         method_cache = self._cache[method_name]
+        cache_key = (
+            str(bin_name),
+            tuple(
+                sorted(
+                    (
+                        key,
+                        str(value)
+                        if isinstance(value, Path)
+                        else tuple(value)
+                        if isinstance(value, (list, tuple))
+                        else repr(value)
+                        if isinstance(value, dict)
+                        else value,
+                    )
+                    for key, value in kwargs.items()
+                    if key not in {"no_cache", "quiet"}
+                ),
+            ),
+        )
 
-        if bin_name in method_cache and not kwargs.get("no_cache"):
+        if cache_key in method_cache:
             # print('USING CACHED VALUE:', f'{self.__class__.__name__}.{method_name}({bin_name}, {kwargs}) -> {method_cache[bin_name]}')
-            return method_cache[bin_name]
+            return method_cache[cache_key]
 
         return_value = binprovider_method(self, bin_name, **kwargs)
 
         if return_value and return_value not in NEVER_CACHE:
-            self._cache[method_name][bin_name] = return_value
+            self._cache[method_name][cache_key] = return_value
         return return_value
 
     cached_function.__name__ = f"{method_name}_cached"
@@ -1680,8 +1703,16 @@ class BinProvider(BaseModel):
         PATH: str | None = None,
         prepend: bool = False,
     ) -> PATHStr:
-        new_entries = [str(entry) for entry in entries if str(entry)]
-        existing_entries = [entry for entry in (PATH or "").split(":") if entry]
+        new_entries = [
+            str(entry)
+            for entry in entries
+            if str(entry) and not is_forbidden_convenience_lib_bin(entry)
+        ]
+        existing_entries = [
+            entry
+            for entry in (PATH or "").split(os.pathsep)
+            if entry and not is_forbidden_convenience_lib_bin(entry)
+        ]
         merged_entries = (
             [*new_entries, *existing_entries]
             if prepend
@@ -2858,7 +2889,7 @@ class EnvProvider(BinProvider):
     )
     install_root: Path | None = Field(
         default_factory=lambda: (
-            abxpkg_install_root_default("env") or (DEFAULT_LIB_DIR / "env")
+            abxpkg_install_root_default("env") or (DEFAULT_ABXPKG_LIB_DIR / "env")
         ),
     )
 
@@ -3030,14 +3061,46 @@ class EnvProvider(BinProvider):
         **context,
     ) -> "AbspathFuncReturnValue":
         bin_name_str = str(bin_name)
-        abspath = None
+
+        search_paths = []
+        for entry in str(self.PATH or "").split(os.pathsep):
+            if not entry:
+                continue
+            if self.bin_dir is not None and Path(entry) == self.bin_dir:
+                continue
+            search_paths.append(entry)
+
+        candidates: list[HostBinPath] = []
+        for abspath in bin_abspaths(bin_name_str, PATH=os.pathsep.join(search_paths)):
+            if self.bin_dir is not None and Path(abspath).parent == self.bin_dir:
+                continue
+            if abspath not in candidates:
+                candidates.append(abspath)
+
+        versioned_candidates: list[tuple[SemVer, HostBinPath]] = []
+        for abspath in candidates:
+            version = self.get_version(
+                bin_name_str,
+                abspath=abspath,
+                quiet=True,
+                no_cache=True,
+            )
+            if version is not None:
+                versioned_candidates.append((version, abspath))
+
+        if versioned_candidates:
+            _version, abspath = max(versioned_candidates, key=lambda item: item[0])
+            return self._link_loaded_binary(bin_name_str, abspath)
+
+        managed_abspath = None
         if self.bin_dir is not None:
-            abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
-        if not abspath:
-            abspath = bin_abspath(bin_name_str, PATH=self.PATH)
-        if not abspath:
+            managed_abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
+        if managed_abspath:
+            return managed_abspath
+
+        if not candidates:
             return None
-        return self._link_loaded_binary(bin_name_str, abspath)
+        return self._link_loaded_binary(bin_name_str, candidates[0])
 
     def supports_min_release_age(
         self,

@@ -5,6 +5,8 @@ import sys
 import time
 from typing import cast
 
+from .base_types import is_forbidden_convenience_lib_bin
+
 
 _OPTS_WITH_VALUES = {
     "--lib",
@@ -168,10 +170,16 @@ def _parse_fast_argv(argv: list[str]) -> tuple[dict[str, str], str, str, list[st
 
 
 def _prepend_path(env: dict[str, str], *paths: str) -> None:
-    existing = [part for part in env.get("PATH", "").split(os.pathsep) if part]
+    existing = [
+        part
+        for part in env.get("PATH", "").split(os.pathsep)
+        if part and not is_forbidden_convenience_lib_bin(part)
+    ]
     merged: list[str] = []
     seen: set[str] = set()
     for raw_path in [*(path for path in paths if os.path.exists(path)), *existing]:
+        if is_forbidden_convenience_lib_bin(raw_path):
+            continue
         if raw_path in seen:
             continue
         seen.add(raw_path)
@@ -260,10 +268,7 @@ def _apply_abxpkg_lib_env(
     binary_name: str,
 ) -> None:
     raw_lib = str(
-        options.get("--lib")
-        or env.get("ABXPKG_LIB_DIR")
-        or env.get("LIB_DIR")
-        or _default_lib_dir(),
+        options.get("--lib") or env.get("ABXPKG_LIB_DIR") or _default_lib_dir(),
     )
     lib_dir = os.path.realpath(os.path.expanduser(raw_lib))
     inherited_venvs = []
@@ -274,9 +279,6 @@ def _apply_abxpkg_lib_env(
         if inherited_venv not in inherited_venvs:
             inherited_venvs.append(inherited_venv)
     env["ABXPKG_LIB_DIR"] = lib_dir
-    if env.get("LIB_DIR"):
-        env["LIB_DIR"] = os.path.realpath(os.path.expanduser(env["LIB_DIR"]))
-
     providers = options.get("--binproviders") or env.get("ABXPKG_BINPROVIDERS", "")
     provider_names = {name.strip() for name in providers.split(",") if name.strip()}
     if not provider_names:

@@ -237,7 +237,7 @@ function getEnvArray(name, defaultValue = []) {
 }
 
 function getLibDir() {
-    const configured = (loadConfig(BASE_CONFIG_PATH).LIB_DIR || '').trim();
+    const configured = (loadConfig(BASE_CONFIG_PATH).ABXPKG_LIB_DIR || '').trim();
     if (configured) return path.resolve(configured);
     return path.resolve(path.join(getPlatformUserConfigDir(), 'lib'));
 }

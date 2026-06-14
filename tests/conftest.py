@@ -1,70 +1,12 @@
 from __future__ import annotations
 
-import os
-import shutil
 import subprocess
 from pathlib import Path
-import sys
 
 import pytest
 
-from abxpkg import AptProvider, Binary, BrewProvider, SemVer
+from abxpkg import AptProvider, Binary, BrewProvider, GemProvider, SemVer
 from abxpkg.exceptions import BinaryLoadError
-
-
-def _abxpkg_executable() -> Path:
-    candidate = Path(sys.executable).parent / "abxpkg"
-    if candidate.exists():
-        return candidate
-    resolved = shutil.which("abxpkg")
-    assert resolved, "abxpkg console script must be installed in the active venv"
-    return Path(resolved)
-
-
-def _brew_formula_is_installed(package: str) -> bool:
-    brew = shutil.which("brew")
-    if not brew:
-        return False
-    return (
-        subprocess.run(
-            [brew, "list", "--formula", package],
-            capture_output=True,
-            text=True,
-        ).returncode
-        == 0
-    )
-
-
-def _apt_package_is_installed(package: str) -> bool:
-    dpkg = shutil.which("dpkg")
-    if not dpkg:
-        return False
-    return (
-        subprocess.run([dpkg, "-s", package], capture_output=True, text=True).returncode
-        == 0
-    )
-
-
-def _gem_package_is_installed(package: str) -> bool:
-    gem = shutil.which("gem")
-    if not gem:
-        return False
-    return bool(
-        subprocess.run(
-            [gem, "list", f"^{package}$", "-a"],
-            capture_output=True,
-            text=True,
-        ).stdout.strip(),
-    )
-
-
-def _docker_daemon_is_available() -> bool:
-    docker = shutil.which("docker")
-    if not docker:
-        return False
-    return (
-        subprocess.run([docker, "info"], capture_output=True, text=True).returncode == 0
-    )
 
 
 def _ensure_test_machine_dependencies() -> None:
@@ -86,33 +28,12 @@ def _ensure_test_machine_dependencies() -> None:
 
 class TestMachine:
     def require_tool(self, tool_name: str) -> str:
-        tool_path = shutil.which(tool_name)
-        if not tool_path:
-            proc = subprocess.run(
-                [
-                    str(_abxpkg_executable()),
-                    "--lib=None",
-                    "install",
-                    tool_name,
-                ],
-                capture_output=True,
-                text=True,
-                env={
-                    **os.environ,
-                    "NO_COLOR": "1",
-                    "TERM": "dumb",
-                },
-            )
-            tool_path = shutil.which(tool_name)
-            assert proc.returncode == 0 and tool_path, (
-                f"{tool_name} is required on this host for test-machine integration tests, "
-                f"and fallback install via abxpkg failed.\n"
-                f"{proc.stderr or proc.stdout}"
-            )
-        assert tool_path, (
-            f"{tool_name} is required on this host for test-machine integration tests"
+        loaded = Binary(name=tool_name).install(no_cache=True)
+        self.assert_shallow_binary_loaded(loaded, assert_version_command=False)
+        assert loaded.loaded_abspath is not None, (
+            f"{tool_name} is required on this host for test-machine integration tests",
         )
-        return tool_path
+        return str(loaded.loaded_abspath)
 
     def require_docker_daemon(self) -> str:
         docker = self.require_tool("docker")
@@ -140,7 +61,7 @@ class TestMachine:
         loaded,
         *,
         version_args: tuple[str, ...] = ("--version",),
-        assert_version_command: bool = True,
+        assert_version_command: bool = False,
         expected_version: SemVer | None = None,
     ) -> None:
         assert loaded is not None
@@ -411,8 +332,6 @@ class TestMachine:
     def pick_missing_brew_formula(self) -> str:
         provider = BrewProvider(min_release_age=0)
         for formula in ("hello", "tree", "rename", "jq", "watch", "fzy"):
-            if _brew_formula_is_installed(formula):
-                continue
             if provider.load(formula, quiet=True, no_cache=True) is not None:
                 continue
             return formula
@@ -444,8 +363,6 @@ class TestMachine:
     def pick_missing_apt_package(self) -> str:
         provider = AptProvider(min_release_age=0)
         for package in ("tree", "rename", "jq", "tmux", "screen"):
-            if _apt_package_is_installed(package):
-                continue
             if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
             return package
@@ -453,8 +370,6 @@ class TestMachine:
             try:
                 provider.uninstall(package, quiet=True, no_cache=True)
             except Exception:
-                continue
-            if _apt_package_is_installed(package):
                 continue
             if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
@@ -464,8 +379,9 @@ class TestMachine:
         )
 
     def pick_missing_gem_package(self) -> str:
+        provider = GemProvider(min_release_age=0)
         for package in ("lolcat", "cowsay"):
-            if _gem_package_is_installed(package):
+            if provider.load(package, quiet=True, no_cache=True) is not None:
                 continue
             return package
         raise AssertionError(

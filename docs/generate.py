@@ -18,7 +18,7 @@ from pydantic.fields import PydanticUndefined
 
 import abxpkg
 from abxpkg.binprovider import DEFAULT_ENV_PATH, BinProvider
-from abxpkg.base_types import DEFAULT_LIB_DIR
+from abxpkg.base_types import DEFAULT_ABXPKG_LIB_DIR
 
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -727,7 +727,7 @@ def resolve_global_env_vars() -> list[dict[str, str]]:
     env_vars = copy.deepcopy(GLOBAL_ENV_VARS)
     resolved_defaults = {
         "ABXPKG_BINPROVIDERS": ",".join(abxpkg.DEFAULT_PROVIDER_NAMES),
-        "ABXPKG_LIB_DIR": normalize_doc_path(DEFAULT_LIB_DIR),
+        "ABXPKG_LIB_DIR": normalize_doc_path(DEFAULT_ABXPKG_LIB_DIR),
     }
     for env_var in env_vars:
         if env_var["name"] in resolved_defaults:
