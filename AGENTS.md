@@ -1,93 +1,64 @@
-# abxpkg Guide
+# abxpkg Agent Guide
 
-This is a python package and CLI tool to help install and run binary package dependencies from a variety 
-of providers (etc apt, brew, pip, npm, docker, env, bash script, etc.).
+`abxpkg` is the binary/package provider library and CLI for resolving, installing, updating, running, and inspecting runtime dependencies. Keep this repo on `main`.
 
-It provides nice safe pydantic type interfaces for `Binary`, `BinProvider`, `SemVer`, and more.
+## Shared Standards
 
-### Python API
+- Use `uv` and `uv run` for Python commands. Do not use system `python`, direct `.venv/bin/python`, or `pip` commands.
+- Prefer existing repo patterns, helper APIs, fixtures, scripts, and command surfaces.
+- Keep edits focused and minimal. Do not add wrappers, shims, aliases, or extra abstraction layers unless the current code path requires them.
+- Do not weaken assertions, skip tests, xfail tests, or accept flaky behavior.
+- No mocks, monkeypatches, fakes, simulated handlers, fake binaries, fake providers, fake install processes, or direct shortcuts around user-facing flows.
+- Tests and verification should use real CLI commands, real providers, real installs, real subprocesses, real package metadata, real files, and existing fixtures.
+- Assertions must verify real correctness: exit codes, binary paths, versions, provider state, installed metadata, filesystem contents, env output, and side effects.
+- Start behavior fixes with a red failing test when a test is requested or practical.
+- Trace root causes from observed behavior. Do not paper over failures with retries, wider timeouts, broad fallbacks, or looser assertions.
+- Read `README.md` for the full provider, CLI, Python API, config, and release surface.
 
-```python
-from abxpkg import Binary, apt, brew, env, BinProvider
-
-wget = env.load('wget') or apt.install('wget') or brew.install('wget')
-
-# or
-
-class WgetBinary(Binary):
-    name: str = 'wget'
-    binproviders: list[InstanceOf[BinProvider]] = [env, apt, brew]
-
-wget = WgetBinary().install()
-
-print(wget.abspath, wget.version, wget.is_valid)
-wget.update()
-wget.exec(cmd=['--version'])
-wget.uninstall()
-```
-
-### CLI
-
-```
-abxpkg --version
-abxpkg install --binproviders=env,apt,brew wget
-abxpkg load|install|update|uninstall|run [--flags...] [binary] [args...]
-
-# abx alias cli:
-abx wget --version    # just a thin wrapper around `abxpkg run --install [--flags...] [binary] [args...]`
-```
-
-also usable as a shebang in scripts similar to uv run -S, auto installs dependencies before running the script:
-```javascript
-#!/usr/bin/env abxpkg run --script node --abort-on-uncaught-exception
-// /// script
-// dependencies = [
-//    {name = "node", binproviders = ["env", "apt", "brew"], min_version: "22.0.0"},
-//    {name = "playwright", binproviders = ["playwright", "pnpm", "npm", "yarn"]},
-//    {name = "chromium", binproviders = ["env", "playwright", "puppeteer", "apt"], min_version: "146.0.0"},
-// ]
-// [tool.abxpkg]
-// ABXPKG_LIB_DIR=/tmp/abxlib
-// ABXPKG_MIN_RELEASE_AGE=14
-// ABXPKG_POSTINSTALL_SCRIPTS=False
-// ///
-
-import {playwright} from 'playwright';
-...
-```
-
-Read the `./README.md` and `./tests/` to understand the full API surface and behavior.
-
-## Runtime
-
-- always use `uv` and `uv run ...` never pip or `python ...` or `.venv/bin/python` directly.
-- lint and typecheck by running `uv run prek run --all-files` (it's fast and comprehensive), never use `py_compile`
-
-## Style
-
-- never create one-line helpers, aliases or compat/legacy/handling code, this is a greenfield codebase and we want clean, consistent UX
-- try to avoid inventing new layers of naming or introducing new concepts as much as possible, always reuse existing types and interfaces, and exact naming whenever possible
-- prefer flat inline logic even if it's slightly longer, avoid creating tons of `_helpers`, separate files, unnecessary aliases
-- keep LoC as low as possible, but don't skimp on comments and docstrings
-- make sure all mutable state fields on classes/models have comments explaining their lifecycle + how/why/when they get changed
-
-## Patterns
-
-- leverage pydantic v2 APIs and it's own runtime validation whenever possible, avoid writing manual validation/serialization logic whenever possible
-- binproviders much each own all of their own binprovider-specific logic, central files should have no knowledge or mention of any specific binproviders like apt/brew/pip/etc.
-- you should almost never run `shutil.which(...)` or `subprocess.call([...])` directly, always use `Binary.load() .abspath, .version, .is_valid, .exec(...), etc.`
-- make sure to update the README.md after any significant API surface change or new features. Try to update existing sections matching existing patterns, and never document legacy behavior or "what changed", only document the new behavior concisely (if even needed) in the best sections where it would fit in.
-
-## Tests
+## Development Setup
 
 ```bash
-uv run pytest -sx tests/
+uv sync
+uv run abxpkg --help
+uv run abxpkg version
 ```
 
-- make sure new changes are tested, but don't go overboard. prefer to extend existing tests or add to existing test files rather than 
-creating new superfluous/duplicative tests
-- NEVER mock, simulate, or fake behavior, binproviders, binaries, install processes or anything else, always use real live packages from real live binproviders, and use user-facing code to setup realistic e2e flows, then assert the writes and side effects are correct (the actual state, dont just check that attrs are present / no errors occurred)
-effects are correct.
-- NEVER skip tests in any environment other than apt on macos, that is the ONLY exception. 
-- assume ALL binproviders (other than apt on macos) are always available in the host environment (e.g. brew, pip, npm, docker, gem, etc. are ALL available in all environments), let it hard fail naturally if any are missing/broken. do not skip or disable those failing tests.
-- it's ok to modify the host environment / run all tests with live installs, even when install_root/lib_dir=None and some providers mutate global system packages
+## User-Facing Setup
+
+```bash
+uv tool install abxpkg
+abxpkg version
+```
+
+## Basic Usage
+
+```bash
+uv run abxpkg load wget
+uv run abxpkg install yt-dlp
+uv run abxpkg run wget --version
+uv run abxpkg env yt-dlp
+uv run abxpkg search chromium
+uv run abx yt-dlp --help
+```
+
+Python API:
+
+```python
+from abxpkg import Binary, env, apt, brew
+
+wget = env.load("wget") or apt.install("wget") or brew.install("wget")
+binary = Binary(name="wget", binproviders=[env, apt, brew]).install()
+print(binary.abspath, binary.version, binary.is_valid)
+```
+
+## Verification
+
+Use targeted tests and real providers:
+
+```bash
+uv run pytest tests/test_cli.py -q
+uv run pytest tests/test_chromewebstoreprovider.py -q
+uv run prek run --all-files
+```
+
+Provider-specific logic belongs in provider classes. Shared provider infrastructure should stay provider-agnostic.

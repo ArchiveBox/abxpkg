@@ -20,7 +20,7 @@ Stop distributing your apps via `curl | sh`! Instead you can bake package instal
 
 
 ```bash
-pip install abxpkg    # uv tool add abxpkg
+pip install abxpkg    # uv tool install abxpkg
 abxpkg --version
 ```
 
@@ -97,7 +97,7 @@ for binary in dependencies:
 ```bash
 pip install abxpkg
 # or
-uv tool add abxpkg
+uv tool install abxpkg
 ```
 
 ### CLI

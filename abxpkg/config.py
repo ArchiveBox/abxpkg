@@ -8,8 +8,6 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from .base_types import is_forbidden_convenience_lib_bin
-
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 
@@ -22,6 +20,38 @@ class SupportsExecEnv(Protocol):
 
     @property
     def ENV(self) -> dict[str, str]: ...
+
+
+def default_abxpkg_lib_dir() -> Path:
+    from platformdirs import user_config_path
+
+    return user_config_path("abx") / "lib"
+
+
+def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
+    """True only for flat abxpkg lib ``bin`` convenience directories.
+
+    Install flows can create that directory for humans, but abxpkg must not
+    use it for PATH-based discovery or runtime execution. Provider-owned dirs
+    like ``ABXPKG_LIB_DIR/env/bin`` and ``ABXPKG_LIB_DIR/playwright/bin``
+    remain valid runtime paths.
+    """
+    if path is None:
+        return False
+    try:
+        candidate = Path(path).expanduser().resolve(strict=False)
+        lib_dirs = (
+            [Path(os.environ["ABXPKG_LIB_DIR"])]
+            if os.environ.get("ABXPKG_LIB_DIR")
+            else []
+        )
+        lib_dirs.append(default_abxpkg_lib_dir())
+        forbidden_dirs = {
+            lib_dir.expanduser().resolve(strict=False) / "bin" for lib_dir in lib_dirs
+        }
+    except Exception:
+        return False
+    return candidate in forbidden_dirs
 
 
 def _split_path(path_value: str | None) -> list[str]:
@@ -75,7 +105,7 @@ def merge_exec_path(
             seen.add(entry)
             merged.append(entry)
 
-    return ":".join(merged)
+    return os.pathsep.join(merged)
 
 
 def build_exec_env(

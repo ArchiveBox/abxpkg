@@ -137,7 +137,8 @@ pythonVersion = "3.12"
 pythonPlatform = "Linux"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "README.md", "AGENTS.md", "skills", "docs"]
+addopts = ["--codeblocks"]
 markers = [
     "root_required: tests that require root privileges and run in the privileged live-integration job",
     "docker_required: tests that require a working Docker daemon and run in the Linux live-integration job",

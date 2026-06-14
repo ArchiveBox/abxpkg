@@ -418,10 +418,7 @@ class Binary(ShallowBinary):
         # logger.info("Loading %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
-        for binprovider in self.binproviders:
-            if binproviders and binprovider.name not in binproviders:
-                continue
-
+        for binprovider in self._binprovider_order(binproviders):
             provider = binprovider
             try:
                 provider = self.get_binprovider(

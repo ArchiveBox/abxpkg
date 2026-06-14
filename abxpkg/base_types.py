@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any, Annotated
 from collections.abc import Callable
 
-from platformdirs import user_config_path
-
 from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationError
+
+from .config import default_abxpkg_lib_dir, is_forbidden_convenience_lib_bin
 
 
 # Read once at import time. When set, providers that opt into
@@ -20,7 +20,7 @@ from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationErr
 # ``<lib>/npm``, ``<lib>/pip``, ``<lib>/gem``). Per-provider
 # ``ABXPKG_<NAME>_ROOT`` env vars override this for their own
 # provider; explicit constructor kwargs override both.
-DEFAULT_ABXPKG_LIB_DIR: Path = user_config_path("abx") / "lib"
+DEFAULT_ABXPKG_LIB_DIR: Path = default_abxpkg_lib_dir()
 
 
 def abxpkg_install_root_default(provider_name: str) -> Path | None:
@@ -55,32 +55,6 @@ def abxpkg_cache_dir_default(provider_name: str) -> Path | None:
     if lib_dir:
         return Path(lib_dir).expanduser().resolve() / "cache" / provider_name
     return None
-
-
-def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
-    """True only for flat abxpkg lib ``bin`` convenience directories.
-
-    Install flows can create that directory for humans, but abxpkg must not
-    use it for PATH-based discovery or runtime execution. Provider-owned dirs
-    like ``ABXPKG_LIB_DIR/env/bin`` and ``ABXPKG_LIB_DIR/playwright/bin``
-    remain valid runtime paths.
-    """
-    if path is None:
-        return False
-    try:
-        candidate = Path(path).expanduser().resolve(strict=False)
-        lib_dirs = (
-            [Path(os.environ["ABXPKG_LIB_DIR"])]
-            if os.environ.get("ABXPKG_LIB_DIR")
-            else []
-        )
-        lib_dirs.append(DEFAULT_ABXPKG_LIB_DIR)
-        forbidden_dirs = {
-            lib_dir.expanduser().resolve(strict=False) / "bin" for lib_dir in lib_dirs
-        }
-    except Exception:
-        return False
-    return candidate in forbidden_dirs
 
 
 def abxpkg_ephemeral_cache_home_default() -> Path:

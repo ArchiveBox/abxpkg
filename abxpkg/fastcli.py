@@ -5,7 +5,7 @@ import sys
 import time
 from typing import cast
 
-from .base_types import is_forbidden_convenience_lib_bin
+from .config import merge_exec_path
 
 
 _OPTS_WITH_VALUES = {
@@ -170,28 +170,14 @@ def _parse_fast_argv(argv: list[str]) -> tuple[dict[str, str], str, str, list[st
 
 
 def _prepend_path(env: dict[str, str], *paths: str) -> None:
-    existing = [
-        part
-        for part in env.get("PATH", "").split(os.pathsep)
-        if part and not is_forbidden_convenience_lib_bin(part)
-    ]
-    merged: list[str] = []
-    seen: set[str] = set()
-    for raw_path in [*(path for path in paths if os.path.exists(path)), *existing]:
-        if is_forbidden_convenience_lib_bin(raw_path):
-            continue
-        if raw_path in seen:
-            continue
-        seen.add(raw_path)
-        merged.append(raw_path)
-    env["PATH"] = os.pathsep.join(merged)
+    env["PATH"] = merge_exec_path(
+        os.pathsep.join(path for path in paths if os.path.exists(path)),
+        env.get("PATH", ""),
+    )
 
 
 def _append_env_path(env: dict[str, str], key: str, value: str) -> None:
-    value_str = value
-    existing = [part for part in env.get(key, "").split(os.pathsep) if part]
-    if value_str not in existing:
-        env[key] = os.pathsep.join([*existing, value_str]) if existing else value_str
+    env[key] = merge_exec_path(env.get(key, ""), value)
 
 
 def _venv_site_packages(venv_root: str) -> list[str]:
@@ -359,8 +345,11 @@ def try_fast_script_run(argv: list[str] | None = None) -> bool:
             else:
                 raise _Fallback
         if _is_python_binary(binary_name):
-            env.setdefault("ACTIVE_PY_BIN", sys.executable)
-            env.setdefault("ACTIVE_PY_ENV", sys.prefix)
+            # The fast path may be launched from a shell that already exports
+            # ACTIVE_PY_* for a different project. For in-process Python hooks,
+            # those inherited values are stale: the runtime is this interpreter.
+            env["ACTIVE_PY_BIN"] = sys.executable
+            env["ACTIVE_PY_ENV"] = sys.prefix
         _apply_abxpkg_lib_env(env, options, binary_name)
         active_py_bin = env.get("ACTIVE_PY_BIN")
         if active_py_bin and _is_python_binary(binary_name):
