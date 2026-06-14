@@ -259,10 +259,8 @@ class UvProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return uv's shared download/build cache dir."""
-        return Path(
-            os.environ.get("UV_CACHE_DIR")
-            or abxpkg_cache_dir_default("uv")
-            or USER_CACHE_PATH,
+        return abxpkg_cache_dir_default("uv") or Path(
+            os.environ.get("UV_CACHE_DIR") or USER_CACHE_PATH,
         )
 
     def _cache_args(self, *, no_cache: bool = False) -> list[str]:

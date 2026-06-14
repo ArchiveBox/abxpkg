@@ -407,7 +407,30 @@ class PnpmProvider(BinProvider):
     def _store_dir(self, no_cache: bool = False) -> Path:
         if not no_cache:
             return self.cache_dir
+        existing_store_dir = self._existing_store_dir()
+        if existing_store_dir is not None:
+            return existing_store_dir
         return abxpkg_ephemeral_cache_dir_default("pnpm")
+
+    def _existing_store_dir(self) -> Path | None:
+        """Return pnpm's recorded store for this install root, if one exists."""
+        if self.install_root is None:
+            return None
+        modules_yaml = self.install_root / "node_modules" / ".modules.yaml"
+        try:
+            text = modules_yaml.read_text(encoding="utf-8")
+            data = json.loads(text)
+            store_dir = data.get("storeDir") if isinstance(data, dict) else None
+            if isinstance(store_dir, str) and store_dir.strip():
+                return Path(store_dir).expanduser()
+            for line in text.splitlines():
+                key, separator, value = line.partition(":")
+                if separator and key.strip().strip("'\"") == "storeDir":
+                    store_dir = value.strip().strip("'\"")
+                    return Path(store_dir).expanduser() if store_dir else None
+        except (OSError, json.JSONDecodeError):
+            return None
+        return None
 
     def _exec_env(self, no_cache: bool = False) -> dict[str, str] | None:
         if not no_cache:
