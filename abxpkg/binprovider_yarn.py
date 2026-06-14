@@ -20,6 +20,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
 )
 from .binprovider import (
@@ -97,9 +98,7 @@ class YarnProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return Yarn's shared global cache directory."""
-        # Yarn's global cache roots are always derived from the standard
-        # platform cache dir; there is no separate provider field to override.
-        return Path(USER_CACHE_PATH)
+        return abxpkg_cache_dir_default("yarn") or Path(USER_CACHE_PATH)
 
     def get_cache_info(
         self,

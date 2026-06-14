@@ -19,6 +19,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
 )
 from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
@@ -170,7 +171,7 @@ class BunProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return Bun's shared cache dir used for downloads and package metadata."""
-        return Path(USER_CACHE_PATH)
+        return abxpkg_cache_dir_default("bun") or Path(USER_CACHE_PATH)
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/bin_dir, or Bun's ambient global bin dir."""

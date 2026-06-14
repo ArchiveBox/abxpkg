@@ -18,6 +18,7 @@ from .base_types import (
     BinProviderName,
     InstallArgs,
     PATHStr,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
 )
 from .binprovider import BinProvider, env_flag_is_true, log_method_call, remap_kwargs
@@ -83,7 +84,7 @@ class DenoProvider(BinProvider):
         # platform cache dir.
         if self.install_root is not None:
             return self.install_root / ".cache"
-        return Path(USER_CACHE_PATH)
+        return abxpkg_cache_dir_default("deno") or Path(USER_CACHE_PATH)
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         if action not in ("install", "update"):

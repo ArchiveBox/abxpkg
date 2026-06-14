@@ -20,6 +20,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     HostBinPath,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
     bin_abspaths,
@@ -136,7 +137,7 @@ class PipProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return pip's shared download/build cache dir."""
-        return Path(USER_CACHE_PATH)
+        return abxpkg_cache_dir_default("pip") or Path(USER_CACHE_PATH)
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/venv/bin in venv mode, or from discovered ambient Python script dirs in global mode."""

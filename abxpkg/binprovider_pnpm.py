@@ -22,6 +22,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
 )
@@ -169,7 +170,7 @@ class PnpmProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return the writable pnpm store dir, falling back to a temp dir if needed."""
-        default_cache_dir = Path(USER_CACHE_PATH)
+        default_cache_dir = abxpkg_cache_dir_default("pnpm") or Path(USER_CACHE_PATH)
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
         return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{os.getuid()}"

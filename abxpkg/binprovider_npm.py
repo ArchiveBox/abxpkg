@@ -21,6 +21,7 @@ from .base_types import (
     BinName,
     InstallArgs,
     HostBinPath,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
 )
@@ -82,7 +83,7 @@ class NpmProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return npm's shared package cache dir used for install/update mutations."""
-        return Path(USER_CACHE_PATH)
+        return abxpkg_cache_dir_default("npm") or Path(USER_CACHE_PATH)
 
     def get_cache_info(
         self,

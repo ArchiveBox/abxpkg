@@ -45,6 +45,17 @@ def abxpkg_install_root_default(provider_name: str) -> Path | None:
     return None
 
 
+def abxpkg_cache_dir_default(provider_name: str) -> Path | None:
+    """Resolve a provider cache dir from env vars."""
+    specific = os.environ.get(f"ABXPKG_{provider_name.upper()}_CACHE_DIR", "").strip()
+    if specific:
+        return Path(specific).expanduser().resolve()
+    lib_dir = os.environ.get("ABXPKG_LIB_DIR", "").strip()
+    if lib_dir:
+        return Path(lib_dir).expanduser().resolve() / "cache" / provider_name
+    return None
+
+
 def validate_binprovider_name(name: str) -> str:
     assert 1 < len(name) < 16, (
         "BinProvider names must be between 1 and 16 characters long"

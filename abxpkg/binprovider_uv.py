@@ -18,6 +18,7 @@ from .base_types import (
     HostBinPath,
     InstallArgs,
     PATHStr,
+    abxpkg_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
 )
@@ -258,7 +259,11 @@ class UvProvider(BinProvider):
     @property
     def cache_dir(self) -> Path:
         """Return uv's shared download/build cache dir."""
-        return Path(os.environ.get("UV_CACHE_DIR") or USER_CACHE_PATH)
+        return Path(
+            os.environ.get("UV_CACHE_DIR")
+            or abxpkg_cache_dir_default("uv")
+            or USER_CACHE_PATH,
+        )
 
     def _cache_args(self, *, no_cache: bool = False) -> list[str]:
         if no_cache or not self._ensure_writable_cache_dir(self.cache_dir):

@@ -283,23 +283,13 @@ def _apply_abxpkg_lib_env(
         provider_names = {"env", "uv", "pnpm", "npm"}
 
     path_entries = []
-    lib_bin_dir = env.get("LIB_BIN_DIR", os.path.join(lib_dir, "bin"))
-    path_entries.append(lib_bin_dir)
     if "env" in provider_names:
         path_entries.append(os.path.join(lib_dir, "env", "bin"))
     if "uv" in provider_names:
         uv_root = env.get("ABXPKG_UV_ROOT", os.path.join(lib_dir, "uv"))
         uv_venv = os.path.join(uv_root, "venv")
         env["UV_ACTIVE"] = "1"
-        default_cache_root = (
-            os.path.join(os.path.expanduser("~"), "Library", "Caches")
-            if sys.platform == "darwin"
-            else env.get(
-                "XDG_CACHE_HOME",
-                os.path.join(os.path.expanduser("~"), ".cache"),
-            )
-        )
-        env["UV_CACHE_DIR"] = os.path.join(default_cache_root, "abxpkg", "uv")
+        env.setdefault("UV_CACHE_DIR", os.path.join(lib_dir, "cache", "uv"))
         env["VIRTUAL_ENV"] = uv_venv
         path_entries.append(os.path.join(uv_venv, "bin"))
         _append_venv_import_paths(env, uv_venv)
