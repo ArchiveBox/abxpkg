@@ -115,6 +115,18 @@ function writeCmdScript(filePath, binary, args) {
     fs.chmodSync(filePath, 0o755);
 }
 
+function makeTreeWritable(targetPath) {
+    if (!fs.existsSync(targetPath)) return;
+
+    const stat = fs.lstatSync(targetPath);
+    fs.chmodSync(targetPath, stat.mode | 0o700);
+    if (!stat.isDirectory()) return;
+
+    for (const entry of fs.readdirSync(targetPath)) {
+        makeTreeWritable(path.join(targetPath, entry));
+    }
+}
+
 // ============================================================================
 // Port management
 // ============================================================================
@@ -1359,6 +1371,12 @@ async function installExtension(extension, options = {}) {
         }
     }
 
+    // CRX zip entries can preserve read-only store metadata permissions. The
+    // provider owns this cache tree and must be able to overwrite/re-sanitize
+    // it on reinstall, including after interrupted installs or sudo wrappers
+    // repair ownership between invocations.
+    makeTreeWritable(extension.unpacked_path);
+
     // Unzip CRX file to unpacked_path (CRX files have extra header bytes but unzip handles it)
     await fs.promises.mkdir(extension.unpacked_path, { recursive: true });
 
@@ -1402,6 +1420,7 @@ async function sanitizeUnpackedExtension(unpackedPath) {
     // unpacked path stable also keeps Chrome's generated unpacked-extension ID
     // stable across crawls and prevents profile Service Worker cache growth
     // from repeated "new" extension identities.
+    makeTreeWritable(unpackedPath);
     await fs.promises.rm(path.join(unpackedPath, '_metadata'), {
         recursive: true,
         force: true,
