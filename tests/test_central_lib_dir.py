@@ -146,6 +146,58 @@ class TestAbxPkgLibDir:
                 f"{provider_name}: expected {resolved_lib_dir / provider_name}, got {field_value}"
             )
 
+    def test_provider_cache_dirs_derive_from_abxpkg_lib_dir(self, tmp_path):
+        lib_dir = tmp_path / "lib"
+        script = textwrap.dedent(
+            """
+            import json
+            from abxpkg import (
+                BunProvider, DenoProvider, NpmProvider, PipProvider,
+                PnpmProvider, UvProvider, YarnProvider,
+            )
+
+            providers = (
+                BunProvider(), DenoProvider(), NpmProvider(), PipProvider(),
+                PnpmProvider(), UvProvider(), YarnProvider(),
+            )
+            print(json.dumps({
+                provider.name: str(provider.cache_dir)
+                for provider in providers
+            }))
+            """,
+        )
+
+        proc = _run_with_lib_dir(str(lib_dir), script)
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        resolved_lib_dir = lib_dir.resolve()
+
+        for provider_name in ("bun", "npm", "pip", "pnpm", "uv", "yarn"):
+            assert (
+                Path(payload[provider_name])
+                == resolved_lib_dir / "cache" / provider_name
+            )
+        assert Path(payload["deno"]) == resolved_lib_dir / "deno" / ".cache"
+
+    def test_per_provider_cache_env_var_overrides_abxpkg_lib_dir(self, tmp_path):
+        lib_dir = tmp_path / "lib"
+        pnpm_cache = tmp_path / "custom-pnpm-cache"
+        script = textwrap.dedent(
+            """
+            from abxpkg import PnpmProvider
+
+            print(PnpmProvider().cache_dir)
+            """,
+        )
+
+        proc = _run_with_lib_dir(
+            str(lib_dir),
+            script,
+            extra_env={"ABXPKG_PNPM_CACHE_DIR": str(pnpm_cache)},
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert Path(proc.stdout.strip().splitlines()[-1]) == pnpm_cache.resolve()
+
     def test_explicit_install_root_kwarg_overrides_env_var(self, tmp_path):
         explicit_root = tmp_path / "explicit-override"
         script = textwrap.dedent(

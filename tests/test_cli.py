@@ -2701,6 +2701,7 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
         "    'overhead_ns': int(os.environ.get('ABXPKG_FAST_SCRIPT_OVERHEAD_NS', '-1')),\n"
         "    'lib_dir': os.environ.get('LIB_DIR'),\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
+        "    'path': os.environ.get('PATH', ''),\n"
         "    'virtual_env': os.environ.get('VIRTUAL_ENV'),\n"
         "    'uv_cache_dir': os.environ.get('UV_CACHE_DIR'),\n"
         "    'imagesize_file': imagesize.__file__,\n"
@@ -2728,7 +2729,8 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
     assert Path(payload["lib_dir"]) == lib
     assert Path(payload["abxpkg_lib_dir"]) == lib.resolve()
     assert Path(payload["virtual_env"]) == (lib / "uv" / "venv")
-    assert Path(payload["uv_cache_dir"]).name == "uv"
+    assert Path(payload["uv_cache_dir"]) == lib.resolve() / "cache" / "uv"
+    assert str(lib.resolve() / "bin") not in payload["path"].split(os.pathsep)
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
 
 
