@@ -1,0 +1,19 @@
+.github/workflows/tests.yml
+  s_5ecae765c2d31f::t_d963a3b07c76fa 96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "99039047ddbacfb031ba9f5322c4fbf6c3ca63ab",
+  "prompts": {},
+  "sessions": {
+    "s_5ecae765c2d31f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d8c7426d-be4c-43e8-816d-93b20c74d67e",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
