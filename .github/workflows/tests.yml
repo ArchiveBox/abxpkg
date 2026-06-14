@@ -198,7 +198,6 @@ jobs:
       if: runner.os == 'Linux'
       uses: DeterminateSystems/nix-installer-action@v22
       with:
-        planner: linux-multi
         start-daemon: true
 
     - name: Install Nix
@@ -432,7 +431,6 @@ jobs:
       if: runner.os == 'Linux'
       uses: DeterminateSystems/nix-installer-action@v22
       with:
-        planner: linux-multi
         start-daemon: true
 
     - name: Install Nix
