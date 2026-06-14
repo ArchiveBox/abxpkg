@@ -199,7 +199,6 @@ jobs:
       uses: DeterminateSystems/nix-installer-action@v22
       with:
         planner: linux-multi
-        reinstall: true
         start-daemon: true
 
     - name: Install Nix
