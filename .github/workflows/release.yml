@@ -3,7 +3,7 @@ name: Release State
 on:
   push:
     branches:
-      - '**'
+      - main
   workflow_dispatch:
 
 permissions:
@@ -15,10 +15,11 @@ env:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   release-state:
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'release:')
     runs-on: ubuntu-latest
     environment: pypi
     timeout-minutes: 20
@@ -27,6 +28,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
+          token: ${{ secrets.RELEASE_GH_TOKEN || github.token }}
 
       - uses: actions/setup-python@v6
         with:
@@ -43,7 +45,7 @@ jobs:
 
       - name: Run release script
         env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: main
+          GH_TOKEN: ${{ secrets.RELEASE_GH_TOKEN || github.token }}
           PYPI_PAT_SECRET: ${{ secrets.PYPI_PAT_SECRET }}
         run: ./bin/release.sh
