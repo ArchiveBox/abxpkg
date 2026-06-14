@@ -1,0 +1,41 @@
+tests/test_cli.py
+  s_70b3b8284ef391::t_2282f332538c95 2601-2604,2606-2612,2614-2628,2630-2638,2640-2642
+  s_70b3b8284ef391::t_2be3ea1d954745 953,958,963,1215,1242,1292,1319,1841,1853,1935,1956,1974,1995,2106-2107,2157,2178,2215,2254,2589,2605,2613,2629,2639,2652,2689,2729,2792,2802,2863,2929,2945,3036
+  s_70b3b8284ef391::t_4a1a679c0f58bd 2973
+abxpkg/cli.py
+  s_70b3b8284ef391::t_df7705f74ad813 1181-1182,1184,1195,1228-1230,1234
+  s_70b3b8284ef391::t_d443b902f32066 1189-1191
+  s_70b3b8284ef391::t_35cc46e9ca1e16 11,69-72
+  s_70b3b8284ef391::t_766cf9f0e88e7c 1185-1188,1192-1194,1196-1227,1231-1232,1235-1238,1919,1935
+README.md
+  s_70b3b8284ef391::t_52c55805b693a1 177
+abxpkg/binprovider_chromewebstore.py
+  s_cdb7ab28cd51df::t_2b34ad13625469 341
+abxpkg/js/chrome/chrome_utils.js
+  s_cdb7ab28cd51df::t_dd6d7f991c2695 731-732,3619-3622
+  s_cdb7ab28cd51df::t_2364d82ca58d4f 1446,2135,2140,4196,4198,4201-4204,4207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "2d28e32593aaf6ddb67ed2e56108d5368825f14e",
+  "prompts": {},
+  "sessions": {
+    "s_70b3b8284ef391": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ec4bb-38fe-7723-b66e-d0af77a36fd0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    },
+    "s_cdb7ab28cd51df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eaa76-c893-7193-bd47-d91b6111304f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
