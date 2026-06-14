@@ -1,0 +1,23 @@
+abxpkg/binprovider_chromewebstore.py
+  s_15f59ac80abb8e::t_5a0218ec66090e 279-287,290,292,364-365
+tests/test_chromewebstoreprovider.py
+  s_15f59ac80abb8e::t_5a0218ec66090e 2,35-52,125,151-152,154-158
+abxpkg/js/chrome/chrome_utils.js
+  s_15f59ac80abb8e::t_5a0218ec66090e 1391-1396,1400-1405,1446,2246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "1129940aace49070a0a4fab9153c02dc25cea890",
+  "prompts": {},
+  "sessions": {
+    "s_15f59ac80abb8e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eaa8a-3bcf-7290-a54d-15bd828c06a5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
