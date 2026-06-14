@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -29,6 +30,24 @@ def assert_extension_binary_loaded(loaded) -> None:
 
     manifest = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
     assert manifest["version"] == str(loaded.loaded_version)
+
+
+def restore_signed_store_metadata_from_real_crx(
+    unzip: str,
+    crx_path: Path,
+    unpacked_path: Path,
+) -> None:
+    assert crx_path.exists(), crx_path
+    proc = subprocess.run(
+        [unzip, "-q", "-o", str(crx_path), "-d", str(unpacked_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert (unpacked_path / "manifest.json").exists(), proc.stderr or proc.stdout
+    assert (unpacked_path / "_metadata").exists(), (
+        "The real Chrome Web Store CRX did not restore signed-store metadata; "
+        f"stdout={proc.stdout} stderr={proc.stderr}"
+    )
 
 
 class TestChromeWebstoreProvider:
@@ -103,6 +122,7 @@ class TestChromeWebstoreProvider:
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
+        unzip = test_machine.require_tool("unzip")
         assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -128,6 +148,14 @@ class TestChromeWebstoreProvider:
 
             installed = provider.install("ublock", no_cache=True)
             assert_extension_binary_loaded(installed)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            crx_path = provider.bin_dir / f"{UBLOCK_WEBSTORE_ID}__ublock.crx"
+            restore_signed_store_metadata_from_real_crx(
+                unzip,
+                crx_path,
+                installed.loaded_abspath.parent,
+            )
 
             loaded = provider.load("ublock", no_cache=True)
             assert_extension_binary_loaded(loaded)

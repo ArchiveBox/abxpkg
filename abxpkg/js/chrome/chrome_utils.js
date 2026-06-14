@@ -1388,20 +1388,24 @@ async function installExtension(extension, options = {}) {
         return false;
     }
 
+    await sanitizeUnpackedExtension(extension.unpacked_path);
+
+    return true;
+}
+
+async function sanitizeUnpackedExtension(unpackedPath) {
     // Chrome Web Store CRX payloads include `_metadata` for signed store
     // installs, but Chromium rejects that directory when the same payload is
     // loaded as an unpacked extension through CDP. The provider owns the
-    // downloaded/unpacked artifact, so sanitize it here once at install time
-    // instead of making every browser launch copy the extension to a second
-    // runtime-only path. Keeping the unpacked path stable also keeps Chrome's
-    // generated unpacked-extension ID stable across crawls and prevents profile
-    // Service Worker cache growth from repeated "new" extension identities.
-    await fs.promises.rm(path.join(extension.unpacked_path, '_metadata'), {
+    // downloaded/unpacked artifact, so sanitize it once instead of making every
+    // browser launch copy the extension to a runtime-only path. Keeping the
+    // unpacked path stable also keeps Chrome's generated unpacked-extension ID
+    // stable across crawls and prevents profile Service Worker cache growth
+    // from repeated "new" extension identities.
+    await fs.promises.rm(path.join(unpackedPath, '_metadata'), {
         recursive: true,
         force: true,
     });
-
-    return true;
 }
 
 /**
@@ -1439,6 +1443,7 @@ async function loadOrInstallExtension(ext, extensions_dir = null, force_install 
     if (force_install || !ext.read_version()) {
         await installExtension(ext, { forceInstall: force_install });
     }
+    await sanitizeUnpackedExtension(ext.unpacked_path);
 
     // Autodetect ID from filesystem path (unpacked extensions don't have stable IDs)
     ext.id = getExtensionId(ext.unpacked_path);
@@ -2238,10 +2243,7 @@ async function installExtensionWithCache(extension, options = {}) {
             const manifestPath = path.join(cached.unpacked_path, 'manifest.json');
 
             if (cached.webstore_id === extension.webstore_id && fs.existsSync(manifestPath)) {
-                await fs.promises.rm(path.join(cached.unpacked_path, '_metadata'), {
-                    recursive: true,
-                    force: true,
-                });
+                await sanitizeUnpackedExtension(cached.unpacked_path);
                 if (!quiet) {
                     console.log(`[*] ${extension.name} extension already installed (using cache)`);
                 }

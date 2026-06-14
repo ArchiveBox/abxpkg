@@ -276,10 +276,20 @@ class ChromeWebstoreProvider(BinProvider):
         manifest_path = unpacked_path / "manifest.json"
         return webstore_id, extension_name, unpacked_path, crx_path, manifest_path
 
+    def _sanitize_unpacked_extension(self, unpacked_path: Path) -> None:
+        # Chrome Web Store CRX payloads include `_metadata` for signed store installs,
+        # but CDP Extensions.loadUnpacked rejects it. Keep this in the provider so
+        # every consumer gets one stable, loadable unpacked artifact instead of
+        # copying extensions into runtime-specific temp dirs.
+        signed_store_metadata = unpacked_path / "_metadata"
+        if signed_store_metadata.exists():
+            shutil.rmtree(signed_store_metadata, ignore_errors=True)
+
     def chromewebstore_abspath_handler(self, bin_name: str, **context) -> str | None:
         """Resolve an installed extension to its unpacked ``manifest.json`` path."""
-        _, _, _, _, manifest_path = self._extension_spec(bin_name)
+        _, _, unpacked_path, _, manifest_path = self._extension_spec(bin_name)
         if manifest_path.exists():
+            self._sanitize_unpacked_extension(unpacked_path)
             return str(manifest_path)
         return None
 
@@ -350,6 +360,9 @@ class ChromeWebstoreProvider(BinProvider):
             raise FileNotFoundError(
                 f"{self.__class__.__name__} did not produce cache metadata at {cache_path}",
             )
+
+        _, _, unpacked_path, _, _ = self._extension_spec(bin_name)
+        self._sanitize_unpacked_extension(unpacked_path)
 
         return format_subprocess_output(proc.stdout, proc.stderr)
 
