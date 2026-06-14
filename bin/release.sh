@@ -143,6 +143,26 @@ else:
 PY
 }
 
+latest_pypi_version() {
+    local package_name="$1"
+    local releases_json
+    releases_json="$(curl -fsSL "https://pypi.org/pypi/${package_name}/json" | jq -r '.releases | keys[]' || true)"
+    RELEASE_TAGS="${releases_json}" python3 - <<'PY'
+import os
+import re
+
+def parse(version: str) -> tuple[int, int, int, int]:
+    match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:rc(\d+))?', version)
+    if not match:
+        return (-1, -1, -1, -1)
+    major, minor, patch, rc = match.groups()
+    return (int(major), int(minor), int(patch), int(rc) if rc is not None else 10_000)
+
+versions = [line.strip() for line in os.environ.get('RELEASE_TAGS', '').splitlines() if line.strip()]
+print(max(versions, key=parse) if versions else '')
+PY
+}
+
 wait_for_runs() {
     local slug="$1"
     local event="$2"
@@ -305,7 +325,7 @@ publish_artifacts() {
 }
 
 main() {
-    local slug branch version latest relation
+    local slug branch version latest pypi_latest relation
 
     source_optional_env
     slug="$(repo_slug)"
@@ -318,6 +338,10 @@ main() {
 
     version="$(current_version)"
     latest="$(latest_release_version "${slug}")"
+    pypi_latest="$(latest_pypi_version "${PYPI_PACKAGE}")"
+    if [[ -n "${pypi_latest}" && ( -z "${latest}" || "$(compare_versions "${pypi_latest}" "${latest}")" == "gt" ) ]]; then
+        latest="${pypi_latest}"
+    fi
     if [[ -z "${latest}" ]]; then
         relation="gt"
     else
