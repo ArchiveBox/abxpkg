@@ -6,12 +6,8 @@ from pathlib import Path
 from abxpkg import Binary, ChromeWebstoreProvider
 
 
-PACKAGED_CHROME_UTILS_PATH = (
-    Path(__file__).resolve().parent.parent
-    / "abxpkg"
-    / "js"
-    / "chrome"
-    / "chrome_utils.js"
+PACKAGED_CHROMEWEBSTORE_UTILS_PATH = (
+    Path(__file__).resolve().parent.parent / "abxpkg" / "chromewebstore_utils.js"
 )
 UBLOCK_WEBSTORE_ID = "ddkjiahejlhfcafbddmgiahcphecmpfh"
 
@@ -56,7 +52,9 @@ class TestChromeWebstoreProvider:
         test_machine,
     ):
         test_machine.require_tool("node")
-        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
+        assert PACKAGED_CHROMEWEBSTORE_UTILS_PATH.exists(), (
+            PACKAGED_CHROMEWEBSTORE_UTILS_PATH
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "chromewebstore-root"
@@ -90,7 +88,9 @@ class TestChromeWebstoreProvider:
         test_machine,
     ):
         test_machine.require_tool("node")
-        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
+        assert PACKAGED_CHROMEWEBSTORE_UTILS_PATH.exists(), (
+            PACKAGED_CHROMEWEBSTORE_UTILS_PATH
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "chromewebstore-root"
@@ -123,7 +123,9 @@ class TestChromeWebstoreProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
         unzip = test_machine.require_tool("unzip")
-        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
+        assert PACKAGED_CHROMEWEBSTORE_UTILS_PATH.exists(), (
+            PACKAGED_CHROMEWEBSTORE_UTILS_PATH
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = ChromeWebstoreProvider(
@@ -171,7 +173,9 @@ class TestChromeWebstoreProvider:
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("node")
-        assert PACKAGED_CHROME_UTILS_PATH.exists(), PACKAGED_CHROME_UTILS_PATH
+        assert PACKAGED_CHROMEWEBSTORE_UTILS_PATH.exists(), (
+            PACKAGED_CHROMEWEBSTORE_UTILS_PATH
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(

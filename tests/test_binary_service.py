@@ -139,7 +139,7 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     assert event_binary.description == "Event description"
     assert event_binary.min_version == SemVer("2.0.0")
     assert event_binary.postinstall_scripts is True
-    assert event_binary.min_release_age == 0
+    assert event_binary.min_release_age == 3
     assert event_binary.overrides == {
         "pip": {"install_args": ["event-package"]},
     }

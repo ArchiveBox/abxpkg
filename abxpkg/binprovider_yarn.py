@@ -239,6 +239,7 @@ class YarnProvider(BinProvider):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
@@ -266,6 +267,7 @@ class YarnProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=node_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
         return loaded

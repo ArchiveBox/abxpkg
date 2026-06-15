@@ -1085,9 +1085,9 @@ bin_dir = <install_root>/extensions
 - Install root: set `install_root` for the extension cache root, and `bin_dir` for the unpacked extension output dir.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
-- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported as a standard kwarg and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here, but there is no extra install-time toggle beyond the packaged JS runtime path this provider already uses.
+- Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported as a standard kwarg and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here, but there is no extra install-time toggle beyond the packaged JS helper this provider already uses.
 - Overrides: `install_args` are `[webstore_id, "--name=<extension_name>"]`.
-- Notes: the packaged JS runtime under `abxpkg/js/chrome/` is used to download, unpack, and cache the extension, and the resolved binary path is the unpacked `manifest.json`. `no_cache=True` bypasses that metadata cache on the next install/update without deleting the unpacked extension tree.
+- Notes: the packaged `chromewebstore_utils.js` helper is used to download, unpack, and cache the extension, and the resolved binary path is the unpacked `manifest.json`. `no_cache=True` bypasses that metadata cache on the next install/update without deleting the unpacked extension tree.
 
 </details>
 

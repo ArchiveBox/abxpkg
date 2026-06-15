@@ -195,6 +195,7 @@ class PlaywrightProvider(BinProvider):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 node_loaded = Binary(
@@ -217,6 +218,7 @@ class PlaywrightProvider(BinProvider):
                             if node_loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=node_loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
@@ -243,6 +245,7 @@ class PlaywrightProvider(BinProvider):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
@@ -267,6 +270,7 @@ class PlaywrightProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=node_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
         raise BinProviderUnavailableError(
@@ -322,7 +326,10 @@ class PlaywrightProvider(BinProvider):
         # (root host or already-elevated). The first command token
         # must be an absolute path because sudo's secure_path may not
         # contain our bin_dir.
-        env = self.build_exec_env(base_env=(kwargs.pop("env", None) or os.environ))
+        env = self.build_exec_env(
+            providers=self.exec_env_providers(),
+            base_env=(kwargs.pop("env", None) or os.environ),
+        )
         env_assignments: list[str] = []
         if self.install_root is not None:
             cache_dir = self.install_root / "cache"

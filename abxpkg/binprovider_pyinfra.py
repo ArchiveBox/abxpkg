@@ -273,6 +273,7 @@ class PyinfraProvider(BinProvider):
                     if python_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=python_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
         return loaded

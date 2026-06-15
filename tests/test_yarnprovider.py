@@ -207,9 +207,9 @@ class TestYarnProvider:
             test_machine.assert_shallow_binary_loaded(direct_override)
             assert strict_provider.uninstall("zx", min_release_age=3)
 
-            # After the override, the .yarnrc.yml entry must have been
-            # rewritten away (no longer enforces the strict gate).
-            assert "npmMinimalAgeGate" not in yarnrc.read_text()
+            # After the override, the .yarnrc.yml entry must reflect the
+            # requested action-level release-age gate.
+            assert "npmMinimalAgeGate: 3d" in yarnrc.read_text()
 
             binary = Binary(
                 name="zx",

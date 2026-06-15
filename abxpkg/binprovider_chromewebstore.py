@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 # Ultimate fallback when neither the constructor arg nor
 # ``ABXPKG_CHROMEWEBSTORE_ROOT`` nor ``ABXPKG_LIB_DIR`` is set.
 DEFAULT_CHROMEWEBSTORE_ROOT = DEFAULT_ABXPKG_LIB_DIR / "chromewebstore"
-CHROME_UTILS_PATH = Path(__file__).with_name("js") / "chrome" / "chrome_utils.js"
+CHROMEWEBSTORE_UTILS_PATH = Path(__file__).with_name("chromewebstore_utils.js")
 
 
 class ChromeWebstoreProvider(BinProvider):
@@ -86,7 +86,7 @@ class ChromeWebstoreProvider(BinProvider):
                 bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
                 or bin_abspath(self.INSTALLER_BIN)
             )
-            and CHROME_UTILS_PATH.exists(),
+            and CHROMEWEBSTORE_UTILS_PATH.exists(),
         )
 
     @model_validator(mode="after")
@@ -324,7 +324,7 @@ class ChromeWebstoreProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> str:
-        """Download, unpack, and cache a Chrome Web Store extension via chrome_utils.js."""
+        """Download, unpack, and cache a Chrome Web Store extension via the packaged JS helper."""
         install_args = list(install_args or self.get_install_args(bin_name))
         if self.dry_run:
             return f"DRY_RUN would install Chrome Web Store extension {bin_name}"
@@ -341,7 +341,7 @@ class ChromeWebstoreProvider(BinProvider):
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
-                str(CHROME_UTILS_PATH),
+                str(CHROMEWEBSTORE_UTILS_PATH),
                 "installExtensionWithCache",
                 webstore_id,
                 extension_name,

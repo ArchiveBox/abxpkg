@@ -79,10 +79,6 @@ packages = ["abxpkg"]
 [tool.hatch.build.targets.sdist]
 include = [
     "abxpkg/**",
-    "abxpkg/js/base/config.json",
-    "abxpkg/js/base/utils.js",
-    "abxpkg/js/chrome/config.json",
-    "abxpkg/js/chrome/chrome_utils.js",
     "README.md",
     "LICENSE",
     "pyproject.toml",

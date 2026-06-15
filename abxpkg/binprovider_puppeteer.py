@@ -196,6 +196,7 @@ class PuppeteerProvider(BinProvider):
                             if loaded_local.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded_local.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded_local
@@ -222,6 +223,7 @@ class PuppeteerProvider(BinProvider):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
@@ -246,6 +248,7 @@ class PuppeteerProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=node_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
         raise BinProviderUnavailableError(

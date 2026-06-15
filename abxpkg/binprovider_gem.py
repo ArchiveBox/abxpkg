@@ -141,6 +141,7 @@ class GemProvider(BinProvider):
                     if ruby_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=ruby_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
         return loaded

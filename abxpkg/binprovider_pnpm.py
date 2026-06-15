@@ -249,6 +249,7 @@ class PnpmProvider(BinProvider):
                     if node_loaded.loaded_binprovider is not None
                     else self.name
                 ),
+                resolved_provider=node_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
 
@@ -282,6 +283,7 @@ class PnpmProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    resolved_provider=loaded.loaded_binprovider,
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
@@ -317,6 +319,7 @@ class PnpmProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    resolved_provider=loaded.loaded_binprovider,
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded

@@ -184,6 +184,7 @@ class UvProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    resolved_provider=loaded.loaded_binprovider,
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
@@ -218,6 +219,7 @@ class UvProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    resolved_provider=loaded.loaded_binprovider,
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded

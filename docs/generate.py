@@ -263,7 +263,7 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "category": CATEGORY_BROWSER,
         "summary": (
             "Downloads, unpacks, and caches Chrome Web Store extensions using the "
-            "packaged JS runtime under abxpkg/js/chrome/. The resolved binary path "
+            "packaged chromewebstore_utils.js helper. The resolved binary path "
             "is the unpacked manifest.json."
         ),
         "tags": ["chrome", "extensions"],

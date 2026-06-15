@@ -175,8 +175,24 @@ def binprovider_cache(binprovider_method):
         )
 
         if cache_key in method_cache:
-            # print('USING CACHED VALUE:', f'{self.__class__.__name__}.{method_name}({bin_name}, {kwargs}) -> {method_cache[bin_name]}')
-            return method_cache[cache_key]
+            cached_value = method_cache[cache_key]
+            if method_name in {"get_abspath", "get_abspaths"}:
+                cached_paths = (
+                    cached_value
+                    if isinstance(cached_value, list | tuple)
+                    else [cached_value]
+                )
+                # These caches only memoize positive filesystem lookups. A user
+                # can remove a shim or binary between operations (e.g. uv tool
+                # uninstall after a missing shim), so never let a stale in-memory
+                # path hide the provider's real fallback lookup.
+                if not all(Path(path).exists() for path in cached_paths):
+                    method_cache.pop(cache_key, None)
+                else:
+                    return cached_value
+            else:
+                # print('USING CACHED VALUE:', f'{self.__class__.__name__}.{method_name}({bin_name}, {kwargs}) -> {method_cache[bin_name]}')
+                return cached_value
 
         return_value = binprovider_method(self, bin_name, **kwargs)
 
@@ -389,7 +405,7 @@ class ShallowBinary(BaseModel):
         explicit_env = kwargs.pop("env", None)
         if self.loaded_binprovider is not None:
             kwargs["env"] = self.loaded_binprovider.build_exec_env(
-                providers=[self.loaded_binprovider],
+                providers=self.loaded_binprovider.exec_env_providers(),
                 base_env=explicit_env,
             )
         elif explicit_env is not None:
@@ -511,6 +527,85 @@ class BinProvider(BaseModel):
             providers=providers,
             base_env=base_env,
             extra_env=extra_env,
+        )
+
+    @staticmethod
+    def _provider_identity(provider: "BinProvider") -> tuple[str, str, str]:
+        return (
+            provider.name,
+            str(provider.install_root or ""),
+            str(provider.bin_dir or ""),
+        )
+
+    @staticmethod
+    def _append_unique_provider(
+        providers: list["BinProvider"],
+        provider: "BinProvider | None",
+    ) -> None:
+        if provider is None:
+            return
+        provider_identity = BinProvider._provider_identity(provider)
+        if any(
+            BinProvider._provider_identity(existing) == provider_identity
+            for existing in providers
+        ):
+            return
+        providers.append(provider)
+
+    def exec_env_providers(self) -> list["BinProvider"]:
+        providers: list[BinProvider] = []
+        for dependency in self.depends_on_binaries():
+            self._append_unique_provider(providers, dependency.loaded_binprovider)
+        installer = self._INSTALLER_BINARY
+        if installer is not None:
+            self._append_unique_provider(providers, installer.loaded_binprovider)
+        self._append_unique_provider(providers, self)
+        return providers
+
+    @staticmethod
+    def _provider_cache_fields(provider: "BinProvider | None") -> dict[str, str]:
+        if provider is None:
+            return {}
+        fields: dict[str, str] = {"resolved_provider_name": provider.name}
+        if provider.install_root is not None:
+            fields["resolved_provider_install_root"] = str(provider.install_root)
+        if provider.bin_dir is not None:
+            fields["resolved_provider_bin_dir"] = str(provider.bin_dir)
+        return fields
+
+    def _resolved_provider_from_cache_record(
+        self,
+        cached_record: Mapping[str, object],
+    ) -> "BinProvider":
+        from . import PROVIDER_CLASS_BY_NAME
+
+        resolved_provider_name = cached_record.get("resolved_provider_name")
+        if not isinstance(resolved_provider_name, str):
+            resolved_provider_name = self.name
+        if resolved_provider_name == self.name:
+            provider_class = type(self)
+            base_provider = self
+        else:
+            provider_class = PROVIDER_CLASS_BY_NAME.get(
+                resolved_provider_name,
+                type(self),
+            )
+            base_provider = provider_class()
+
+        provider_config: dict[str, object] = {}
+        resolved_install_root = cached_record.get("resolved_provider_install_root")
+        if isinstance(resolved_install_root, str) and resolved_install_root:
+            provider_config["install_root"] = Path(resolved_install_root)
+        resolved_bin_dir = cached_record.get("resolved_provider_bin_dir")
+        if isinstance(resolved_bin_dir, str) and resolved_bin_dir:
+            provider_config["bin_dir"] = Path(resolved_bin_dir)
+        if not provider_config:
+            return base_provider
+        return provider_class.model_validate(
+            {
+                **base_provider.model_dump(mode="python", round_trip=True),
+                **provider_config,
+            },
         )
 
     def get_cache_info(
@@ -650,8 +745,6 @@ class BinProvider(BaseModel):
             return None
 
         try:
-            from . import PROVIDER_CLASS_BY_NAME
-
             version = SemVer.parse(loaded_version)
             assert version is not None
             sha256 = TypeAdapter(Sha256).validate_python(loaded_sha256)
@@ -705,6 +798,9 @@ class BinProvider(BaseModel):
                 "cache_kind": cache_kind,
                 "provider_name": self.name,
                 "resolved_provider_name": resolved_provider_name,
+                **self._provider_cache_fields(
+                    self._resolved_provider_from_cache_record(cached_record),
+                ),
                 "bin_name": str(bin_name),
                 "abspath": original_abspath,
                 "install_args": list(
@@ -717,11 +813,7 @@ class BinProvider(BaseModel):
             save_derived_cache(derived_env_path, cache)
             cached_abspath = original_abspath
 
-        resolved_provider = (
-            self
-            if resolved_provider_name == self.name
-            else PROVIDER_CLASS_BY_NAME.get(resolved_provider_name, type(self))()
-        )
+        resolved_provider = self._resolved_provider_from_cache_record(cached_record)
         return ShallowBinary.model_validate(
             {
                 "name": bin_name,
@@ -764,6 +856,7 @@ class BinProvider(BaseModel):
         loaded_version: SemVer,
         loaded_sha256: Sha256,
         resolved_provider_name: str | None = None,
+        resolved_provider: "BinProvider | None" = None,
         cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
         derived_env_path = self.derived_env_path
@@ -787,6 +880,7 @@ class BinProvider(BaseModel):
             "cache_kind": cache_kind,
             "provider_name": self.name,
             "resolved_provider_name": resolved_provider_name or self.name,
+            **self._provider_cache_fields(resolved_provider),
             "bin_name": str(bin_name),
             "abspath": original_abspath,
             "install_args": list(
@@ -1034,6 +1128,7 @@ class BinProvider(BaseModel):
                                 if loaded.loaded_binprovider is not None
                                 else self.name
                             ),
+                            resolved_provider=loaded.loaded_binprovider,
                             cache_kind="dependency",
                         )
                     self._INSTALLER_BINARY = loaded
@@ -1058,6 +1153,7 @@ class BinProvider(BaseModel):
                             if loaded.loaded_binprovider is not None
                             else self.name
                         ),
+                        resolved_provider=loaded.loaded_binprovider,
                         cache_kind="dependency",
                     )
                 self._INSTALLER_BINARY = loaded
@@ -1787,27 +1883,12 @@ class BinProvider(BaseModel):
 
         if not (cache_dir.is_dir() and os.access(cache_dir, os.W_OK)):
             return False
-
-        for root, dirs, files in os.walk(cache_dir):
-            root_path = Path(root)
-            for child in [
-                root_path,
-                *(root_path / dirname for dirname in dirs),
-                *(root_path / filename for filename in files),
-            ]:
-                try:
-                    os.chown(child, self.EUID, pw_record.pw_gid)
-                except (FileNotFoundError, PermissionError):
-                    pass
-                try:
-                    child.chmod(child.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP)
-                except (FileNotFoundError, PermissionError):
-                    pass
-                if not child.exists():
-                    continue
-                if not os.access(child, os.W_OK):
-                    return False
-
+        # Cache directories can be large and shared by the underlying package
+        # manager (uv/pip/pnpm/etc.). This method runs on normal load/install
+        # hot paths, so it must only prove the cache root is usable. Recursing
+        # through every cached artifact turns ordinary commands into minutes of
+        # chown/chmod work and races active package-manager writers; ownership
+        # repair of an existing tree belongs in explicit install/container setup.
         return True
 
     def _raise_proc_error(
@@ -1889,7 +1970,7 @@ class BinProvider(BaseModel):
         current_euid = os.geteuid()
         explicit_env = kwargs.pop("env", None)
         base_env = self.build_exec_env(
-            providers=[self],
+            providers=self.exec_env_providers(),
             base_env=explicit_env,
         )
         base_env["PWD"] = str(cwd_path)
@@ -3000,6 +3081,7 @@ class EnvProvider(BinProvider):
                         if loaded.loaded_binprovider is not None
                         else self.name
                     ),
+                    resolved_provider=loaded.loaded_binprovider,
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
@@ -3222,6 +3304,7 @@ class EnvProvider(BinProvider):
         loaded_version: SemVer,
         loaded_sha256: Sha256,
         resolved_provider_name: str | None = None,
+        resolved_provider: "BinProvider | None" = None,
         cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
         if self._is_managed_by_other_provider(abspath):
@@ -3250,6 +3333,7 @@ class EnvProvider(BinProvider):
             loaded_version,
             loaded_sha256,
             resolved_provider_name,
+            resolved_provider,
             cache_kind,
         )
 
