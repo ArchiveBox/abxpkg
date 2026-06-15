@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Chrome Web Store extension installer for ChromeWebstoreProvider.
  *
