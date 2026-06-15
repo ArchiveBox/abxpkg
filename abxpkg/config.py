@@ -5,11 +5,13 @@ import json
 import os
 import shlex
 from collections.abc import Iterable, Mapping, MutableMapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
+_SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
 
 
 @runtime_checkable
@@ -28,6 +30,13 @@ def default_abxpkg_lib_dir() -> Path:
     return user_config_path("abx") / "lib"
 
 
+@lru_cache(maxsize=32)
+def _forbidden_convenience_lib_bins(abxpkg_lib_dir: str | None) -> frozenset[Path]:
+    lib_dirs = [Path(abxpkg_lib_dir)] if abxpkg_lib_dir else []
+    lib_dirs.append(default_abxpkg_lib_dir())
+    return frozenset((lib_dir.expanduser().absolute() / "bin") for lib_dir in lib_dirs)
+
+
 def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
     """True only for flat abxpkg lib ``bin`` convenience directories.
 
@@ -39,16 +48,10 @@ def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
     if path is None:
         return False
     try:
-        candidate = Path(path).expanduser().resolve(strict=False)
-        lib_dirs = (
-            [Path(os.environ["ABXPKG_LIB_DIR"])]
-            if os.environ.get("ABXPKG_LIB_DIR")
-            else []
+        candidate = Path(path).expanduser().absolute()
+        forbidden_dirs = _forbidden_convenience_lib_bins(
+            os.environ.get("ABXPKG_LIB_DIR"),
         )
-        lib_dirs.append(default_abxpkg_lib_dir())
-        forbidden_dirs = {
-            lib_dir.expanduser().resolve(strict=False) / "bin" for lib_dir in lib_dirs
-        }
     except Exception:
         return False
     return candidate in forbidden_dirs
@@ -229,16 +232,23 @@ def load_dotenv_values(dotenv_path: Path) -> dict[str, str]:
         if not key:
             continue
         if value[:1] in {"'", '"'} and value[-1:] == value[:1]:
+            if value.startswith("'"):
+                # write_dotenv_values uses shell quoting for arbitrary strings.
+                # Single-quoted JSON must be unwrapped as shell text first:
+                # ast.literal_eval would consume JSON backslashes and corrupt
+                # nested cache keys such as ["provider","bin",...,"{\"...\"}"].
+                values[key] = value[1:-1].replace(_SHELL_SINGLE_QUOTE_ESCAPE, "'")
+                continue
+            try:
+                values[key] = str(ast.literal_eval(value))
+                continue
+            except Exception:
+                pass
             try:
                 values[key] = shlex.split(value)[0]
                 continue
             except Exception:
-                try:
-                    parsed = ast.literal_eval(value)
-                    values[key] = str(parsed)
-                    continue
-                except Exception:
-                    pass
+                pass
         values[key] = value
 
     return values

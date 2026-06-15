@@ -10,6 +10,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from collections.abc import Mapping
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
@@ -470,13 +471,11 @@ class PnpmProvider(BinProvider):
                 packages.append(package)
         return packages
 
-    def cached_binary_install_args_mismatch(
+    def cached_binary_state_mismatch(
         self,
         bin_name: BinName,
-        abspath: HostBinPath,
+        cached_record: Mapping[str, object],
     ) -> bool:
-        if super().cached_binary_install_args_mismatch(bin_name, abspath):
-            return True
         if self.install_root is None:
             return False
         modules_dir = self.install_root / "node_modules"

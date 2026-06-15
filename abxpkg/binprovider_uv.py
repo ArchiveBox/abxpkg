@@ -96,6 +96,27 @@ class UvProvider(BinProvider):
             ):
                 env["PYTHONPATH"] = ":" + str(sp)
                 break
+            # `uv` can install side dependencies into package-scoped venvs under
+            # the same provider root. They are still part of this provider's
+            # runtime surface, so expose them here instead of making callers know
+            # or rebuild the provider's filesystem layout.
+            package_paths: list[str] = []
+            packages_root = self.install_root / "packages"
+            if packages_root.is_dir():
+                for package_root in sorted(packages_root.iterdir()):
+                    package_venv = package_root / "venv"
+                    package_bin = package_venv / "bin"
+                    if package_bin.is_dir():
+                        env["PATH"] = f"{env.get('PATH', '')}:{package_bin}"
+                    for sp in sorted(
+                        (package_venv / "lib").glob("python*/site-packages"),
+                    ):
+                        package_paths.append(str(sp))
+                        break
+            if package_paths:
+                env["PYTHONPATH"] = (
+                    f"{env.get('PYTHONPATH', '')}:{os.pathsep.join(package_paths)}"
+                )
             return env
         env["UV_TOOL_DIR"] = str(self.tool_dir)
         if self.bin_dir:

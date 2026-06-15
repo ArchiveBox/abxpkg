@@ -22,7 +22,6 @@ from .base_types import (
     abxpkg_install_root_default,
     bin_abspath,
 )
-from .binary import Binary
 from .binprovider import (
     BinProvider,
     BinProviderUnavailableError,
@@ -30,7 +29,6 @@ from .binprovider import (
     log_method_call,
     remap_kwargs,
 )
-from .binprovider_pnpm import PnpmProvider
 from .logging import format_command, format_subprocess_output, get_logger
 from .semver import SemVer
 
@@ -135,6 +133,8 @@ class PlaywrightProvider(BinProvider):
         return False
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
+        from .binary import Binary
+
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         if (
             self.install_root is not None
@@ -377,6 +377,9 @@ class PlaywrightProvider(BinProvider):
         min_version: SemVer | None = None,
         no_cache: bool = False,
     ) -> None:
+        from .binary import Binary
+        from .binprovider_pnpm import PnpmProvider
+
         if self.install_root is not None:
             self.install_root.mkdir(parents=True, exist_ok=True)
         if self.bin_dir is not None:
@@ -507,6 +510,8 @@ class PlaywrightProvider(BinProvider):
         path so the install_root copy wins; otherwise we let node's own
         module resolution find whichever ``playwright`` the host ships.
         """
+        from .binary import Binary
+
         # Find the playwright module to call executablePath().
         # Hermetic: install_root/pnpm/node_modules/playwright
         # Managed ABXPKG_LIB_DIR: ABXPKG_LIB_DIR/pnpm/packages/playwright/node_modules/playwright
@@ -827,6 +832,8 @@ class PlaywrightProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> str:
+        from .binprovider_pnpm import PnpmProvider
+
         # Browser versions are pinned by the ``playwright`` npm package,
         # so a real upgrade means bumping that package first and then
         # re-running ``playwright install`` to pull the new browser

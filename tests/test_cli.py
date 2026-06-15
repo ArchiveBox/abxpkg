@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import logging
+import time
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import rich_click as click
 from click.testing import CliRunner
 
 from abxpkg import BinName, BinProviderName, EnvProvider, SemVer
+from abxpkg.config import load_derived_cache
 import abxpkg.cli as cli_module
 
 
@@ -1533,15 +1535,22 @@ def test_build_cli_options_passes_typed_values_through(tmp_path):
     assert options.debug is False
     assert options.no_cache is True
     assert options.min_version == "1.2.3"
-    assert options.handler_overrides == {
-        "abspath": "/tmp/custom-bin",
-        "version": ["python3", "--version"],
-        "install_args": ["black==24.2.0"],
-        "packages": ["black==24.2.0"],
-    }
     assert options.postinstall_scripts is False
     assert options.min_release_age == 14.0
-    assert options.overrides == {"pip": {"install_args": ["black==24.2.0"]}}
+    assert options.overrides == {
+        "env": {
+            "abspath": "/tmp/custom-bin",
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+            "packages": ["black==24.2.0"],
+        },
+        "pip": {
+            "abspath": "/tmp/custom-bin",
+            "version": ["python3", "--version"],
+            "install_args": ["black==24.2.0"],
+            "packages": ["black==24.2.0"],
+        },
+    }
     assert options.install_root == tmp_path / "custom-root"
     assert options.bin_dir == tmp_path / "custom-bin"
     assert options.euid == 1000
@@ -1579,7 +1588,6 @@ def test_build_cli_options_nones_all_leave_fields_at_default(tmp_path):
     assert options.debug is False
     assert options.no_cache is False
     assert options.min_version is None
-    assert options.handler_overrides is None
     assert options.postinstall_scripts is None
     assert options.min_release_age is None
     assert options.overrides is None
@@ -1747,19 +1755,30 @@ def test_build_binary_preserves_explicit_provider_order_for_installer_binaries(
     ]
 
 
-def test_build_binary_merges_cli_handler_overrides_into_all_selected_providers(
+def test_build_cli_options_normalizes_override_flags_for_all_selected_providers(
     tmp_path,
 ):
-    options = cli_module.CliOptions(
-        lib_dir=tmp_path,
-        provider_names=["env", "pip"],
-        dry_run=False,
-        debug=False,
-        no_cache=False,
-        handler_overrides={
-            "version": ["python3", "--version"],
-            "install_args": ["black==24.2.0"],
-        },
+    options = cli_module.build_cli_options(
+        None,
+        lib_dir=str(tmp_path),
+        global_mode=None,
+        binproviders="env,pip",
+        dry_run=None,
+        debug=None,
+        no_cache=None,
+        min_version=None,
+        abspath_override=None,
+        version_override=["python3", "--version"],
+        install_args_override=["black==24.2.0"],
+        packages_override=None,
+        postinstall_scripts=None,
+        min_release_age=None,
+        overrides=None,
+        install_root=None,
+        bin_dir=None,
+        euid=None,
+        install_timeout=None,
+        version_timeout=None,
     )
 
     binary = cli_module.build_binary("black", options, dry_run=False)
@@ -1776,23 +1795,33 @@ def test_build_binary_merges_cli_handler_overrides_into_all_selected_providers(
     }
 
 
-def test_build_binary_explicit_overrides_deepmerge_over_cli_handler_defaults(tmp_path):
-    options = cli_module.CliOptions(
-        lib_dir=tmp_path,
-        provider_names=["env", "pip"],
-        dry_run=False,
-        debug=False,
-        no_cache=False,
-        handler_overrides={
-            "version": ["python3", "--version"],
-            "install_args": ["black==24.2.0"],
-        },
+def test_build_cli_options_explicit_overrides_deepmerge_over_flag_defaults(tmp_path):
+    options = cli_module.build_cli_options(
+        None,
+        lib_dir=str(tmp_path),
+        global_mode=None,
+        binproviders="env,pip",
+        dry_run=None,
+        debug=None,
+        no_cache=None,
+        min_version=None,
+        abspath_override=None,
+        version_override=["python3", "--version"],
+        install_args_override=["black==24.2.0"],
+        packages_override=None,
+        postinstall_scripts=None,
+        min_release_age=None,
         overrides={
             "pip": {
                 "install_args": ["black==25.0.0"],
                 "version_timeout": 99,
             },
         },
+        install_root=None,
+        bin_dir=None,
+        euid=None,
+        install_timeout=None,
+        version_timeout=None,
     )
 
     binary = cli_module.build_binary("black", options, dry_run=False)
@@ -2677,8 +2706,144 @@ def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
     assert str(lib / "pip" / "venv" / "bin") in lines[1]
 
 
-def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
-    """abxpkg --script should use provider envs without requiring duplicate inline deps."""
+def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
+    """EnvProvider-linked python3 should run with active venv semantics intact."""
+
+    lib = tmp_path / "lib"
+
+    load_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        "load",
+        "python3",
+    )
+    assert load_proc.returncode == 0, load_proc.stderr
+    linked_python = lib / "env" / "bin" / "python3"
+    assert linked_python.is_symlink()
+    assert linked_python.readlink() == Path(sys.executable).absolute()
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        "run",
+        "python3",
+        "-c",
+        (
+            "import abxpkg, json, sys; "
+            "print(json.dumps({"
+            "'abxpkg_file': abxpkg.__file__, "
+            "'executable': sys.executable, "
+            "'prefix': sys.prefix"
+            "}))"
+        ),
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert (
+        Path(payload["abxpkg_file"]).resolve()
+        == Path(cli_module.__file__).parents[0] / "__init__.py"
+    )
+    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
+
+
+def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):
+    """Considering apt as a fallback provider must not resolve/install apt off Linux."""
+
+    script = tmp_path / "apt_fallback.py"
+    script.write_text(
+        "# /// script\n"
+        '# dependencies = ["python3"]\n'
+        "# ///\n"
+        "import json, sys\n"
+        "print(json.dumps({'executable': sys.executable}))\n",
+    )
+
+    started_at = time.perf_counter()
+    proc = _run_abxpkg_cli(
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=env,apt",
+        "run",
+        "--script",
+        "python3",
+        str(script),
+    )
+    elapsed = time.perf_counter() - started_at
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    if sys.platform != "linux":
+        assert elapsed < 1
+
+
+def test_load_cache_context_includes_binary_overrides(tmp_path):
+    lib = tmp_path / "lib"
+    first = tmp_path / "demo-first"
+    second = tmp_path / "demo-second"
+    for script, label in ((first, "first"), (second, "second")):
+        script.write_text(f"#!/bin/sh\nprintf '%s\\n' '{label}'\n")
+        script.chmod(0o755)
+
+    first_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        "load",
+        "--abspath",
+        str(first),
+        "--version",
+        "1.0.0",
+        "demo",
+    )
+    assert first_proc.returncode == 0, first_proc.stderr
+    assert "1.0.0" in first_proc.stdout
+    assert str(first) in first_proc.stdout
+    flag_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
+
+    first_json_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        f'--overrides={{"env":{{"abspath":"{first}","version":"1.0.0"}}}}',
+        "load",
+        "demo",
+    )
+    assert first_json_proc.returncode == 0, first_json_proc.stderr
+    assert "1.0.0" in first_json_proc.stdout
+    assert str(first) in first_json_proc.stdout
+    assert set(load_derived_cache(lib / "env" / "derived.env")) == flag_cache_keys
+
+    second_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        f'--overrides={{"env":{{"abspath":"{second}","version":"2.0.0"}}}}',
+        "load",
+        "demo",
+    )
+    assert second_proc.returncode == 0, second_proc.stderr
+    assert "2.0.0" in second_proc.stdout
+    assert str(second) in second_proc.stdout
+    assert str(first) not in second_proc.stdout
+    second_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
+    assert second_cache_keys != flag_cache_keys
+
+    first_again_proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=env",
+        f'--overrides={{"env":{{"abspath":"{first}","version":"1.0.0"}}}}',
+        "load",
+        "demo",
+    )
+    assert first_again_proc.returncode == 0, first_again_proc.stderr
+    assert "1.0.0" in first_again_proc.stdout
+    assert str(first) in first_again_proc.stdout
+    assert str(second) not in first_again_proc.stdout
+
+
+def test_run_script_without_declared_dependency_keeps_target_runtime_env_clean(
+    tmp_path,
+):
+    """Selected fallback providers must not leak undeclared Python packages into scripts."""
 
     lib = tmp_path / "lib"
 
@@ -2699,8 +2864,14 @@ def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
         "# ///\n"
-        "import imagesize\n"
-        "print(imagesize.__file__)\n",
+        "import json, os, sys\n"
+        "print(json.dumps({\n"
+        "    'executable': sys.executable,\n"
+        "    'prefix': sys.prefix,\n"
+        "    'path': os.environ.get('PATH', ''),\n"
+        "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    'virtual_env': os.environ.get('VIRTUAL_ENV', ''),\n"
+        "}))\n",
     )
     script.chmod(0o755)
 
@@ -2714,11 +2885,16 @@ def test_run_script_uses_uv_provider_env_without_inline_dependencies(tmp_path):
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert str(lib / "uv" / "venv") in proc.stdout
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
+    assert str(lib / "uv" / "venv") not in payload["virtual_env"]
+    assert str(lib / "uv" / "venv") not in payload["pythonpath"]
+    assert str(lib / "uv" / "venv" / "bin") not in payload["path"].split(os.pathsep)
 
 
-def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
-    """No-dependency script headers should hit the fast path and use caller ABXPKG_LIB_DIR."""
+def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
+    """Script execution should use caller ABXPKG_LIB_DIR provider env."""
 
     lib = tmp_path / "lib"
 
@@ -2733,16 +2909,15 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
     )
     assert install_proc.returncode == 0, install_proc.stderr
 
-    script = tmp_path / "fast_import_imagesize.py"
+    script = tmp_path / "import_imagesize.py"
     script.write_text(
         "#!/usr/bin/env -S abxpkg run --script python3\n"
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
+        '# dependencies = [{name = "imagesize", binproviders = "uv", install_args = ["imagesize>=2.0.0"], postinstall_scripts = false, min_release_age = 3}]\n'
         "# ///\n"
         "import imagesize, json, os\n"
         "print(json.dumps({\n"
-        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
-        "    'overhead_ns': int(os.environ.get('ABXPKG_FAST_SCRIPT_OVERHEAD_NS', '-1')),\n"
         "    'lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'path': os.environ.get('PATH', ''),\n"
@@ -2768,8 +2943,6 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["fast"] == "1"
-    assert 0 <= payload["overhead_ns"] < 10_000_000
     assert Path(payload["lib_dir"]) == lib
     assert Path(payload["abxpkg_lib_dir"]) == lib.resolve()
     assert Path(payload["virtual_env"]) == (lib / "uv" / "venv")
@@ -2778,12 +2951,13 @@ def test_run_script_fast_path_honors_lib_dir_env_and_uv_provider_cache(tmp_path)
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
 
 
-def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cache(
+def test_run_script_keeps_active_runtime_imports_with_uv_provider_cache(
     tmp_path,
 ):
     """Managed uv script execution must not hide packages from the caller runtime."""
 
     lib = tmp_path / "lib"
+    hook_runtime = lib / "uv" / "packages" / "hook-runtime"
 
     install_proc = _run_abxpkg_cli(
         f"--lib={lib}",
@@ -2800,26 +2974,29 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
         "--binproviders=uv",
         "--postinstall-scripts=False",
         "--min-release-age=3",
-        f'--overrides={{"uv":{{"install_root":"{lib / "uv" / "packages" / "hook-runtime"}","install_args":["humanize>=4.0.0"]}}}}',
+        f'--overrides={{"uv":{{"install_root":"{hook_runtime}","install_args":["humanize>=4.0.0"]}}}}',
         "install",
         "humanize",
     )
     assert package_install_proc.returncode == 0, package_install_proc.stderr
 
-    script = tmp_path / "fast_import_runtime_and_uv_packages.py"
+    script = tmp_path / "import_runtime_and_uv_packages.py"
     script.write_text(
         "#!/usr/bin/env -S abxpkg run --script python3\n"
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
+        "# dependencies = [\n"
+        '#   {name = "imagesize", binproviders = "uv", install_args = ["imagesize>=2.0.0"], postinstall_scripts = false, min_release_age = 3},\n'
+        f'#   {{name = "humanize", binproviders = "uv", install_root = "{hook_runtime}", install_args = ["humanize>=4.0.0"], postinstall_scripts = false, min_release_age = 3}},\n'
+        "# ]\n"
         "# ///\n"
         "import abxpkg, humanize, imagesize, json, os, rich_click, sys\n"
         "print(json.dumps({\n"
-        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
         "    'abxpkg_file': abxpkg.__file__,\n"
         "    'executable': sys.executable,\n"
         "    'humanize_file': humanize.__file__,\n"
         "    'imagesize_file': imagesize.__file__,\n"
-        "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    'prefix': sys.prefix,\n"
         "    'rich_click_file': rich_click.__file__,\n"
         "}))\n",
     )
@@ -2838,22 +3015,18 @@ def test_run_script_fast_path_keeps_active_runtime_imports_with_uv_provider_cach
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["fast"] == "1"
     assert (
         Path(payload["abxpkg_file"]).resolve()
         == Path(cli_module.__file__).parents[0] / "__init__.py"
     )
-    assert Path(payload["executable"]).resolve() == Path(sys.executable).resolve()
+    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
-    assert (
-        str(lib / "uv" / "packages" / "hook-runtime" / "venv")
-        in payload["humanize_file"]
-    )
-    assert str(Path(sys.executable).parent.parent / "lib") in payload["pythonpath"]
+    assert str(hook_runtime / "venv") in payload["humanize_file"]
     assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
 
-def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path):
+def test_run_script_uses_default_lib_dir_without_env_override(tmp_path):
     config_home = tmp_path / "xdg-config"
     default_lib = config_home / "abx" / "lib"
 
@@ -2870,7 +3043,7 @@ def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path
     )
     assert install_proc.returncode == 0, install_proc.stderr
 
-    script = tmp_path / "fast_import_default_uv_package.py"
+    script = tmp_path / "import_default_uv_package.py"
     script.write_text(
         "#!/usr/bin/env -S abxpkg run --script python3\n"
         "# /// script\n"
@@ -2878,7 +3051,6 @@ def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path
         "# ///\n"
         "import humanize, json, os\n"
         "print(json.dumps({\n"
-        "    'fast': os.environ.get('ABXPKG_FAST_SCRIPT'),\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'humanize_file': humanize.__file__,\n"
         "}))\n",
@@ -2897,12 +3069,120 @@ def test_run_script_fast_path_uses_default_lib_dir_without_env_override(tmp_path
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["fast"] == "1"
     assert Path(payload["abxpkg_lib_dir"]) == default_lib
     assert (
         str(default_lib / "uv" / "packages" / "hook-runtime" / "venv")
         in payload["humanize_file"]
     )
+
+
+def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
+    lib = tmp_path / "lib"
+    install_root = lib / "pnpm" / "packages" / "hook-deps"
+    node_modules_dir = install_root / "node_modules"
+    shared_config = tmp_path / "shared_config.json"
+    shared_config.write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "NODE_BINARY": {"default": "node"},
+                    "PYTHON_BINARY": {"default": "python3"},
+                    "PUPPETEER_PACKAGE_ROOT": {"default": "hook-deps"},
+                },
+                "required_binaries": [
+                    {
+                        "name": "{NODE_BINARY}",
+                        "binproviders": "env,apt,brew",
+                        "min_version": "18.0.0",
+                    },
+                    {
+                        "name": "{PYTHON_BINARY}",
+                        "binproviders": "env",
+                        "min_version": "3.10.0",
+                    },
+                ],
+            },
+            indent=2,
+        ),
+    )
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {
+                        "name": "puppeteer",
+                        "binproviders": "pnpm",
+                        "postinstall_scripts": False,
+                        "min_release_age": 3,
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": "{ABXPKG_LIB_DIR}/pnpm/packages/{PUPPETEER_PACKAGE_ROOT}",
+                                "install_args": ["puppeteer"],
+                            },
+                        },
+                    },
+                ],
+            },
+            indent=2,
+        ),
+    )
+
+    script = tmp_path / "hook.js"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script --deps-from=./shared_config.json:required_binaries,./config.json:required_binaries node\n"
+        "\n"
+        "// /// script\n"
+        "// ///\n"
+        "\n"
+        "const childProcess = require('child_process');\n"
+        "const fs = require('fs');\n"
+        "const path = require('path');\n"
+        "\n"
+        "const python = childProcess.execFileSync('python3', [\n"
+        "  '-c',\n"
+        '  \'import json, sys; print(json.dumps({"executable": sys.executable, "version": list(sys.version_info[:3])}))\',\n'
+        "], {encoding: 'utf8'}).trim();\n"
+        "const puppeteerPackage = require.resolve('puppeteer/package.json');\n"
+        "const payload = {\n"
+        "  nodeVersion: process.versions.node,\n"
+        "  execPath: process.execPath,\n"
+        "  python: JSON.parse(python),\n"
+        "  puppeteerPackage,\n"
+        "  puppeteerName: JSON.parse(fs.readFileSync(puppeteerPackage, 'utf8')).name,\n"
+        "  puppeteerVersion: JSON.parse(fs.readFileSync(puppeteerPackage, 'utf8')).version,\n"
+        "  nodeModulesDir: process.env.NODE_MODULES_DIR,\n"
+        "  pnpmHome: process.env.PNPM_HOME,\n"
+        "  path: process.env.PATH,\n"
+        "};\n"
+        "console.log(JSON.stringify(payload));\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_cli(
+        script,
+        env_overrides={
+            "ABXPKG_LIB_DIR": str(lib),
+            "ABXPKG_BINPROVIDERS": "env,pnpm",
+        },
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert int(payload["nodeVersion"].split(".", 1)[0]) >= 18
+    assert payload["python"]["version"][:2] >= [3, 10]
+    assert Path(payload["nodeModulesDir"]) == node_modules_dir
+    assert Path(payload["pnpmHome"]) == node_modules_dir / ".bin"
+    puppeteer_package = Path(payload["puppeteerPackage"])
+    assert puppeteer_package.is_file()
+    assert puppeteer_package.relative_to(node_modules_dir)
+    assert payload["puppeteerName"] == "puppeteer"
+    assert payload["puppeteerVersion"]
+    assert str(lib / "bin") not in payload["path"].split(os.pathsep)
+    assert str(lib / "env" / "bin") in payload["path"].split(os.pathsep)
+    assert str(node_modules_dir / ".bin") in payload["path"].split(os.pathsep)
+    assert (node_modules_dir / "puppeteer" / "package.json").is_file()
 
 
 @pytest.fixture()

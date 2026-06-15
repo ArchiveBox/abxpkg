@@ -3,10 +3,16 @@ from __future__ import annotations
 __package__ = "abxpkg"
 
 import os
+from collections.abc import Iterator
 from typing import Any
 
 
 _PACKAGE_DIR = os.path.dirname(__file__)
+# Pydantic auto-loads third-party plugins from the active Python environment.
+# In CLI/shebang mode that can pull unrelated packages like logfire into every
+# model import, adding hundreds of milliseconds before abxpkg touches its own
+# cache. abxpkg does not rely on those plugins, so keep model construction local.
+os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
 _PROVIDER_MODULE_NAMES_CACHE = None
 _EXPORT_MODULES_BY_NAME_CACHE = None
 _PROVIDER_CLASS_NAMES_BY_NAME_CACHE = None
@@ -159,6 +165,55 @@ def _provider_class_names_by_name() -> dict[str, tuple[str, str]]:
     return _PROVIDER_CLASS_NAMES_BY_NAME_CACHE
 
 
+class ProviderClassByName(dict):
+    """Mapping that preserves the public dict API while importing lazily.
+
+    Provider modules are relatively expensive because some wrap external
+    package managers. Script execution frequently needs only a few named
+    providers, so resolving all classes just to validate/index one provider
+    burns the hot-path cache win before provider caches are even consulted.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._class_names = _provider_class_names_by_name()
+
+    def __missing__(self, provider_name: str):
+        module_name, class_name = self._class_names[provider_name]
+        provider_class = getattr(_import_module(module_name), class_name)
+        self[provider_name] = provider_class
+        return provider_class
+
+    def __contains__(self, provider_name: object) -> bool:
+        return provider_name in self._class_names
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._class_names)
+
+    def __len__(self) -> int:
+        return len(self._class_names)
+
+    def keys(self):
+        return self._class_names.keys()
+
+    def _load_all(self) -> None:
+        for provider_name in self._class_names:
+            self[provider_name]
+
+    def items(self):
+        self._load_all()
+        return super().items()
+
+    def values(self):
+        self._load_all()
+        return super().values()
+
+    def get(self, provider_name: object, default: Any = None) -> Any:
+        if provider_name not in self._class_names:
+            return default
+        return self[provider_name]
+
+
 def _all_providers():
     providers = []
     for module_name, class_name in _provider_class_names_by_name().values():
@@ -187,13 +242,7 @@ def _default_provider_names() -> list[str]:
 
 
 def _provider_class_by_name():
-    return {
-        provider_name: getattr(_import_module(module_name), class_name)
-        for provider_name, (
-            module_name,
-            class_name,
-        ) in _provider_class_names_by_name().items()
-    }
+    return ProviderClassByName()
 
 
 _COMPUTED_EXPORTS = {
@@ -229,15 +278,4 @@ def _all_public_export_names() -> tuple[str, ...]:
     return _ALL_PUBLIC_EXPORT_NAMES_CACHE
 
 
-class _LazyAll:
-    def __iter__(self):
-        return iter(_all_public_export_names())
-
-    def __len__(self):
-        return len(_all_public_export_names())
-
-    def __getitem__(self, index):
-        return _all_public_export_names()[index]
-
-
-__all__ = _LazyAll()
+__all__ = list(_all_public_export_names())

@@ -535,6 +535,7 @@ class BinProvider(BaseModel):
 
     class CacheRecord(TypedDict):
         fingerprint: list["BinProvider.CacheFingerprint"]
+        cache_context: str
         loaded_version: str
         loaded_sha256: str
         loaded_euid: int
@@ -548,14 +549,40 @@ class BinProvider(BaseModel):
         mtime: int
         euid: int
 
+    def _cache_context(self, bin_name: BinName) -> str:
+        provider_fields = set(type(self).model_fields)
+        provider_config = self.model_dump(
+            mode="json",
+            include=provider_fields,
+            warnings=False,
+        )
+        provider_config["provider_class"] = (
+            f"{type(self).__module__}.{type(self).__qualname__}"
+        )
+        provider_config["install_args"] = list(
+            self.get_install_args(bin_name, quiet=True, no_cache=True),
+        )
+        return json.dumps(
+            provider_config,
+            default=str,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
     def _cache_key(
         self,
         bin_name: BinName,
         abspath: HostBinPath,
+        cache_context: str | None = None,
     ) -> str:
         resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
         return json.dumps(
-            [self.name, str(bin_name), str(resolved_abspath)],
+            [
+                self.name,
+                str(bin_name),
+                str(resolved_abspath),
+                cache_context or self._cache_context(bin_name),
+            ],
             separators=(",", ":"),
         )
 
@@ -600,7 +627,8 @@ class BinProvider(BaseModel):
             return None
 
         cache = load_derived_cache(derived_env_path)
-        cache_key = self._cache_key(bin_name, abspath)
+        cache_context = self._cache_context(bin_name)
+        cache_key = self._cache_key(bin_name, abspath, cache_context=cache_context)
         cached_record = cache.get(cache_key)
         if not isinstance(cached_record, dict):
             return None
@@ -636,7 +664,6 @@ class BinProvider(BaseModel):
 
         original_abspath = str(Path(abspath).expanduser().absolute())
         resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
-        cached_install_args = cached_record.get("install_args")
         resolved_provider_name = cached_record.get("resolved_provider_name")
         cache_kind = cached_record.get("cache_kind")
         cached_abspath = cached_record.get("abspath")
@@ -650,6 +677,12 @@ class BinProvider(BaseModel):
             cache.pop(cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
+        if self.cached_binary_options_mismatch(bin_name, cached_record):
+            return None
+        if self.cached_binary_state_mismatch(bin_name, cached_record):
+            cache.pop(cache_key, None)
+            save_derived_cache(derived_env_path, cache)
+            return None
         primary_fingerprint = fingerprints[0]
         if cached_abspath == resolved_abspath and original_abspath != resolved_abspath:
             cached_abspath = original_abspath
@@ -659,14 +692,13 @@ class BinProvider(BaseModel):
             or cached_record.get("cache_kind") != cache_kind
             or cached_record.get("bin_name") != str(bin_name)
             or cached_abspath not in {original_abspath, resolved_abspath}
-            or not isinstance(cached_install_args, list)
-            or not all(isinstance(arg, str) for arg in cached_install_args)
             or cached_record.get("inode") != primary_fingerprint["inode"]
             or cached_record.get("mtime") != primary_fingerprint["mtime_ns"]
             or cached_record.get("euid") != primary_fingerprint["euid"]
         ):
             cache[cache_key] = {
                 "fingerprint": fingerprints,
+                "cache_context": cache_context,
                 "loaded_version": str(version),
                 "loaded_sha256": str(sha256),
                 "loaded_euid": euid,
@@ -703,6 +735,27 @@ class BinProvider(BaseModel):
             },
         )
 
+    def load_cached_binary_by_name(self, bin_name: BinName) -> ShallowBinary | None:
+        derived_env_path = self.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            return None
+
+        cache = load_derived_cache(derived_env_path)
+        for cached_record in cache.values():
+            if not isinstance(cached_record, dict):
+                continue
+            if cached_record.get("provider_name") != self.name or cached_record.get(
+                "bin_name",
+            ) != str(bin_name):
+                continue
+            cached_abspath = cached_record.get("abspath")
+            if not isinstance(cached_abspath, str):
+                continue
+            loaded = self.load_cached_binary(bin_name, Path(cached_abspath))
+            if loaded and loaded.loaded_abspath:
+                return loaded
+        return None
+
     @log_method_call()
     def write_cached_binary(
         self,
@@ -724,8 +777,10 @@ class BinProvider(BaseModel):
 
         original_abspath = str(Path(abspath).expanduser().absolute())
         primary_fingerprint = fingerprints[0]
+        cache_context = self._cache_context(bin_name)
         record: dict[str, object] = {
             "fingerprint": fingerprints,
+            "cache_context": cache_context,
             "loaded_version": str(loaded_version),
             "loaded_sha256": str(loaded_sha256),
             "loaded_euid": primary_fingerprint["euid"],
@@ -748,7 +803,7 @@ class BinProvider(BaseModel):
         ):
             derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
-        cache[self._cache_key(bin_name, abspath)] = record
+        cache[self._cache_key(bin_name, abspath, cache_context=cache_context)] = record
         try:
             save_derived_cache(derived_env_path, cache)
         except Exception as err:
@@ -1456,11 +1511,19 @@ class BinProvider(BaseModel):
         cache = load_derived_cache(derived_env_path)
         updated_cache: dict[str, object] = {}
         for cache_key, cache_value in cache.items():
+            cached_provider_name = None
+            cached_bin_name = None
+            if isinstance(cache_value, dict):
+                cached_provider_name = cache_value.get("provider_name")
+                cached_bin_name = cache_value.get("bin_name")
             try:
-                provider_name, cached_bin_name, _cached_abspath = json.loads(cache_key)
+                key_parts = json.loads(cache_key)
+                if isinstance(key_parts, list) and len(key_parts) >= 2:
+                    cached_provider_name = cached_provider_name or key_parts[0]
+                    cached_bin_name = cached_bin_name or key_parts[1]
             except Exception:
                 continue
-            if provider_name == self.name and cached_bin_name == str(bin_name):
+            if cached_provider_name == self.name and cached_bin_name == str(bin_name):
                 continue
             updated_cache[cache_key] = cache_value
         if updated_cache != cache:
@@ -1470,82 +1533,22 @@ class BinProvider(BaseModel):
 
     @log_method_call(include_result=True)
     def has_cached_binary(self, bin_name: BinName) -> bool:
-        derived_env_path = self.derived_env_path
-        if derived_env_path is None or not derived_env_path.is_file():
-            return False
-        cache = load_derived_cache(derived_env_path)
-        cache_changed = False
-        has_valid_cache = False
-        for cache_key, cache_value in list(cache.items()):
-            if not isinstance(cache_value, dict):
-                continue
-            cached_provider_name = cache_value.get("provider_name")
-            cached_bin_name = cache_value.get("bin_name")
-            cached_abspath = cache_value.get("abspath")
-            cache_kind = cache_value.get("cache_kind")
-            if not isinstance(cached_provider_name, str) or not isinstance(
-                cached_bin_name,
-                str,
-            ):
-                try:
-                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
-                        cache_key,
-                    )
-                except Exception:
-                    continue
-            if (
-                cached_provider_name != self.name
-                or cached_bin_name != str(bin_name)
-                or not isinstance(cached_abspath, str)
-            ):
-                continue
-            if not isinstance(cache_kind, str):
-                cache_kind = (
-                    "dependency"
-                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
-                    else "binary"
-                )
-            if cache_kind != "binary":
-                continue
-            cached_path = Path(cached_abspath)
-            if not (cached_path.exists() or cached_path.is_symlink()):
-                cache.pop(cache_key, None)
-                cache_changed = True
-                continue
-            has_valid_cache = True
-        if cache_changed:
-            save_derived_cache(derived_env_path, cache)
-        return has_valid_cache
+        loaded = self.load_cached_binary_by_name(bin_name)
+        return bool(loaded and loaded.loaded_abspath)
 
-    def cached_binary_install_args_mismatch(
+    def cached_binary_options_mismatch(
         self,
         bin_name: BinName,
-        abspath: HostBinPath,
+        cached_record: Mapping[str, object],
     ) -> bool:
-        """Return True when a managed binary cache was made with different install args."""
-        derived_env_path = self.derived_env_path
-        if derived_env_path is None or not derived_env_path.is_file():
-            return False
+        return cached_record.get("cache_context") != self._cache_context(bin_name)
 
-        cache = load_derived_cache(derived_env_path)
-        cache_key = self._cache_key(bin_name, abspath)
-        cached_record = cache.get(cache_key)
-        if not isinstance(cached_record, dict):
-            return False
-
-        cached_install_args = cached_record.get("install_args")
-        if not isinstance(cached_install_args, list) or not all(
-            isinstance(arg, str) for arg in cached_install_args
-        ):
-            return False
-
-        requested_install_args = list(
-            self.get_install_args(bin_name, quiet=True, no_cache=True),
-        )
-        if cached_install_args == requested_install_args:
-            return False
-
-        return True
+    def cached_binary_state_mismatch(
+        self,
+        bin_name: BinName,
+        cached_record: Mapping[str, object],
+    ) -> bool:
+        return False
 
     @log_method_call(include_result=True)
     def depends_on_binaries(self) -> list[ShallowBinary]:
@@ -1832,6 +1835,9 @@ class BinProvider(BaseModel):
             output=format_subprocess_output(proc.stdout, proc.stderr),
         )
 
+    def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
+        return bin_abspath
+
     # @validate_call
     def exec(
         self,
@@ -1858,6 +1864,7 @@ class BinProvider(BaseModel):
             f"cwd must be a valid, accessible directory: {cwd}"
         )
         cwd_path = Path(cwd).resolve()
+        bin_abspath = self._exec_bin_abspath(Path(bin_abspath))
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
         is_version_probe = len(cmd) == 2 and cmd[1] in {"--version", "-version", "-v"}
         exec_log_prefix = ACTIVE_EXEC_LOG_PREFIX.get()
@@ -2261,6 +2268,21 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
+        installed: ShallowBinary | None = None
+        if not no_cache and not self.dry_run:
+            try:
+                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
+            except Exception:
+                installed = None
+            if installed is not None and (
+                min_version is None
+                or (
+                    installed.loaded_version is not None
+                    and installed.loaded_version >= min_version
+                )
+            ):
+                return installed
+
         if postinstall_scripts is None:
             postinstall_scripts = not self.supports_postinstall_disable(
                 "install",
@@ -2297,43 +2319,21 @@ class BinProvider(BaseModel):
                 self.name,
             )
             postinstall_scripts = True
-        skip_preload = False
-        if not no_cache:
-            try:
-                existing_abspath = self.get_abspath(
-                    bin_name,
-                    quiet=True,
-                    no_cache=True,
-                )
-            except Exception:
-                existing_abspath = None
-            skip_preload = bool(
-                existing_abspath
-                and self.cached_binary_install_args_mismatch(
-                    bin_name,
-                    existing_abspath,
-                ),
+        if (
+            installed is not None
+            and min_version is not None
+            and installed.loaded_version is not None
+            and installed.loaded_version < min_version
+        ):
+            installed = self.update(
+                bin_name=bin_name,
+                quiet=quiet,
+                no_cache=False,
+                dry_run=dry_run,
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=min_version,
             )
-        if not no_cache and not skip_preload:
-            try:
-                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
-            except Exception:
-                installed = None
-            if (
-                installed is not None
-                and min_version is not None
-                and installed.loaded_version is not None
-                and installed.loaded_version < min_version
-            ):
-                installed = self.update(
-                    bin_name=bin_name,
-                    quiet=quiet,
-                    no_cache=False,
-                    dry_run=dry_run,
-                    postinstall_scripts=postinstall_scripts,
-                    min_release_age=min_release_age,
-                    min_version=min_version,
-                )
             if installed:
                 return installed
 
@@ -2775,6 +2775,26 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
+        # Cache context includes the provider fields that affect resolution.
+        # setup_PATH() is allowed to populate those fields lazily, so run it
+        # before both cache reads and live probes; otherwise the read context
+        # and write context drift and every cached binary looks stale.
+        self.setup_PATH(no_cache=no_cache)
+        if not no_cache:
+            cached = self.load_cached_binary_by_name(bin_name)
+            if cached is not None and cached.loaded_abspath and cached.loaded_version:
+                logger.info(
+                    format_loaded_binary(
+                        "☑️ Loaded",
+                        cached.loaded_abspath,
+                        cached.loaded_version,
+                        self,
+                        str(bin_name),
+                    ),
+                    extra={"abx_cli_duplicate_stdout": True},
+                )
+                return cached
+
         # When we have a managed ``bin_dir``, that's the only path we
         # ever load from — iterating ``get_abspaths`` would silently
         # surface ambient PATH candidates that this provider didn't
@@ -2823,11 +2843,6 @@ class BinProvider(BaseModel):
         quiet: bool = True,
         no_cache: bool = False,
     ) -> ShallowBinary | None:
-        if not no_cache and self.cached_binary_install_args_mismatch(
-            bin_name,
-            installed_abspath,
-        ):
-            self.invalidate_cache(bin_name)
         result = (
             None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
         )
@@ -2905,6 +2920,10 @@ class EnvProvider(BinProvider):
             "search": "self.default_search_handler",
         },
         "python": {
+            "abspath": "self.python_abspath_handler",
+            "version": "{}.{}.{}".format(*sys.version_info[:3]),
+        },
+        "python3": {
             "abspath": "self.python_abspath_handler",
             "version": "{}.{}.{}".format(*sys.version_info[:3]),
         },
@@ -3021,6 +3040,19 @@ class EnvProvider(BinProvider):
             link_path.unlink()
         link_path.symlink_to(target)
         return TypeAdapter(HostBinPath).validate_python(link_path)
+
+    def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
+        # EnvProvider exposes stable managed links under ABXPKG_LIB_DIR/env/bin so
+        # PATHs and cached Binary metadata stay portable. Executing those links
+        # directly can still change runtime semantics for binaries that inspect
+        # argv[0] / sys.executable, notably venv Python hiding its site-packages.
+        # Dereference only the managed link itself: run the binary EnvProvider
+        # discovered, but do not chase any further symlink chain owned by the OS
+        # or package manager.
+        if not bin_abspath.is_symlink():
+            return bin_abspath
+        linked_to = bin_abspath.readlink()
+        return linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to
 
     def _is_managed_by_other_provider(
         self,
@@ -3152,59 +3184,6 @@ class EnvProvider(BinProvider):
         min_version: SemVer | None = None,
     ) -> bool:
         return False
-
-    @log_method_call(include_result=True)
-    def has_cached_binary(self, bin_name: BinName) -> bool:
-        derived_env_path = self.derived_env_path
-        if derived_env_path is None or not derived_env_path.is_file():
-            return False
-
-        cache = load_derived_cache(derived_env_path)
-        cache_changed = False
-        has_valid_cache = False
-
-        for cache_key, cache_value in list(cache.items()):
-            if not isinstance(cache_value, dict):
-                continue
-
-            cached_provider_name = cache_value.get("provider_name")
-            cached_bin_name = cache_value.get("bin_name")
-            cached_abspath = cache_value.get("abspath")
-            cache_kind = cache_value.get("cache_kind")
-            if (
-                not isinstance(cached_provider_name, str)
-                or not isinstance(cached_bin_name, str)
-                or not isinstance(cached_abspath, str)
-            ):
-                try:
-                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
-                        cache_key,
-                    )
-                except Exception:
-                    continue
-
-            if cached_provider_name != self.name or cached_bin_name != str(bin_name):
-                continue
-            if not isinstance(cache_kind, str):
-                cache_kind = (
-                    "dependency"
-                    if str(cached_bin_name) == str(self.INSTALLER_BIN)
-                    else "binary"
-                )
-            if cache_kind != "binary":
-                continue
-
-            if self._is_managed_by_other_provider(Path(cached_abspath)):
-                cache.pop(cache_key, None)
-                cache_changed = True
-                continue
-
-            has_valid_cache = True
-
-        if cache_changed:
-            save_derived_cache(derived_env_path, cache)
-
-        return has_valid_cache
 
     @log_method_call(include_result=True)
     def load_cached_binary(

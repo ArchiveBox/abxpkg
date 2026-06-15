@@ -47,6 +47,7 @@ uv run abx yt-dlp --help
 
 ## Verification
 
+<!--pytest.mark.skip(reason="pytest invocation")-->
 ```bash
 uv run pytest tests/test_cli.py -q
 uv run pytest tests/test_chromewebstoreprovider.py -q

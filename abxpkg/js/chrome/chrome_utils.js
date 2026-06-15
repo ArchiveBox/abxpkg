@@ -2132,12 +2132,16 @@ function findAnyChromiumBinary() {
  * Get the extensions directory path.
  * Centralized path calculation used by extension installers and chrome launch.
  *
- * Path is derived from ABXPKG_LIB_DIR/chromewebstore/extensions.
+ * Path comes from the Chrome Web Store provider env emitted by abxpkg.
  *
  * @returns {string} - Absolute path to extensions directory
  */
 function getExtensionsDir() {
-    return path.join(getLibDir(), 'chromewebstore', 'extensions');
+    const configured = getEnv('CHROMEWEBSTORE_EXTENSIONS_DIR');
+    if (!configured) {
+        throw new Error('CHROMEWEBSTORE_EXTENSIONS_DIR is required; run Chrome hooks through abxpkg/abx-dl/archivebox so provider env is resolved once and passed to the hook');
+    }
+    return path.resolve(configured);
 }
 
 /**
@@ -2200,7 +2204,7 @@ function getNodeModulesDir() {
  * This mirrors the runtime path layout closely enough that test helpers can
  * exercise the same launch/session code without re-implementing the path
  * calculation rules. Python should prefer this instead of reconstructing
- * `ABXPKG_LIB_DIR`, `NODE_MODULES_DIR`, `CHROME_EXTENSIONS_DIR`, etc. on its own.
+ * `ABXPKG_LIB_DIR`, `NODE_MODULES_DIR`, etc. on its own.
  *
  * @returns {Object} - Object with all test environment paths
  */
@@ -4009,7 +4013,6 @@ if (require.main === module) {
         console.log('  MACHINE_TYPE              Machine type override');
         console.log('  NODE_MODULES_DIR          Node modules directory');
         console.log('  CHROME_BINARY             Chrome binary path');
-        console.log('  CHROME_EXTENSIONS_DIR     Extensions directory');
         process.exit(1);
     }
 

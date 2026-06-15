@@ -158,7 +158,7 @@ class TestEnvProvider:
             assert load_derived_cache(derived_env_path) == {}
             assert provider.load("python3", no_cache=True) is not None
 
-    def test_provider_load_recovers_when_cached_install_args_change(self):
+    def test_provider_load_recovers_when_cached_context_changes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             install_root = Path(tmpdir) / "env"
             provider = EnvProvider(
@@ -174,8 +174,9 @@ class TestEnvProvider:
             cache = load_derived_cache(derived_env_path)
             assert cache
             cache_key, cached_record = next(iter(cache.items()))
+            assert isinstance(cached_record["cache_context"], str)
             assert cached_record["install_args"] == ["python3"]
-            cached_record["install_args"] = ["old-python3-package-name"]
+            cached_record["cache_context"] = "old-cache-context"
             save_derived_cache(derived_env_path, cache)
 
             reloaded = provider.load("python3")
@@ -183,7 +184,7 @@ class TestEnvProvider:
             assert reloaded is not None
             assert reloaded.loaded_abspath == loaded.loaded_abspath
             refreshed = load_derived_cache(derived_env_path)
-            assert refreshed[cache_key]["install_args"] == ["python3"]
+            assert refreshed[cache_key]["cache_context"] != "old-cache-context"
 
     def test_provider_does_not_cache_binaries_managed_by_other_providers(self):
         with tempfile.TemporaryDirectory() as tmpdir:

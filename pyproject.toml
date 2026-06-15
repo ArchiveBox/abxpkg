@@ -47,8 +47,8 @@ dependencies = [
 ]
 
 [project.scripts]
-abxpkg = "abxpkg.fastcli:main"
-abx = "abxpkg.fastcli:abx_main"
+abxpkg = "abxpkg.cli:main"
+abx = "abxpkg.cli:abx_main"
 
 [project.optional-dependencies]
 rich = [

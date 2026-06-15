@@ -243,9 +243,11 @@ function getLibDir() {
 }
 
 function getNodeModulesDir() {
-    const configured = getEnv('NODE_MODULES_DIR') || getEnv('NODE_MODULE_DIR');
-    if (configured) return path.resolve(configured);
-    return path.resolve(path.join(getLibDir(), 'npm', 'node_modules'));
+    const configured = getEnv('NODE_MODULES_DIR');
+    if (!configured) {
+        throw new Error('NODE_MODULES_DIR is required; run hooks through abxpkg/abx-dl/archivebox so provider env is resolved once and passed to the hook');
+    }
+    return path.resolve(configured);
 }
 
 function ensureNodeModuleResolution(moduleRef = module) {

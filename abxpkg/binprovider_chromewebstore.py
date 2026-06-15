@@ -73,6 +73,13 @@ class ChromeWebstoreProvider(BinProvider):
 
     @computed_field
     @property
+    def ENV(self) -> "dict[str, str]":
+        if not self.bin_dir:
+            return {}
+        return {"CHROMEWEBSTORE_EXTENSIONS_DIR": str(self.bin_dir)}
+
+    @computed_field
+    @property
     def is_valid(self) -> bool:
         return bool(
             (

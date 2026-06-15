@@ -50,6 +50,12 @@ class AptProvider(BinProvider):
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""
+        if sys.platform != "linux":
+            # Apt has no runtime PATH contribution on non-Linux hosts. Returning
+            # here keeps fallback provider lists cheap: merely considering apt
+            # must not ask other providers to locate or install apt-get.
+            self.PATH = ""
+            return
         # Rebuild PATH on first use, when the caller forces no_cache, or when
         # PATH is still empty — the last case covers the "INSTALLER_BINARY was
         # resolved out-of-band (hook preflight etc.), so _INSTALLER_BINARY is

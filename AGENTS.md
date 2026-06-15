@@ -55,6 +55,7 @@ print(binary.abspath, binary.version, binary.is_valid)
 
 Use targeted tests and real providers:
 
+<!--pytest.mark.skip(reason="pytest invocation")-->
 ```bash
 uv run pytest tests/test_cli.py -q
 uv run pytest tests/test_chromewebstoreprovider.py -q

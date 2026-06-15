@@ -1254,10 +1254,16 @@ source .venv/bin/activate
 
 # run formatting/lint/type checks
 uv run prek run --all-files
+```
 
+<!--pytest.mark.skip(reason="pytest invocation")-->
+```bash
 # run the full test suite from tests/
 uv run pytest -sx tests/
+```
 
+<!--pytest.mark.skip(reason="release/publish command")-->
+```bash
 # build distributions
 uv build && uv publish --username=__token__
 ```
