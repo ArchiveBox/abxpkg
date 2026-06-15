@@ -1207,6 +1207,109 @@ def apply_script_dependency_options(
     return replace(options, **replacement_kwargs) if replacement_kwargs else options
 
 
+def _expand_dependency_value(value: Any, values: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return re.sub(
+            r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+            lambda match: values.get(match.group(1), match.group(0)),
+            value,
+        )
+    if isinstance(value, list):
+        return [_expand_dependency_value(item, values) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _expand_dependency_value(item, values)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _deps_from_config_specs(
+    raw_specs: Iterable[str],
+    *,
+    base_path: Path,
+    options: CliOptions,
+) -> list[Any]:
+    deps: list[Any] = []
+    for raw_spec_group in raw_specs:
+        for raw_spec in str(raw_spec_group or "").split(","):
+            spec = raw_spec.strip()
+            if not spec:
+                continue
+            raw_path, _, selector = spec.partition(":")
+            deps_path = Path(raw_path)
+            if not deps_path.is_absolute():
+                deps_path = base_path / deps_path
+            root = json.loads(deps_path.read_text())
+            selected: Any = root
+            for part in (selector or "dependencies").split("."):
+                selected = selected[part]
+
+            values = {key: str(value) for key, value in os.environ.items()}
+            values["ABXPKG_LIB_DIR"] = str(options.lib_dir)
+            properties = root.get("properties") if isinstance(root, dict) else None
+            if isinstance(properties, dict):
+                for key, prop in properties.items():
+                    if (
+                        key not in values
+                        and isinstance(prop, dict)
+                        and "default" in prop
+                    ):
+                        values[str(key)] = str(prop["default"])
+
+            expanded = _expand_dependency_value(selected, values)
+            if isinstance(expanded, list):
+                deps.extend(expanded)
+            else:
+                deps.append(expanded)
+    return deps
+
+
+def build_deps_from_exec_env(
+    deps: Iterable[Any],
+    *,
+    options: CliOptions,
+    install_before_run: bool,
+    update_before_run: bool,
+    explicit_provider_selection: bool,
+    base_env: dict[str, str],
+) -> dict[str, str]:
+    env = dict(base_env)
+    for dep in deps:
+        if isinstance(dep, str):
+            dep_name = dep
+            dep_options = options
+        elif isinstance(dep, dict) and dep.get("name"):
+            dep_name = str(dep["name"])
+            dep_options = options
+            if not explicit_provider_selection and "binproviders" in dep:
+                raw_provider_names = dep["binproviders"]
+                dep_options = replace(
+                    dep_options,
+                    provider_names=parse_provider_names(
+                        ",".join(raw_provider_names)
+                        if isinstance(raw_provider_names, list)
+                        else str(raw_provider_names),
+                    ),
+                )
+            dep_options = apply_script_dependency_options(dep_options, dep)
+        else:
+            continue
+
+        binary, exec_env_providers = resolve_runtime_binary(
+            dep_name,
+            options=dep_options,
+            install_before_run=install_before_run,
+            update_before_run=update_before_run,
+        )
+        env = build_runtime_exec_env(
+            binary,
+            exec_env_providers,
+            base_env=env,
+        )
+    return env
+
+
 def run_binary_command(
     binary_name: str,
     *,
@@ -2106,6 +2209,13 @@ def exec_command(
     default=False,
     help="Emit the environment delta as a JSON object instead of dotenv lines.",
 )
+@click.option(
+    "--deps-from",
+    "deps_from",
+    multiple=True,
+    default=(),
+    help="Read dependency records from JSON config paths like path:required_binaries before emitting env.",
+)
 @click.argument("binary_names", nargs=-1)
 @click.pass_context
 def env_command(
@@ -2118,6 +2228,10 @@ def env_command(
     command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
     command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
     json_output = bool(shared_kwargs.pop("json_output"))
+    deps_from = tuple(shared_kwargs.pop("deps_from") or ())
+    explicit_provider_selection = shared_kwargs.get(
+        "binproviders",
+    ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
     options = get_command_options(ctx, **shared_kwargs)
     install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
         command_install_before_run,
@@ -2128,6 +2242,20 @@ def env_command(
     configure_cli_logging(debug=options.debug)
 
     base_env = os.environ.copy()
+    render_base_env = base_env.copy()
+    if deps_from:
+        base_env = build_deps_from_exec_env(
+            _deps_from_config_specs(
+                deps_from,
+                base_path=Path.cwd(),
+                options=options,
+            ),
+            options=options,
+            install_before_run=install_before_run,
+            update_before_run=update_before_run,
+            explicit_provider_selection=explicit_provider_selection,
+            base_env=base_env,
+        )
     final_env = build_command_exec_env(
         binary_names,
         options=options,
@@ -2136,10 +2264,10 @@ def env_command(
         base_env=base_env,
     )
     if json_output:
-        _echo(json.dumps(render_env_delta_values(base_env, final_env), indent=2))
+        _echo(json.dumps(render_env_delta_values(render_base_env, final_env), indent=2))
         return
 
-    lines = render_env_assignment_lines(base_env, final_env)
+    lines = render_env_assignment_lines(render_base_env, final_env)
     if lines:
         _echo("\n".join(lines))
 

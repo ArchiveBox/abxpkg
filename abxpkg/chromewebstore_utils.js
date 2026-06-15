@@ -1,9 +1,8 @@
 /**
  * Chrome Web Store extension installer for ChromeWebstoreProvider.
  *
- * Keep this helper intentionally narrow. Browser/CDP/persona behavior belongs
- * in abx-plugins' chrome_utils.js; this file only downloads, unpacks,
- * sanitizes, and caches Web Store CRX payloads for abxpkg.
+ * Keep this helper intentionally narrow: it only downloads, unpacks, sanitizes,
+ * and caches Web Store CRX payloads for abxpkg.
  */
 
 const fs = require('fs');

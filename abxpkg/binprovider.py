@@ -1245,6 +1245,7 @@ class BinProvider(BaseModel):
         #         'install': lambda: os.system('brew install wget'),
         #     },
         # }
+        cache_must_reset = False
         for binname, bin_overrides in overrides.items():
             provider_field_overrides: dict[str, Any] = {}
             handler_overrides: dict[str, Any] = {}
@@ -1265,6 +1266,7 @@ class BinProvider(BaseModel):
                         **provider_field_overrides,
                     },
                 )
+                cache_must_reset = True
 
             if handler_overrides:
                 updated_binprovider.overrides[binname] = cast(
@@ -1274,6 +1276,7 @@ class BinProvider(BaseModel):
                         **handler_overrides,
                     },
                 )
+                cache_must_reset = True
 
         if provider_patches:
             updated_binprovider = type(self).model_validate(
@@ -1286,6 +1289,10 @@ class BinProvider(BaseModel):
                     **provider_patches,
                 },
             )
+            cache_must_reset = True
+
+        if cache_must_reset:
+            updated_binprovider._cache = None
 
         return updated_binprovider
 
@@ -2362,7 +2369,8 @@ class BinProvider(BaseModel):
                     and installed.loaded_version >= min_version
                 )
             ):
-                return installed
+                if not self.cached_binary_state_mismatch(bin_name, {}):
+                    return installed
 
         if postinstall_scripts is None:
             postinstall_scripts = not self.supports_postinstall_disable(

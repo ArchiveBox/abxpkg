@@ -868,6 +868,52 @@ def test_env_command_emits_quoted_dotenv_lines_for_installable_pip_binary(tmp_pa
     assert any((lib_dir / "pip").rglob("black"))
 
 
+def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
+    lib = tmp_path / "lib"
+    hook_runtime = lib / "uv" / "packages" / "hook-env"
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "NODE_BINARY": {"default": "node"},
+                },
+                "required_binaries": [
+                    {
+                        "name": "{NODE_BINARY}",
+                        "binproviders": "env",
+                        "min_version": "18.0.0",
+                    },
+                    {
+                        "name": "humanize",
+                        "binproviders": "uv",
+                        "install_root": "{ABXPKG_LIB_DIR}/uv/packages/hook-env",
+                        "install_args": ["humanize>=4.0.0"],
+                        "postinstall_scripts": False,
+                        "min_release_age": 3,
+                    },
+                ],
+            },
+            indent=2,
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        "node",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert str(hook_runtime / "venv" / "bin") in payload["PATH"].split(os.pathsep)
+    assert any((hook_runtime / "venv").rglob("humanize"))
+
+
 def test_render_env_assignment_lines_uses_shell_safe_double_quotes():
     lines = cli_module.render_env_assignment_lines(
         base_env={},
