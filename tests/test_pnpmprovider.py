@@ -11,6 +11,25 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
+    def test_store_dir_reuses_existing_install_root_store(self, tmp_path):
+        install_root = tmp_path / "pnpm"
+        expected_store = tmp_path / "existing-store"
+        provider = PnpmProvider(
+            install_root=install_root,
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        assert provider.install_root is not None
+        modules_dir = provider.install_root / "node_modules"
+        modules_dir.mkdir(parents=True)
+        (modules_dir / ".modules.yaml").write_text(
+            f"storeDir: {expected_store}\n",
+            encoding="utf-8",
+        )
+
+        assert provider._store_dir() == expected_store
+
     def test_refresh_bin_link_preserves_pnpm_shim_basedir_behavior(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
