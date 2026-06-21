@@ -11,6 +11,7 @@ import stat
 import hashlib
 import platform
 import subprocess
+import signal
 import functools
 import tempfile
 from contextvars import ContextVar
@@ -2020,6 +2021,68 @@ class BinProvider(BaseModel):
         kwargs.setdefault("capture_output", True)
         kwargs.setdefault("text", True)
 
+        def _run_exec(
+            exec_cmd: list[str],
+            *,
+            env: dict[str, str],
+            preexec_fn: Callable[[], None] | None = None,
+        ) -> subprocess.CompletedProcess:
+            if kwargs.get("capture_output", True):
+                return subprocess.run(
+                    exec_cmd,
+                    cwd=str(cwd_path),
+                    env=env,
+                    preexec_fn=preexec_fn,
+                    **kwargs,
+                )
+
+            popen_kwargs = kwargs.copy()
+            popen_kwargs.pop("capture_output", None)
+
+            def start_child_group() -> None:
+                os.setsid()
+                if preexec_fn is not None:
+                    preexec_fn()
+
+            proc = subprocess.Popen(
+                exec_cmd,
+                cwd=str(cwd_path),
+                env=env,
+                preexec_fn=start_child_group,
+                **popen_kwargs,
+            )
+            previous_handlers: dict[int, Any] = {}
+
+            def forward_signal(signum: int, frame: Any) -> None:
+                try:
+                    os.killpg(proc.pid, signum)
+                except ProcessLookupError:
+                    pass
+
+            for signum in (signal.SIGINT, signal.SIGTERM):
+                previous_handlers[signum] = signal.signal(signum, forward_signal)
+
+            try:
+                returncode = proc.wait()
+            finally:
+                for signum, handler in previous_handlers.items():
+                    signal.signal(signum, handler)
+                if proc.poll() is None:
+                    try:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        proc.wait()
+
+            return subprocess.CompletedProcess(exec_cmd, returncode)
+
         sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
             sudo_abspath = shutil.which("sudo", path=sudo_env["PATH"]) or shutil.which(
@@ -2030,11 +2093,9 @@ class BinProvider(BaseModel):
                 if run_as_uid != 0:
                     sudo_cmd.extend(["-u", target_pw_record.pw_name])
                 sudo_cmd.extend(["--", *cmd])
-                sudo_proc = subprocess.run(
+                sudo_proc = _run_exec(
                     sudo_cmd,
-                    cwd=str(cwd_path),
                     env=sudo_env,
-                    **kwargs,
                 )
                 if sudo_proc.returncode == 0:
                     return sudo_proc
@@ -2058,12 +2119,10 @@ class BinProvider(BaseModel):
             if current_euid == 0 and run_as_uid != current_euid
             else fallback_env
         )
-        proc = subprocess.run(
+        proc = _run_exec(
             cmd,
-            cwd=str(cwd_path),
             env=dropped_env,
             preexec_fn=drop_privileges,
-            **kwargs,
         )
         if sudo_failure_output and proc.returncode != 0:
             return subprocess.CompletedProcess(

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import signal
 import shlex
 import shutil
 import subprocess
@@ -462,6 +463,62 @@ def test_run_executes_preinstalled_binary_via_env_provider():
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "abx-run-ok"
     assert proc.stderr == ""
+
+
+def test_run_terminates_child_process_group(tmp_path):
+    marker = tmp_path / "child.pid"
+    script = tmp_path / "spawn_child.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import subprocess",
+                "import time",
+                "child = subprocess.Popen(['sleep', '30'])",
+                f"open({str(marker)!r}, 'w').write(str(child.pid))",
+                "time.sleep(30)",
+            ],
+        ),
+    )
+    env = {key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")}
+    proc = subprocess.Popen(
+        [
+            str(_abxpkg_executable()),
+            "--global",
+            "--binproviders=env",
+            "run",
+            "python3",
+            str(script),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and not marker.exists() and proc.poll() is None:
+        time.sleep(0.1)
+
+    assert marker.exists(), f"child marker was not written; rc={proc.poll()}"
+    child_pid = int(marker.read_text())
+    proc.terminate()
+    stdout, stderr = proc.communicate(timeout=8)
+
+    child_alive = True
+    for _ in range(20):
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            child_alive = False
+            break
+        time.sleep(0.1)
+    if child_alive:
+        os.kill(child_pid, signal.SIGKILL)
+
+    assert not child_alive, (
+        f"child process {child_pid} survived wrapper termination; "
+        f"stdout={stdout!r} stderr={stderr!r}"
+    )
 
 
 def test_run_accepts_update_flag_after_subcommand_for_env_provider():
