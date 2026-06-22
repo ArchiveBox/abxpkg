@@ -221,6 +221,37 @@ class TestPnpmProvider:
             store_root = provider.cache_dir
             assert store_root.exists()
 
+    def test_managed_package_root_keeps_store_and_installer_under_same_lib(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        lib_dir = tmp_path / "abx-lib"
+        install_root = lib_dir / "pnpm" / "packages" / "zx"
+        provider = PnpmProvider(
+            install_root=install_root,
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        assert provider.cache_dir == lib_dir / "cache" / "pnpm"
+        assert (
+            provider._installer_provider_root() == lib_dir / "npm" / "packages" / "pnpm"
+        )
+
+        installed = provider.install("zx")
+
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert installed is not None
+        assert installed.loaded_abspath is not None
+        assert installed.loaded_abspath == install_root / "node_modules" / ".bin" / "zx"
+        assert (install_root / "node_modules" / "zx" / "package.json").exists()
+        modules_yaml = install_root / "node_modules" / ".modules.yaml"
+        assert modules_yaml.exists()
+        assert str(provider.cache_dir) in modules_yaml.read_text()
+        proc = installed.exec(cmd=("--version",), quiet=True)
+        assert proc.returncode == 0, proc.stderr
+
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,

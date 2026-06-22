@@ -2231,7 +2231,7 @@ def env_command(
     deps_from = tuple(shared_kwargs.pop("deps_from") or ())
     explicit_provider_selection = shared_kwargs.get(
         "binproviders",
-    ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
+    ) is not None or _INITIAL_ENV.get("ABXPKG_BINPROVIDERS") not in (None, "")
     options = get_command_options(ctx, **shared_kwargs)
     install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
         command_install_before_run,

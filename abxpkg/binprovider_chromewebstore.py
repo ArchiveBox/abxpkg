@@ -293,11 +293,20 @@ class ChromeWebstoreProvider(BinProvider):
             shutil.rmtree(signed_store_metadata, ignore_errors=True)
 
     def chromewebstore_abspath_handler(self, bin_name: str, **context) -> str | None:
-        """Resolve an installed extension to its unpacked ``manifest.json`` path."""
+        """Resolve an installed extension to its shared metadata file.
+
+        Chrome Web Store extensions are directory payloads, but abxpkg's
+        loaded_abspath contract is a readable file. The metadata JSON is the
+        stable file runtime hooks already scan, and it points at the real
+        unpacked extension directory through ``unpacked_path``.
+        """
+        bin_dir = self.bin_dir
+        assert bin_dir is not None
         _, _, unpacked_path, _, manifest_path = self._extension_spec(bin_name)
+        cache_path = bin_dir / f"{bin_name}.extension.json"
         if manifest_path.exists():
             self._sanitize_unpacked_extension(unpacked_path)
-            return str(manifest_path)
+            return str(cache_path)
         return None
 
     def chromewebstore_version_handler(
@@ -312,6 +321,11 @@ class ChromeWebstoreProvider(BinProvider):
         )
         if not manifest_path or not Path(manifest_path).exists():
             return None
+        if Path(manifest_path).name.endswith(".extension.json"):
+            cached = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            manifest_path = Path(cached["unpacked_path"]) / "manifest.json"
+            if not manifest_path.exists():
+                return None
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         return str(manifest.get("version") or "")
 

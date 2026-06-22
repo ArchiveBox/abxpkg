@@ -258,19 +258,7 @@ class Binary(ShallowBinary):
             if binproviders and binprovider.name not in binproviders:
                 continue
             selected_providers.append(binprovider)
-
-        cached_providers: list[BinProvider] = []
-        uncached_providers: list[BinProvider] = []
-        for binprovider in selected_providers:
-            try:
-                if binprovider.has_cached_binary(self.name):
-                    cached_providers.append(binprovider)
-                else:
-                    uncached_providers.append(binprovider)
-            except Exception:
-                uncached_providers.append(binprovider)
-
-        return [*cached_providers, *uncached_providers]
+        return selected_providers
 
     def _validated_loaded_copy(
         self,

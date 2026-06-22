@@ -175,7 +175,12 @@ class PnpmProvider(BinProvider):
         """Return the writable pnpm store dir, falling back to a temp dir if needed."""
         if env_flag_is_true("ABXPKG_NO_CACHE"):
             return abxpkg_ephemeral_cache_dir_default("pnpm")
-        default_cache_dir = abxpkg_cache_dir_default("pnpm") or Path(USER_CACHE_PATH)
+        managed_lib_dir = self._managed_lib_dir()
+        default_cache_dir = (
+            managed_lib_dir / "cache" / "pnpm"
+            if managed_lib_dir is not None
+            else abxpkg_cache_dir_default("pnpm") or Path(USER_CACHE_PATH)
+        )
         if self._ensure_writable_cache_dir(default_cache_dir):
             return default_cache_dir
         return Path(tempfile.gettempdir()) / f"abxpkg-pnpm-store-{os.getuid()}"
@@ -253,14 +258,32 @@ class PnpmProvider(BinProvider):
                 cache_kind="dependency",
             )
 
-    def _installer_provider_root(self) -> Path:
-        lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    def _managed_lib_dir(self) -> Path | None:
+        """Return the ABX-managed lib root implied by install_root, if any.
+
+        Hook tests and crawls often pass a per-run ABXPKG_LIB_DIR through the
+        resolved provider object without mutating process-wide os.environ. pnpm
+        must keep package installs, its self-bootstrapped installer, and the
+        content-addressable store under that same root; otherwise node_modules
+        can be linked to a store from a different crawl/test run and pnpm
+        rejects the install with ERR_PNPM_UNEXPECTED_STORE.
+        """
+        if self.install_root is None:
+            return None
+        install_root = self.install_root
+        if install_root.name == "pnpm":
+            return install_root.parent
         if (
-            self.install_root is not None
-            and lib_dir
-            and str(self.install_root).startswith(lib_dir.rstrip("/") + "/")
+            install_root.parent.name == "packages"
+            and install_root.parent.parent.name == "pnpm"
         ):
-            return Path(lib_dir) / "npm" / "packages" / "pnpm"
+            return install_root.parent.parent.parent
+        return None
+
+    def _installer_provider_root(self) -> Path:
+        managed_lib_dir = self._managed_lib_dir()
+        if managed_lib_dir is not None:
+            return managed_lib_dir / "npm" / "packages" / "pnpm"
         if self.install_root is not None:
             return self.install_root / "npm"
         return self.cache_dir / "npm"

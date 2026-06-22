@@ -619,13 +619,21 @@ def _run_script(argv: list[str]) -> int | None:
     exec_providers = _runtime_exec_providers(binary, runtime_providers)
     if exec_providers:
         env = build_exec_env(providers=exec_providers, base_env=os.environ.copy())
-    proc = binary.loaded_binprovider.exec(
-        bin_name=binary.loaded_abspath,
-        cmd=script_args,
-        capture_output=False,
-        env=env,
+    final_env = env or os.environ.copy()
+    final_env = binary.loaded_binprovider.build_exec_env(
+        providers=binary.loaded_binprovider.exec_env_providers(),
+        base_env=final_env,
     )
-    return proc.returncode
+    exec_abspath = binary.loaded_binprovider._exec_bin_abspath(
+        Path(binary.loaded_abspath),
+    )
+    argv = [str(exec_abspath), *script_args]
+    try:
+        os.execvpe(str(exec_abspath), argv, final_env)
+    except OSError as err:
+        print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
+        return 1
+    return 1
 
 
 def main() -> None:

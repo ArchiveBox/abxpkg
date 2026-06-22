@@ -18,13 +18,16 @@ def assert_extension_binary_loaded(loaded) -> None:
     assert loaded.loaded_binprovider is not None
     assert loaded.loaded_binprovider.name == "chromewebstore"
     assert loaded.loaded_abspath is not None
-    assert loaded.loaded_abspath.name == "manifest.json"
+    assert loaded.loaded_abspath.name.endswith(".extension.json")
     assert loaded.loaded_abspath.exists()
-    assert not (loaded.loaded_abspath.parent / "_metadata").exists()
     assert loaded.loaded_version is not None
     assert loaded.loaded_sha256 is not None
 
-    manifest = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
+    metadata = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
+    unpacked_path = Path(metadata["unpacked_path"])
+    assert unpacked_path.exists()
+    assert not (unpacked_path / "_metadata").exists()
+    manifest = json.loads((unpacked_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["version"] == str(loaded.loaded_version)
 
 
@@ -153,10 +156,11 @@ class TestChromeWebstoreProvider:
             assert installed is not None
             assert installed.loaded_abspath is not None
             crx_path = provider.bin_dir / f"{UBLOCK_WEBSTORE_ID}__ublock.crx"
+            metadata = json.loads(installed.loaded_abspath.read_text(encoding="utf-8"))
             restore_signed_store_metadata_from_real_crx(
                 unzip,
                 crx_path,
-                installed.loaded_abspath.parent,
+                Path(metadata["unpacked_path"]),
             )
 
             loaded = provider.load("ublock", no_cache=True)

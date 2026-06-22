@@ -471,7 +471,6 @@ class BinProvider(BaseModel):
             },
         },
         repr=False,
-        exclude=True,
     )
 
     install_timeout: int = Field(
@@ -658,6 +657,20 @@ class BinProvider(BaseModel):
         provider_config["install_args"] = list(
             self.get_install_args(bin_name, quiet=True, no_cache=True),
         )
+        manual_binary_env_key = f"{str(bin_name).upper()}_BINARY"
+        manual_binary = os.environ.get(manual_binary_env_key)
+        if manual_binary:
+            # Explicit binary env overrides are part of provider resolution,
+            # especially for env/python3 where hooks must keep the interpreter
+            # that owns their package deps. If this is not in the cache key, a
+            # stale managed link can silently beat a caller-provided override.
+            provider_config["manual_binary_env"] = {
+                manual_binary_env_key: manual_binary,
+            }
+        if str(bin_name) in {"python", "python3"} and os.environ.get("PYTHON_BINARY"):
+            provider_config.setdefault("manual_binary_env", {})["PYTHON_BINARY"] = (
+                os.environ["PYTHON_BINARY"]
+            )
         return json.dumps(
             provider_config,
             default=str,
@@ -665,11 +678,47 @@ class BinProvider(BaseModel):
             sort_keys=True,
         )
 
+    def _cache_context_hash(
+        self,
+        bin_name: BinName,
+        cache_context: str | None = None,
+    ) -> str:
+        context = (
+            cache_context
+            if cache_context is not None
+            else self._cache_context(bin_name)
+        )
+        return hashlib.sha256(context.encode("utf-8")).hexdigest()
+
+    def _cached_record_matches_context(
+        self,
+        bin_name: BinName,
+        cached_record: Mapping[str, object],
+        *,
+        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
+    ) -> bool:
+        expected_context_hash = cache_context_hash or self._cache_context_hash(
+            bin_name,
+            cache_context,
+        )
+        cached_context_hash = cached_record.get("cache_context_hash")
+        if isinstance(cached_context_hash, str):
+            return cached_context_hash == expected_context_hash
+        cached_context = cached_record.get("cache_context")
+        if isinstance(cached_context, str):
+            return cached_context == (
+                cache_context
+                if cache_context is not None
+                else self._cache_context(bin_name)
+            )
+        return False
+
     def _cache_key(
         self,
         bin_name: BinName,
         abspath: HostBinPath,
-        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
     ) -> str:
         resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
         return json.dumps(
@@ -677,7 +726,7 @@ class BinProvider(BaseModel):
                 self.name,
                 str(bin_name),
                 str(resolved_abspath),
-                cache_context or self._cache_context(bin_name),
+                cache_context_hash or self._cache_context_hash(bin_name),
             ],
             separators=(",", ":"),
         )
@@ -709,6 +758,9 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         abspath: HostBinPath,
+        cache: dict[str, dict[str, object]] | None = None,
+        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
     ) -> ShallowBinary | None:
         derived_env_path = self.derived_env_path
         if derived_env_path is None:
@@ -722,10 +774,49 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
 
-        cache = load_derived_cache(derived_env_path)
-        cache_context = self._cache_context(bin_name)
-        cache_key = self._cache_key(bin_name, abspath, cache_context=cache_context)
+        cache = cache if cache is not None else load_derived_cache(derived_env_path)
+        cache_context = (
+            cache_context
+            if cache_context is not None
+            else self._cache_context(bin_name)
+        )
+        cache_context_hash = (
+            cache_context_hash
+            if cache_context_hash is not None
+            else self._cache_context_hash(bin_name, cache_context)
+        )
+        cache_key = self._cache_key(
+            bin_name,
+            abspath,
+            cache_context_hash=cache_context_hash,
+        )
         cached_record = cache.get(cache_key)
+        cached_record_key = cache_key if isinstance(cached_record, dict) else ""
+        if not isinstance(cached_record, dict):
+            resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
+            for candidate_key, candidate_record in cache.items():
+                if not isinstance(candidate_record, dict):
+                    continue
+                if (
+                    candidate_record.get("provider_name") != self.name
+                    or candidate_record.get("bin_name") != str(bin_name)
+                    or str(
+                        Path(str(candidate_record.get("abspath") or ""))
+                        .expanduser()
+                        .resolve(strict=False),
+                    )
+                    != resolved_abspath
+                    or not self._cached_record_matches_context(
+                        bin_name,
+                        candidate_record,
+                        cache_context=cache_context,
+                        cache_context_hash=cache_context_hash,
+                    )
+                ):
+                    continue
+                cached_record = candidate_record
+                cached_record_key = candidate_key
+                break
         if not isinstance(cached_record, dict):
             return None
         if cached_record.get("fingerprint") != fingerprints:
@@ -789,10 +880,28 @@ class BinProvider(BaseModel):
             or cached_record.get("inode") != primary_fingerprint["inode"]
             or cached_record.get("mtime") != primary_fingerprint["mtime_ns"]
             or cached_record.get("euid") != primary_fingerprint["euid"]
+            or cached_record.get("cache_context_hash") != cache_context_hash
+            or "cache_context" in cached_record
+            or cached_record_key != cache_key
         ):
-            cache[cache_key] = {
+            cache = {
+                current_cache_key: current_cache_value
+                for current_cache_key, current_cache_value in cache.items()
+                if not (
+                    isinstance(current_cache_value, dict)
+                    and current_cache_value.get("provider_name") == self.name
+                    and current_cache_value.get("bin_name") == str(bin_name)
+                    and str(
+                        Path(str(current_cache_value.get("abspath") or ""))
+                        .expanduser()
+                        .resolve(strict=False),
+                    )
+                    == resolved_abspath
+                )
+            }
+            cached_record = {
                 "fingerprint": fingerprints,
-                "cache_context": cache_context,
+                "cache_context_hash": cache_context_hash,
                 "loaded_version": str(version),
                 "loaded_sha256": str(sha256),
                 "loaded_euid": euid,
@@ -811,6 +920,7 @@ class BinProvider(BaseModel):
                 "mtime": primary_fingerprint["mtime_ns"],
                 "euid": primary_fingerprint["euid"],
             }
+            cache[cache_key] = cached_record
             save_derived_cache(derived_env_path, cache)
             cached_abspath = original_abspath
 
@@ -829,11 +939,14 @@ class BinProvider(BaseModel):
         )
 
     def load_cached_binary_by_name(self, bin_name: BinName) -> ShallowBinary | None:
+        self.setup_PATH()
         derived_env_path = self.derived_env_path
         if derived_env_path is None or not derived_env_path.is_file():
             return None
 
         cache = load_derived_cache(derived_env_path)
+        cache_context = self._cache_context(bin_name)
+        cache_context_hash = self._cache_context_hash(bin_name, cache_context)
         for cached_record in cache.values():
             if not isinstance(cached_record, dict):
                 continue
@@ -841,10 +954,23 @@ class BinProvider(BaseModel):
                 "bin_name",
             ) != str(bin_name):
                 continue
+            if not self._cached_record_matches_context(
+                bin_name,
+                cached_record,
+                cache_context=cache_context,
+                cache_context_hash=cache_context_hash,
+            ):
+                continue
             cached_abspath = cached_record.get("abspath")
             if not isinstance(cached_abspath, str):
                 continue
-            loaded = self.load_cached_binary(bin_name, Path(cached_abspath))
+            loaded = self.load_cached_binary(
+                bin_name,
+                Path(cached_abspath),
+                cache=cache,
+                cache_context=cache_context,
+                cache_context_hash=cache_context_hash,
+            )
             if loaded and loaded.loaded_abspath:
                 return loaded
         return None
@@ -870,11 +996,13 @@ class BinProvider(BaseModel):
             return None
 
         original_abspath = str(Path(abspath).expanduser().absolute())
+        resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
         primary_fingerprint = fingerprints[0]
         cache_context = self._cache_context(bin_name)
+        cache_context_hash = self._cache_context_hash(bin_name, cache_context)
         record: dict[str, object] = {
             "fingerprint": fingerprints,
-            "cache_context": cache_context,
+            "cache_context_hash": cache_context_hash,
             "loaded_version": str(loaded_version),
             "loaded_sha256": str(loaded_sha256),
             "loaded_euid": primary_fingerprint["euid"],
@@ -898,7 +1026,24 @@ class BinProvider(BaseModel):
         ):
             derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
-        cache[self._cache_key(bin_name, abspath, cache_context=cache_context)] = record
+        cache = {
+            cache_key: cache_value
+            for cache_key, cache_value in cache.items()
+            if not (
+                isinstance(cache_value, dict)
+                and cache_value.get("provider_name") == self.name
+                and cache_value.get("bin_name") == str(bin_name)
+                and str(
+                    Path(str(cache_value.get("abspath") or ""))
+                    .expanduser()
+                    .resolve(strict=False),
+                )
+                == resolved_abspath
+            )
+        }
+        cache[
+            self._cache_key(bin_name, abspath, cache_context_hash=cache_context_hash)
+        ] = record
         try:
             save_derived_cache(derived_env_path, cache)
         except Exception as err:
@@ -1645,7 +1790,7 @@ class BinProvider(BaseModel):
         bin_name: BinName,
         cached_record: Mapping[str, object],
     ) -> bool:
-        return cached_record.get("cache_context") != self._cache_context(bin_name)
+        return not self._cached_record_matches_context(bin_name, cached_record)
 
     def cached_binary_state_mismatch(
         self,
@@ -3233,6 +3378,17 @@ class EnvProvider(BinProvider):
         **context,
     ) -> HostBinPath:
         self.setup_PATH(no_cache=no_cache)
+        manual = os.environ.get(f"{str(bin_name).upper()}_BINARY") or os.environ.get(
+            "PYTHON_BINARY",
+        )
+        if manual:
+            manual_path = Path(manual).expanduser()
+            if manual_path.is_absolute() and manual_path.is_file():
+                # Python script hooks need the interpreter that owns their
+                # installed package deps. Respecting the normal *_BINARY
+                # override keeps ``abxpkg run --script ... python3`` from
+                # drifting to the interpreter that happens to run abxpkg.
+                return self._link_loaded_binary(bin_name, manual_path)
         return self._link_loaded_binary(bin_name, Path(sys.executable).absolute())
 
     def default_abspath_handler(
@@ -3339,6 +3495,9 @@ class EnvProvider(BinProvider):
         self,
         bin_name: BinName,
         abspath: HostBinPath,
+        cache: dict[str, dict[str, object]] | None = None,
+        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
     ) -> ShallowBinary | None:
         if self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
@@ -3361,6 +3520,9 @@ class EnvProvider(BinProvider):
             self,
             bin_name,
             abspath,
+            cache=cache,
+            cache_context=cache_context,
+            cache_context_hash=cache_context_hash,
         )
 
     @log_method_call()

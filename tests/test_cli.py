@@ -95,6 +95,110 @@ def _run_abx_cli(
     )
 
 
+def test_shebang_script_exec_replaces_launcher_so_sigterm_reaches_child(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {
+                        "name": "node",
+                        "binproviders": "env",
+                    },
+                ],
+            },
+        ),
+    )
+    script = tmp_path / "sigterm-hook.js"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/usr/bin/env -S abxpkg run --script --deps-from=./config.json:required_binaries node",
+                "// /// script",
+                "// ///",
+                "process.on('SIGTERM', () => { console.log('clean'); process.exit(0); });",
+                "console.log('ready');",
+                "setInterval(() => {}, 1000);",
+                "",
+            ],
+        ),
+    )
+    script.chmod(0o755)
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    env["PATH"] = os.pathsep.join(
+        [str(_abxpkg_executable().parent), env.get("PATH", "")],
+    )
+
+    proc = subprocess.Popen(
+        [str(script)],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    ready = proc.stdout.readline() if proc.stdout else ""
+    assert ready.strip() == "ready"
+
+    proc.terminate()
+    stdout, stderr = proc.communicate(timeout=5)
+
+    assert proc.returncode == 0, stderr
+    assert "clean" in stdout
+
+
+def test_env_deps_from_honors_dependency_binproviders(tmp_path):
+    lib_dir = tmp_path / "lib"
+    config_path = tmp_path / "config.json"
+    package_root = lib_dir / "pnpm" / "packages" / "abxbus"
+    config_path.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {
+                        "name": "abxbus",
+                        "binproviders": "pnpm",
+                        "min_version": "2.5.9",
+                        "min_release_age": 0,
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": str(package_root),
+                                "install_args": ["abxbus@2.5.9"],
+                                "abspath": str(
+                                    package_root
+                                    / "node_modules"
+                                    / "abxbus"
+                                    / "dist"
+                                    / "cjs"
+                                    / "index.js",
+                                ),
+                                "version": "2.5.9",
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config_path}:required_binaries",
+        "node",
+        env_overrides={"ABXPKG_LIB_DIR": str(lib_dir)},
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    env = json.loads(proc.stdout)
+    node_path = env["NODE_PATH"].split(os.pathsep)
+    assert str(package_root / "node_modules") in node_path
+    assert (package_root / "node_modules" / "abxbus" / "package.json").exists()
+
+
 @pytest.fixture(autouse=True)
 def restore_abxpkg_logger():
     package_logger = logging.getLogger("abxpkg")
@@ -479,7 +583,9 @@ def test_run_terminates_child_process_group(tmp_path):
             ],
         ),
     )
-    env = {key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")}
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
     proc = subprocess.Popen(
         [
             str(_abxpkg_executable()),
