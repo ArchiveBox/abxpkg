@@ -2629,31 +2629,6 @@ class BinProvider(BaseModel):
                 if self.supports_min_release_age("install", no_cache=no_cache)
                 else 0.0
             )
-        # Warn about unsupported security flags early (before load/install)
-        # so warnings fire even when the binary is already cached.
-        if (
-            min_release_age is not None
-            and min_release_age > 0
-            and not self.supports_min_release_age("install", no_cache=no_cache)
-        ):
-            logger.warning(
-                "⚠️ %s.install ignoring unsupported min_release_age=%s for provider %s",
-                self.__class__.__name__,
-                min_release_age,
-                self.name,
-            )
-            min_release_age = 0.0
-        if postinstall_scripts is False and not self.supports_postinstall_disable(
-            "install",
-            no_cache=no_cache,
-        ):
-            logger.warning(
-                "⚠️ %s.install ignoring unsupported postinstall_scripts=%s for provider %s",
-                self.__class__.__name__,
-                postinstall_scripts,
-                self.name,
-            )
-            postinstall_scripts = True
         installed: ShallowBinary | None = None
         if not no_cache and not self.dry_run:
             try:
@@ -2708,6 +2683,34 @@ class BinProvider(BaseModel):
                     min_version=min_version,
                 )
             return result
+
+        # Security flag support only matters when we are about to do package
+        # manager work. Cached hot-path loads, especially script shebang deps,
+        # should not pay installer version probes just to rediscover that an
+        # already-installed binary can be reused.
+        if (
+            min_release_age is not None
+            and min_release_age > 0
+            and not self.supports_min_release_age("install", no_cache=no_cache)
+        ):
+            logger.warning(
+                "⚠️ %s.install ignoring unsupported min_release_age=%s for provider %s",
+                self.__class__.__name__,
+                min_release_age,
+                self.name,
+            )
+            min_release_age = 0.0
+        if postinstall_scripts is False and not self.supports_postinstall_disable(
+            "install",
+            no_cache=no_cache,
+        ):
+            logger.warning(
+                "⚠️ %s.install ignoring unsupported postinstall_scripts=%s for provider %s",
+                self.__class__.__name__,
+                postinstall_scripts,
+                self.name,
+            )
+            postinstall_scripts = True
 
         install_args = self.get_install_args(bin_name, quiet=quiet, no_cache=no_cache)
         self.setup(
