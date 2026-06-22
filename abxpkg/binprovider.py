@@ -2560,22 +2560,6 @@ class BinProvider(BaseModel):
         min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        installed: ShallowBinary | None = None
-        if not no_cache and not self.dry_run:
-            try:
-                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
-            except Exception:
-                installed = None
-            if installed is not None and (
-                min_version is None
-                or (
-                    installed.loaded_version is not None
-                    and installed.loaded_version >= min_version
-                )
-            ):
-                if not self.cached_binary_state_mismatch(bin_name, {}):
-                    return installed
-
         if postinstall_scripts is None:
             postinstall_scripts = not self.supports_postinstall_disable(
                 "install",
@@ -2612,6 +2596,21 @@ class BinProvider(BaseModel):
                 self.name,
             )
             postinstall_scripts = True
+        installed: ShallowBinary | None = None
+        if not no_cache and not self.dry_run:
+            try:
+                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
+            except Exception:
+                installed = None
+            if installed is not None and (
+                min_version is None
+                or (
+                    installed.loaded_version is not None
+                    and installed.loaded_version >= min_version
+                )
+            ):
+                if not self.cached_binary_state_mismatch(bin_name, {}):
+                    return installed
         if (
             installed is not None
             and min_version is not None

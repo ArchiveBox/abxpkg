@@ -175,6 +175,9 @@ class PnpmProvider(BinProvider):
         """Return the writable pnpm store dir, falling back to a temp dir if needed."""
         if env_flag_is_true("ABXPKG_NO_CACHE"):
             return abxpkg_ephemeral_cache_dir_default("pnpm")
+        specific_cache_dir = os.environ.get("ABXPKG_PNPM_CACHE_DIR", "").strip()
+        if specific_cache_dir:
+            return Path(specific_cache_dir).expanduser().resolve()
         managed_lib_dir = self._managed_lib_dir()
         default_cache_dir = (
             managed_lib_dir / "cache" / "pnpm"
