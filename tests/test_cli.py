@@ -195,6 +195,7 @@ def test_env_deps_from_honors_dependency_binproviders(tmp_path):
     assert proc.returncode == 0, proc.stderr
     env = json.loads(proc.stdout)
     node_path = env["NODE_PATH"].split(os.pathsep)
+    assert env["NODE_MODULES_DIR"] == str(package_root / "node_modules")
     assert str(package_root / "node_modules") in node_path
     assert (package_root / "node_modules" / "abxbus" / "package.json").exists()
 

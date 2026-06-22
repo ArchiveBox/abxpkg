@@ -303,6 +303,37 @@ class TestBinProvider:
             str(second_site_packages),
         ]
 
+    def test_build_exec_env_keeps_first_js_module_alias_while_merging_node_path(
+        self,
+        tmp_path,
+    ):
+        pnpm_provider = PnpmProvider(
+            install_root=tmp_path / "pnpm" / "packages" / "chrome",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+        yarn_provider = YarnProvider(
+            install_root=tmp_path / "yarn",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        env = BinProvider.build_exec_env(
+            providers=[pnpm_provider, yarn_provider],
+            base_env={},
+        )
+
+        assert pnpm_provider.install_root is not None
+        assert yarn_provider.install_root is not None
+        assert env["NODE_MODULES_DIR"] == str(
+            pnpm_provider.install_root / "node_modules",
+        )
+        assert env["NODE_MODULE_DIR"] == env["NODE_MODULES_DIR"]
+        assert env["NODE_PATH"].split(os.pathsep) == [
+            str(pnpm_provider.install_root / "node_modules"),
+            str(yarn_provider.install_root / "node_modules"),
+        ]
+
     def test_build_exec_env_keeps_provider_path_before_ambient_path(
         self,
         tmp_path,

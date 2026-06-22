@@ -12,6 +12,17 @@ from typing import Protocol, runtime_checkable
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 _SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
+_FIRST_WRITER_ENV_KEYS = frozenset(
+    {
+        # These are convenience aliases for JS tooling with a single value,
+        # while NODE_PATH is the complete ordered search path. Provider envs are
+        # merged in precedence order, so keep the first alias value and let
+        # later providers contribute only through NODE_PATH. Otherwise a lower
+        # priority provider can overwrite the alias with an unused workspace.
+        "NODE_MODULES_DIR",
+        "NODE_MODULE_DIR",
+    },
+)
 
 
 @runtime_checkable
@@ -184,6 +195,9 @@ def build_exec_env(
 
         provider.setup_PATH()
         provider_env = dict(provider.ENV)
+        for key in _FIRST_WRITER_ENV_KEYS:
+            if env.get(key):
+                provider_env.pop(key, None)
         consume_PATH_env(
             provider_env,
             prepend_layers=provider_path_prepend_layers,

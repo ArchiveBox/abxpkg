@@ -1449,13 +1449,16 @@ def build_runtime_exec_env(
         binary,
         runtime_binproviders,
     )
-    if other_runtime_binproviders:
-        env = build_provider_exec_env(
-            providers=other_runtime_binproviders,
-            base_env=env,
-        )
     return build_provider_exec_env(
-        providers=[binary.loaded_binprovider],
+        # The loaded provider owns the binary being executed, so its runtime
+        # env must have first precedence. Other providers still contribute
+        # PATH/NODE_PATH/PYTHONPATH entries for sibling deps, but they cannot
+        # replace single-value aliases like NODE_MODULES_DIR with generic roots.
+        providers=[
+            binary.loaded_binprovider,
+            *binary.loaded_binprovider.exec_env_providers(),
+            *other_runtime_binproviders,
+        ],
         base_env=env,
     )
 

@@ -618,14 +618,18 @@ def _run_script(argv: list[str]) -> int | None:
         print(f"abxpkg: {binary_name}: binary could not be loaded", file=sys.stderr)
         return 1
 
-    env = None
     exec_providers = _runtime_exec_providers(binary, runtime_providers)
-    if exec_providers:
-        env = build_exec_env(providers=exec_providers, base_env=os.environ.copy())
-    final_env = env or os.environ.copy()
-    final_env = binary.loaded_binprovider.build_exec_env(
-        providers=binary.loaded_binprovider.exec_env_providers(),
-        base_env=final_env,
+    final_env = build_exec_env(
+        # The loaded provider owns the target executable. Merge it before
+        # sibling dependency providers so single-value runtime aliases like
+        # NODE_MODULES_DIR describe the target provider, while NODE_PATH/PATH
+        # still include the full dependency chain.
+        providers=[
+            binary.loaded_binprovider,
+            *binary.loaded_binprovider.exec_env_providers(),
+            *exec_providers,
+        ],
+        base_env=os.environ.copy(),
     )
     exec_abspath = binary.loaded_binprovider._exec_bin_abspath(
         Path(binary.loaded_abspath),
