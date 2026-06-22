@@ -958,7 +958,7 @@ class BinProvider(BaseModel):
         cache = load_derived_cache(derived_env_path)
         cache_context = self._cache_context(bin_name)
         cache_context_hash = self._cache_context_hash(bin_name, cache_context)
-        for cached_record in cache.values():
+        for cached_record in list(cache.values()):
             if not isinstance(cached_record, dict):
                 continue
             if cached_record.get("provider_name") != self.name or cached_record.get(

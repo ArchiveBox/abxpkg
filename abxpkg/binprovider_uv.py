@@ -138,7 +138,7 @@ class UvProvider(BinProvider):
             return None
 
         cache = load_derived_cache(derived_env_path)
-        for cached_record in cache.values():
+        for cached_record in list(cache.values()):
             if not isinstance(cached_record, dict):
                 continue
             if cached_record.get("provider_name") != self.name or cached_record.get(
@@ -148,7 +148,20 @@ class UvProvider(BinProvider):
             cached_abspath = cached_record.get("abspath")
             if not isinstance(cached_abspath, str):
                 continue
-            loaded = self.load_cached_binary(self.INSTALLER_BIN, Path(cached_abspath))
+            cached_context = cached_record.get("cache_context")
+            cached_context_hash = cached_record.get("cache_context_hash")
+            loaded = self.load_cached_binary(
+                self.INSTALLER_BIN,
+                Path(cached_abspath),
+                cache_context=cached_context
+                if isinstance(cached_context, str)
+                else None,
+                cache_context_hash=(
+                    cached_context_hash
+                    if isinstance(cached_context_hash, str)
+                    else None
+                ),
+            )
             if loaded and loaded.loaded_abspath:
                 self._INSTALLER_BINARY = loaded
                 return loaded

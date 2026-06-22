@@ -689,8 +689,14 @@ def __getattr__(name: str) -> Any:
         return value
     from . import click_cli
 
+    for override_name in (
+        "build_binary",
+        "build_providers",
+        "run_binary_command",
+    ):
+        if override_name in globals():
+            setattr(click_cli, override_name, globals()[override_name])
     value = getattr(click_cli, name)
-    globals()[name] = value
     return value
 
 
