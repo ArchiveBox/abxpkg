@@ -462,9 +462,12 @@ def _dependency_options(dep: dict[str, Any], options: ScriptOptions) -> ScriptOp
         overrides=dep_overrides,
         handler_overrides=handler_overrides or None,
     )
+    # Dependency metadata is the closest statement of intent for that binary.
+    # Merge caller-wide overrides first so per-dependency install/version/path
+    # values always win and both CLI aliases and JSON overrides hit one cache key.
     values["overrides"] = merge_binary_overrides(
-        dep_binary_overrides,
         options.overrides,
+        dep_binary_overrides,
     )
     return ScriptOptions(**values)
 
@@ -536,6 +539,19 @@ def _runtime_exec_providers(binary, runtime_providers):
         or provider.install_root != binary.loaded_binprovider.install_root
         or provider.bin_dir != binary.loaded_binprovider.bin_dir
     ]
+
+
+def _cached_runtime_providers(options: ScriptOptions):
+    providers = []
+    for provider in _build_providers(options.provider_names, options):
+        try:
+            if provider.installed_binaries() or (
+                provider.install_root is not None and provider.install_root.exists()
+            ):
+                providers.append(provider)
+        except Exception:
+            continue
+    return providers
 
 
 def _run_script(argv: list[str]) -> int | None:
@@ -616,6 +632,12 @@ def _run_script(argv: list[str]) -> int | None:
         return 1
 
     env = None
+    if not runtime_providers:
+        # A script with no dependency header still runs inside the user's
+        # configured abxpkg runtime. This lets previously-installed default-lib
+        # packages (e.g. a hook runtime venv) remain importable without forcing
+        # every small script to duplicate those dependencies in its header.
+        runtime_providers = _cached_runtime_providers(options)
     exec_providers = _runtime_exec_providers(binary, runtime_providers)
     if exec_providers:
         env = build_exec_env(providers=exec_providers, base_env=os.environ.copy())
@@ -655,6 +677,16 @@ def abx_main() -> None:
 def __getattr__(name: str) -> Any:
     if name.startswith("__"):
         raise AttributeError(name)
+    if name in {
+        "ALL_PROVIDER_NAMES",
+        "DEFAULT_PROVIDER_NAMES",
+        "PROVIDER_CLASS_BY_NAME",
+    }:
+        import abxpkg as package
+
+        value = getattr(package, name)
+        globals()[name] = value
+        return value
     from . import click_cli
 
     value = getattr(click_cli, name)

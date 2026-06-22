@@ -304,7 +304,19 @@ class GemProvider(BinProvider):
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
-            install_args = ["--version", f">={min_version}", *install_args]
+            # RubyGems supports --version on `gem install`, but not on
+            # `gem update`. A version-floor update is still an install in
+            # RubyGems terms: it upgrades the named gem while honoring the
+            # constraint instead of passing an option the update command rejects.
+            return self.default_install_handler(
+                bin_name=bin_name,
+                install_args=["--version", f">={min_version}", *install_args],
+                postinstall_scripts=postinstall_scripts,
+                min_release_age=min_release_age,
+                min_version=None,
+                no_cache=no_cache,
+                timeout=timeout,
+            )
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 

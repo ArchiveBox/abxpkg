@@ -762,6 +762,11 @@ class BinProvider(BaseModel):
         cache_context: str | None = None,
         cache_context_hash: str | None = None,
     ) -> ShallowBinary | None:
+        # Cache context includes lazily-derived provider fields like PATH.
+        # Direct cache readers (list/version/installer discovery) do not pass
+        # through load(), so normalize the provider before comparing context or
+        # every valid record looks stale in a fresh process.
+        self.setup_PATH()
         derived_env_path = self.derived_env_path
         if derived_env_path is None:
             return None
@@ -862,7 +867,12 @@ class BinProvider(BaseModel):
             cache.pop(cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
-        if self.cached_binary_options_mismatch(bin_name, cached_record):
+        if self.cached_binary_options_mismatch(
+            bin_name,
+            cached_record,
+            cache_context=cache_context,
+            cache_context_hash=cache_context_hash,
+        ):
             return None
         if self.cached_binary_state_mismatch(bin_name, cached_record):
             cache.pop(cache_key, None)
@@ -881,7 +891,7 @@ class BinProvider(BaseModel):
             or cached_record.get("mtime") != primary_fingerprint["mtime_ns"]
             or cached_record.get("euid") != primary_fingerprint["euid"]
             or cached_record.get("cache_context_hash") != cache_context_hash
-            or "cache_context" in cached_record
+            or cached_record.get("cache_context") != cache_context
             or cached_record_key != cache_key
         ):
             cache = {
@@ -901,6 +911,7 @@ class BinProvider(BaseModel):
             }
             cached_record = {
                 "fingerprint": fingerprints,
+                "cache_context": cache_context,
                 "cache_context_hash": cache_context_hash,
                 "loaded_version": str(version),
                 "loaded_sha256": str(sha256),
@@ -1002,6 +1013,7 @@ class BinProvider(BaseModel):
         cache_context_hash = self._cache_context_hash(bin_name, cache_context)
         record: dict[str, object] = {
             "fingerprint": fingerprints,
+            "cache_context": cache_context,
             "cache_context_hash": cache_context_hash,
             "loaded_version": str(loaded_version),
             "loaded_sha256": str(loaded_sha256),
@@ -1789,8 +1801,16 @@ class BinProvider(BaseModel):
         self,
         bin_name: BinName,
         cached_record: Mapping[str, object],
+        *,
+        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
     ) -> bool:
-        return not self._cached_record_matches_context(bin_name, cached_record)
+        return not self._cached_record_matches_context(
+            bin_name,
+            cached_record,
+            cache_context=cache_context,
+            cache_context_hash=cache_context_hash,
+        )
 
     def cached_binary_state_mismatch(
         self,
@@ -1820,12 +1840,18 @@ class BinProvider(BaseModel):
                 or not isinstance(cached_abspath, str)
             ):
                 try:
-                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
-                        cache_key,
-                    )
+                    key_parts = json.loads(cache_key)
+                    if isinstance(key_parts, list) and len(key_parts) >= 3:
+                        cached_provider_name = key_parts[0]
+                        cached_bin_name = key_parts[1]
+                        cached_abspath = key_parts[2]
                 except Exception:
                     continue
-            if cached_provider_name != self.name or not isinstance(cached_abspath, str):
+            if (
+                cached_provider_name != self.name
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
                 continue
             if not isinstance(cache_kind, str):
                 cache_kind = (
@@ -1835,7 +1861,20 @@ class BinProvider(BaseModel):
                 )
             if cache_kind != "dependency":
                 continue
-            loaded = self.load_cached_binary(cached_bin_name, Path(cached_abspath))
+            cached_context = cache_value.get("cache_context")
+            cached_context_hash = cache_value.get("cache_context_hash")
+            loaded = self.load_cached_binary(
+                cached_bin_name,
+                Path(cached_abspath),
+                cache_context=cached_context
+                if isinstance(cached_context, str)
+                else None,
+                cache_context_hash=(
+                    cached_context_hash
+                    if isinstance(cached_context_hash, str)
+                    else None
+                ),
+            )
             if loaded is None or loaded.loaded_abspath is None:
                 continue
             resolved_provider = loaded.loaded_binprovider or self
@@ -1886,12 +1925,18 @@ class BinProvider(BaseModel):
                 or not isinstance(cached_abspath, str)
             ):
                 try:
-                    cached_provider_name, cached_bin_name, cached_abspath = json.loads(
-                        cache_key,
-                    )
+                    key_parts = json.loads(cache_key)
+                    if isinstance(key_parts, list) and len(key_parts) >= 3:
+                        cached_provider_name = key_parts[0]
+                        cached_bin_name = key_parts[1]
+                        cached_abspath = key_parts[2]
                 except Exception:
                     continue
-            if cached_provider_name != self.name or not isinstance(cached_abspath, str):
+            if (
+                cached_provider_name != self.name
+                or not isinstance(cached_bin_name, str)
+                or not isinstance(cached_abspath, str)
+            ):
                 continue
             if not isinstance(cache_kind, str):
                 cache_kind = (
@@ -1901,7 +1946,20 @@ class BinProvider(BaseModel):
                 )
             if cache_kind != "binary":
                 continue
-            loaded = self.load_cached_binary(cached_bin_name, Path(cached_abspath))
+            cached_context = cache_value.get("cache_context")
+            cached_context_hash = cache_value.get("cache_context_hash")
+            loaded = self.load_cached_binary(
+                cached_bin_name,
+                Path(cached_abspath),
+                cache_context=cached_context
+                if isinstance(cached_context, str)
+                else None,
+                cache_context_hash=(
+                    cached_context_hash
+                    if isinstance(cached_context_hash, str)
+                    else None
+                ),
+            )
             if loaded is None or loaded.loaded_abspath is None:
                 continue
             resolved_provider = loaded.loaded_binprovider or self
@@ -3218,6 +3276,9 @@ class EnvProvider(BinProvider):
         "python3": {
             "abspath": "self.python_abspath_handler",
             "version": "{}.{}.{}".format(*sys.version_info[:3]),
+        },
+        "go": {
+            "version": ["go", "version"],
         },
     }
 
