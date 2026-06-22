@@ -541,19 +541,6 @@ def _runtime_exec_providers(binary, runtime_providers):
     ]
 
 
-def _cached_runtime_providers(options: ScriptOptions):
-    providers = []
-    for provider in _build_providers(options.provider_names, options):
-        try:
-            if provider.installed_binaries() or (
-                provider.install_root is not None and provider.install_root.exists()
-            ):
-                providers.append(provider)
-        except Exception:
-            continue
-    return providers
-
-
 def _run_script(argv: list[str]) -> int | None:
     parsed = _parse_script_argv(argv)
     if parsed is None:
@@ -632,12 +619,6 @@ def _run_script(argv: list[str]) -> int | None:
         return 1
 
     env = None
-    if not runtime_providers:
-        # A script with no dependency header still runs inside the user's
-        # configured abxpkg runtime. This lets previously-installed default-lib
-        # packages (e.g. a hook runtime venv) remain importable without forcing
-        # every small script to duplicate those dependencies in its header.
-        runtime_providers = _cached_runtime_providers(options)
     exec_providers = _runtime_exec_providers(binary, runtime_providers)
     if exec_providers:
         env = build_exec_env(providers=exec_providers, base_env=os.environ.copy())

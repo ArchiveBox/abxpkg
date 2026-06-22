@@ -99,23 +99,6 @@ class Binary(ShallowBinary):
                     **self.overrides.get(binprovider.name, {}),
                 }
 
-        explicit_fields = self.model_fields_set
-        if "postinstall_scripts" not in explicit_fields:
-            provider_values = [
-                provider.postinstall_scripts for provider in self.binproviders
-            ]
-            if len(provider_values) == len(self.binproviders) and all(
-                value == provider_values[0] for value in provider_values
-            ):
-                self.postinstall_scripts = provider_values[0]
-        if "min_release_age" not in explicit_fields:
-            provider_values = [
-                provider.min_release_age for provider in self.binproviders
-            ]
-            if len(provider_values) == len(self.binproviders) and all(
-                value == provider_values[0] for value in provider_values
-            ):
-                self.min_release_age = provider_values[0]
         return self
 
     @field_validator("loaded_abspath", mode="before")
@@ -342,22 +325,15 @@ class Binary(ShallowBinary):
                     dry_run=dry_run,
                     **extra_overrides,
                 )
-                resolved_postinstall_scripts = (
-                    provider.postinstall_scripts
-                    if binary_postinstall_scripts is None
-                    else binary_postinstall_scripts
-                )
-                resolved_min_release_age = (
-                    provider.min_release_age
-                    if binary_min_release_age is None
-                    else binary_min_release_age
-                )
                 installed_bin = provider.install(
                     self.name,
                     no_cache=no_cache,
                     dry_run=dry_run,
-                    postinstall_scripts=resolved_postinstall_scripts,
-                    min_release_age=resolved_min_release_age,
+                    # Only pass Binary/caller-level controls as overrides. Provider
+                    # defaults must remain provider-owned so cached installs can
+                    # return before probing package-manager feature support.
+                    postinstall_scripts=binary_postinstall_scripts,
+                    min_release_age=binary_min_release_age,
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
@@ -475,22 +451,12 @@ class Binary(ShallowBinary):
                     dry_run=dry_run,
                     **extra_overrides,
                 )
-                resolved_postinstall_scripts = (
-                    provider.postinstall_scripts
-                    if binary_postinstall_scripts is None
-                    else binary_postinstall_scripts
-                )
-                resolved_min_release_age = (
-                    provider.min_release_age
-                    if binary_min_release_age is None
-                    else binary_min_release_age
-                )
                 updated_bin = provider.update(
                     self.name,
                     no_cache=no_cache,
                     dry_run=dry_run,
-                    postinstall_scripts=resolved_postinstall_scripts,
-                    min_release_age=resolved_min_release_age,
+                    postinstall_scripts=binary_postinstall_scripts,
+                    min_release_age=binary_min_release_age,
                     min_version=self.min_version,
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:

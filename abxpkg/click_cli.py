@@ -1405,7 +1405,15 @@ def resolve_runtime_binary(
     except ABXPkgError as err:
         raise click.ClickException(format_error(err)) from err
 
-    return binary, []
+    return binary, build_providers(
+        options.provider_names,
+        dry_run=options.dry_run,
+        install_root=options.install_root,
+        bin_dir=options.bin_dir,
+        euid=options.euid,
+        install_timeout=options.install_timeout,
+        version_timeout=options.version_timeout,
+    )
 
 
 def get_runtime_exec_providers(
@@ -2069,7 +2077,7 @@ def _run_command_impl(
     if not script_mode:
         runtime_binproviders = resolved_runtime_binproviders
     else:
-        runtime_binproviders = [*runtime_binproviders, *resolved_runtime_binproviders]
+        runtime_binproviders = [*runtime_binproviders]
 
     if run_options.dry_run:
         # Provider exec honors dry_run and returns a no-op CompletedProcess;

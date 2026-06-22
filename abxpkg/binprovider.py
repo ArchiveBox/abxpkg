@@ -2601,6 +2601,8 @@ class BinProvider(BaseModel):
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
     ) -> ShallowBinary | None:
+        explicit_postinstall_scripts = postinstall_scripts is not None
+        explicit_min_release_age = min_release_age is not None
         if dry_run is not None and dry_run != self.dry_run:
             return self.get_provider_with_overrides(dry_run=dry_run).install(
                 bin_name=bin_name,
@@ -2623,12 +2625,35 @@ class BinProvider(BaseModel):
                 "install",
                 no_cache=no_cache,
             )
-        if min_release_age is None:
-            min_release_age = (
-                7.0
-                if self.supports_min_release_age("install", no_cache=no_cache)
-                else 0.0
+        # Explicit security controls are part of the user-facing contract even
+        # when a dry run or cached/no-op install means no package manager work
+        # will happen. Provider defaults are handled later so cached hot paths
+        # do not probe installer versions just to reuse an existing binary.
+        if (
+            explicit_min_release_age
+            and min_release_age is not None
+            and min_release_age > 0
+            and not self.supports_min_release_age("install", no_cache=no_cache)
+        ):
+            logger.warning(
+                "⚠️ %s.install ignoring unsupported min_release_age=%s for provider %s",
+                self.__class__.__name__,
+                min_release_age,
+                self.name,
             )
+            min_release_age = 0.0
+        if (
+            explicit_postinstall_scripts
+            and postinstall_scripts is False
+            and not self.supports_postinstall_disable("install", no_cache=no_cache)
+        ):
+            logger.warning(
+                "⚠️ %s.install ignoring unsupported postinstall_scripts=%s for provider %s",
+                self.__class__.__name__,
+                postinstall_scripts,
+                self.name,
+            )
+            postinstall_scripts = True
         installed: ShallowBinary | None = None
         if not no_cache and not self.dry_run:
             try:
@@ -2689,7 +2714,8 @@ class BinProvider(BaseModel):
         # should not pay installer version probes just to rediscover that an
         # already-installed binary can be reused.
         if (
-            min_release_age is not None
+            not explicit_min_release_age
+            and min_release_age is not None
             and min_release_age > 0
             and not self.supports_min_release_age("install", no_cache=no_cache)
         ):
@@ -2700,9 +2726,13 @@ class BinProvider(BaseModel):
                 self.name,
             )
             min_release_age = 0.0
-        if postinstall_scripts is False and not self.supports_postinstall_disable(
-            "install",
-            no_cache=no_cache,
+        if (
+            not explicit_postinstall_scripts
+            and postinstall_scripts is False
+            and not self.supports_postinstall_disable(
+                "install",
+                no_cache=no_cache,
+            )
         ):
             logger.warning(
                 "⚠️ %s.install ignoring unsupported postinstall_scripts=%s for provider %s",
