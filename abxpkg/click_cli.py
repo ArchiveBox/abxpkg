@@ -1429,10 +1429,25 @@ def get_runtime_exec_providers(
     return [
         provider
         for provider in runtime_binproviders
-        if provider.name != binary.loaded_binprovider.name
-        or provider.install_root != binary.loaded_binprovider.install_root
-        or provider.bin_dir != binary.loaded_binprovider.bin_dir
+        if not same_runtime_provider(provider, binary.loaded_binprovider)
     ]
+
+
+def same_runtime_provider(provider, loaded_provider) -> bool:
+    # Dedupe by the provider fields that change runtime filesystem/env output.
+    # Some tests and third-party callers provide provider-like objects that only
+    # implement exec/load behavior; those should still execute instead of
+    # failing during env assembly because optional layout fields are absent.
+    if provider.name != loaded_provider.name:
+        return False
+    loaded_install_root = getattr(loaded_provider, "install_root", None)
+    loaded_bin_dir = getattr(loaded_provider, "bin_dir", None)
+    if loaded_install_root is None and loaded_bin_dir is None:
+        return True
+    return (
+        getattr(provider, "install_root", None) == loaded_install_root
+        and getattr(provider, "bin_dir", None) == loaded_bin_dir
+    )
 
 
 def build_runtime_exec_env(

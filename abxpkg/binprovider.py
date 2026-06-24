@@ -2709,6 +2709,13 @@ class BinProvider(BaseModel):
                 )
             return result
 
+        if min_release_age is None:
+            min_release_age = (
+                7.0
+                if self.supports_min_release_age("install", no_cache=no_cache)
+                else 0.0
+            )
+
         # Security flag support only matters when we are about to do package
         # manager work. Cached hot-path loads, especially script shebang deps,
         # should not pay installer version probes just to rediscover that an

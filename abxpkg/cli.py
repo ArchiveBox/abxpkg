@@ -535,10 +535,25 @@ def _runtime_exec_providers(binary, runtime_providers):
     return [
         provider
         for provider in runtime_providers
-        if provider.name != binary.loaded_binprovider.name
-        or provider.install_root != binary.loaded_binprovider.install_root
-        or provider.bin_dir != binary.loaded_binprovider.bin_dir
+        if not _same_runtime_provider(provider, binary.loaded_binprovider)
     ]
+
+
+def _same_runtime_provider(provider, loaded_provider) -> bool:
+    # Runtime env merging only needs to dedupe providers by the fields that
+    # change their filesystem/env surface. Some caller-provided provider-like
+    # objects only implement the execution protocol, so missing optional layout
+    # fields must compare as absent instead of failing before the command runs.
+    if provider.name != loaded_provider.name:
+        return False
+    loaded_install_root = getattr(loaded_provider, "install_root", None)
+    loaded_bin_dir = getattr(loaded_provider, "bin_dir", None)
+    if loaded_install_root is None and loaded_bin_dir is None:
+        return True
+    return (
+        getattr(provider, "install_root", None) == loaded_install_root
+        and getattr(provider, "bin_dir", None) == loaded_bin_dir
+    )
 
 
 def _run_script(argv: list[str]) -> int | None:
@@ -564,10 +579,13 @@ def _run_script(argv: list[str]) -> int | None:
         os.environ.setdefault(str(key), str(value))
 
     options = _script_options(raw_options)
-    runtime_providers = _build_providers(
-        _parse_runtime_provider_names(tool_config.get("runtime_binproviders")),
-        options,
+    runtime_provider_names = (
+        _parse_runtime_provider_names(
+            tool_config.get("runtime_binproviders"),
+        )
+        or options.provider_names
     )
+    runtime_providers = _build_providers(runtime_provider_names, options)
     binary_options = options
 
     try:

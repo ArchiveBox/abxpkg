@@ -721,7 +721,7 @@ def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
         def __init__(self, name: str):
             self.name = name
 
-        def exec(self, bin_name, cmd=(), capture_output=False):
+        def exec(self, bin_name, cmd=(), capture_output=False, **kwargs):
             calls.append(
                 ("exec", (self.name, str(bin_name), tuple(cmd), capture_output)),
             )
