@@ -578,14 +578,10 @@ def _run_script(argv: list[str]) -> int | None:
             continue
         os.environ.setdefault(str(key), str(value))
 
-    options = _script_options(raw_options)
-    runtime_provider_names = (
-        _parse_runtime_provider_names(
-            tool_config.get("runtime_binproviders"),
-        )
-        or options.provider_names
+    explicit_provider_selection = (
+        "--binproviders" in raw_options or "ABXPKG_BINPROVIDERS" in os.environ
     )
-    runtime_providers = _build_providers(runtime_provider_names, options)
+    options = _script_options(raw_options)
     binary_options = options
 
     try:
@@ -593,6 +589,16 @@ def _run_script(argv: list[str]) -> int | None:
             *meta.get("dependencies", []),
             *_script_deps_from(raw_options.get("--deps-from"), script_path, options),
         ]
+        runtime_provider_names = _parse_runtime_provider_names(
+            tool_config.get("runtime_binproviders"),
+        )
+        if (
+            not runtime_provider_names
+            and not dependencies
+            and not explicit_provider_selection
+        ):
+            runtime_provider_names = options.provider_names
+        runtime_providers = _build_providers(runtime_provider_names, options)
         for dep in dependencies:
             if isinstance(dep, str):
                 dep_name = dep
