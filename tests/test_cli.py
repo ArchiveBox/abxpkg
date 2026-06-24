@@ -3126,13 +3126,14 @@ def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
         '# requires-python = ">=3.12"\n'
         '# dependencies = [{name = "imagesize", binproviders = "uv", install_args = ["imagesize>=2.0.0"], postinstall_scripts = false, min_release_age = 3}]\n'
         "# ///\n"
-        "import imagesize, json, os\n"
+        "import imagesize, json, os, sys\n"
         "print(json.dumps({\n"
         "    'lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
         "    'path': os.environ.get('PATH', ''),\n"
         "    'virtual_env': os.environ.get('VIRTUAL_ENV'),\n"
         "    'uv_cache_dir': os.environ.get('UV_CACHE_DIR'),\n"
+        "    'runtime_python': f'{sys.version_info.major}.{sys.version_info.minor}',\n"
         "    'imagesize_file': imagesize.__file__,\n"
         "}))\n",
     )
@@ -3159,6 +3160,7 @@ def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
     assert Path(payload["uv_cache_dir"]) == lib.resolve() / "cache" / "uv"
     assert str(lib.resolve() / "bin") not in payload["path"].split(os.pathsep)
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
+    assert f"python{payload['runtime_python']}" in payload["imagesize_file"]
 
 
 def test_run_script_keeps_active_runtime_imports_with_uv_provider_cache(

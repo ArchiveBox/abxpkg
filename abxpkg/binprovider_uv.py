@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -383,7 +384,26 @@ class UvProvider(BinProvider):
         venv_root = self.install_root / "venv"
         venv_python = venv_root / "bin" / "python"
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
-            return
+            proc = subprocess.run(
+                [
+                    str(venv_python),
+                    "-c",
+                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            expected = f"{sys.version_info.major}.{sys.version_info.minor}"
+            if proc.returncode == 0 and proc.stdout.strip() == expected:
+                return
+            # Python hook scripts run under the interpreter that launched
+            # abxpkg, but provider deps are exposed through PYTHONPATH. A stale
+            # managed venv from a different Python minor can point compiled
+            # wheels such as pydantic-core at an incompatible ABI, so rebuild it
+            # before any package install/load can leak those paths downstream.
+            shutil.rmtree(venv_root, ignore_errors=True)
         self.install_root.parent.mkdir(parents=True, exist_ok=True)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
@@ -392,6 +412,8 @@ class UvProvider(BinProvider):
             cmd=[
                 *self._cache_args(no_cache=no_cache),
                 "venv",
+                "--python",
+                sys.executable,
                 str(venv_root),
             ],
             quiet=True,
