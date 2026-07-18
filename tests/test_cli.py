@@ -2971,8 +2971,9 @@ def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_pa
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
         "# ///\n"
-        "import sys\n"
-        "print(sys.executable)\n",
+        "import json, os, sys\n"
+        'print(json.dumps({"executable": sys.executable, '
+        '"providers": os.environ.get("ABXPKG_BINPROVIDERS")}))\n',
     )
 
     def run_script(_index: int) -> subprocess.CompletedProcess[str]:
@@ -2991,11 +2992,55 @@ def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_pa
 
     for result in results:
         assert result.returncode == 0, result.stderr
-        assert Path(result.stdout.strip()).resolve() == Path(sys.executable).resolve()
+        payload = json.loads(result.stdout.strip())
+        assert Path(payload["executable"]).resolve() == Path(sys.executable).resolve()
+        assert payload["providers"] is None
     managed_provider_dirs = [
         path for path in lib.iterdir() if path.name not in {"env", "bin"}
     ]
     assert all(not any(path.iterdir()) for path in managed_provider_dirs)
+
+
+def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallbacks(
+    tmp_path,
+):
+    """A dependency's pnpm provider must not probe unrelated default providers."""
+    lib = tmp_path / "lib"
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {
+                        "name": "playwright",
+                        "binproviders": "pnpm",
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": str(
+                                    lib / "pnpm" / "packages" / "playwright",
+                                ),
+                                "install_args": ["playwright@next"],
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    result = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        "node",
+        timeout=15,
+    )
+
+    assert result.returncode != 0
+    assert "Unable to load binary playwright via providers pnpm" in result.stderr
+    provider_dirs = {path.name for path in lib.iterdir()} if lib.exists() else set()
+    assert not {"bash", "brew", "docker", "pip"}.intersection(provider_dirs)
 
 
 def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):

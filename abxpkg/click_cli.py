@@ -468,8 +468,15 @@ def build_cli_options(
         handler_overrides[key] = value
 
     if group is None:
+        explicit_provider_selection = (
+            binproviders is not None
+            or os.environ.get("ABXPKG_BINPROVIDERS") is not None
+        )
         provider_names = parse_provider_names(binproviders)
-        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+        if explicit_provider_selection:
+            os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+        else:
+            os.environ.pop("ABXPKG_BINPROVIDERS", None)
         normalized_overrides = normalize_binary_overrides(
             provider_names,
             overrides=overrides,
@@ -496,7 +503,10 @@ def build_cli_options(
         if binproviders is None
         else parse_provider_names(binproviders)
     )
-    os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    if binproviders is not None or os.environ.get("ABXPKG_BINPROVIDERS") is not None:
+        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    else:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
     subcommand_overrides = normalize_binary_overrides(
         provider_names,
         overrides=overrides,

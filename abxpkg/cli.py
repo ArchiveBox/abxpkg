@@ -139,8 +139,10 @@ def _default_provider_names() -> list[str]:
 def _parse_provider_names(raw_value: str | None) -> list[str]:
     from . import ALL_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
+    explicit_selection = raw_value is not None
     if raw_value is None:
         env_value = os.environ.get("ABXPKG_BINPROVIDERS")
+        explicit_selection = env_value is not None
         raw_value = (
             env_value if env_value is not None else ",".join(_default_provider_names())
         )
@@ -160,7 +162,10 @@ def _parse_provider_names(raw_value: str | None) -> list[str]:
         raise ValueError(
             f"unknown provider name(s): {', '.join(invalid)}. Valid providers: {valid}",
         )
-    os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    if explicit_selection:
+        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    else:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
     return provider_names
 
 
