@@ -203,8 +203,18 @@ def build_exec_env(
             prepend_layers=provider_path_prepend_layers,
             append_layers=provider_path_append_layers,
         )
-        if provider.PATH:
-            provider_path_prepend_layers.append(provider.PATH)
+        provider_path = provider.PATH
+        provider_bin_dir = getattr(provider, "bin_dir", None)
+        # EnvProvider uses its full ambient PATH for host discovery, but only
+        # binaries that it has accepted and projected into env/bin may outrank
+        # managed provider fallbacks at execution time. Keep the untouched
+        # ambient PATH as the final base layer so undeclared host tools remain
+        # available without allowing a rejected host candidate to shadow a
+        # managed binary.
+        if getattr(provider, "name", None) == "env" and provider_bin_dir is not None:
+            provider_path = str(provider_bin_dir)
+        if provider_path:
+            provider_path_prepend_layers.append(provider_path)
         consume_pathlike_env(provider_env)
         apply_exec_env(provider_env, env)
 

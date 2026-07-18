@@ -368,6 +368,45 @@ class TestBinProvider:
             str(extra_append_bin),
         ]
 
+    def test_env_runtime_path_uses_projected_bins_before_managed_fallbacks(
+        self,
+        tmp_path,
+    ):
+        host_bin = tmp_path / "host" / "bin"
+        env_root = tmp_path / "lib" / "env"
+        managed_bin = tmp_path / "lib" / "playwright" / "bin"
+        for path in (host_bin, managed_bin):
+            path.mkdir(parents=True)
+
+        host_binary = host_bin / "chromium"
+        host_binary.write_text("#!/bin/sh\necho 'Chromium 150.0.0'\n")
+        host_binary.chmod(0o755)
+
+        env_provider = EnvProvider(PATH=str(host_bin), install_root=env_root)
+        loaded = env_provider.load("chromium", no_cache=True)
+        assert loaded is not None
+        assert loaded.loaded_abspath == env_root / "bin" / "chromium"
+        assert loaded.loaded_abspath.resolve() == host_binary.resolve()
+
+        managed_provider = BinProvider(
+            name="playwright",
+            PATH=str(managed_bin),
+            install_root=managed_bin.parent,
+            bin_dir=managed_bin,
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        env = BinProvider.build_exec_env(
+            providers=[env_provider, managed_provider],
+            base_env={"PATH": str(host_bin)},
+        )
+
+        assert env["PATH"].split(os.pathsep) == [
+            str(env_root / "bin"),
+            str(managed_bin),
+            str(host_bin),
+        ]
+
     def test_get_provider_with_overrides_changes_real_install_behavior(
         self,
         test_machine,

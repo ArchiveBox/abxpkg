@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, EnvProvider, PipProvider, SemVer
+from abxpkg import Binary, EnvProvider, PipProvider, PnpmProvider, SemVer
 from abxpkg.config import load_derived_cache, save_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
 
@@ -186,7 +186,7 @@ class TestEnvProvider:
             refreshed = load_derived_cache(derived_env_path)
             assert refreshed[cache_key]["cache_context"] != "old-cache-context"
 
-    def test_provider_does_not_cache_binaries_managed_by_other_providers(self):
+    def test_provider_does_not_claim_binaries_managed_by_other_providers(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             lib_dir = Path(tmpdir)
             pip_provider = PipProvider(
@@ -208,14 +208,57 @@ class TestEnvProvider:
             )
             loaded = env_provider.load("black", no_cache=True)
 
-            assert loaded is not None
-            assert loaded.loaded_abspath is not None
-            assert loaded.loaded_abspath.resolve() == installed.loaded_abspath.resolve()
+            assert loaded is None
             assert env_provider.install_root is not None
             assert load_derived_cache(env_provider.install_root / "derived.env") == {}
             assert env_provider.has_cached_binary("black") is False
+            assert env_provider.bin_dir is not None
+            assert not (env_provider.bin_dir / "black").exists()
 
             assert pip_provider.uninstall("black") is True
+
+    def test_binary_uses_pnpm_provider_without_env_relinking_relative_launcher(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib_dir = Path(tmpdir)
+            pnpm_provider = PnpmProvider(
+                install_root=lib_dir / "pnpm" / "packages" / "zx",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            installed = pnpm_provider.install("zx")
+
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert pnpm_provider.bin_dir is not None
+
+            env_bin_dir = lib_dir / "env" / "bin"
+            env_bin_dir.mkdir(parents=True)
+            stale_env_link = env_bin_dir / "zx"
+            stale_env_link.symlink_to(installed.loaded_abspath)
+
+            env_provider = EnvProvider(
+                install_root=lib_dir / "env",
+                PATH=str(pnpm_provider.bin_dir),
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            binary = Binary(
+                name="zx",
+                binproviders=[env_provider, pnpm_provider],
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).load(no_cache=True)
+
+            assert binary.loaded_binprovider is not None
+            assert binary.loaded_binprovider.name == "pnpm"
+            assert binary.loaded_abspath == installed.loaded_abspath
+            assert not stale_env_link.exists()
+            assert not stale_env_link.is_symlink()
+
+            result = binary.exec(cmd=("--version",), quiet=True)
+            assert result.returncode == 0, result.stderr
 
     def test_provider_does_not_reverse_link_shared_lib_bin_shims(self, monkeypatch):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -244,6 +287,30 @@ class TestEnvProvider:
             assert shared_shim.readlink() == env_binary
             assert env_binary.is_file()
             assert not env_binary.is_symlink()
+
+    def test_provider_never_discovers_human_convenience_lib_bin(
+        self,
+        monkeypatch,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lib_dir = Path(tmpdir)
+            lib_bin_dir = lib_dir / "bin"
+            lib_bin_dir.mkdir()
+            convenience_link = lib_bin_dir / "human-only-git"
+            convenience_link.symlink_to(test_machine.require_tool("git"))
+            monkeypatch.setenv("ABXPKG_LIB_DIR", str(lib_dir))
+
+            provider = EnvProvider(
+                install_root=lib_dir / "env",
+                PATH=str(lib_bin_dir),
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+
+            assert provider.load("human-only-git", no_cache=True) is None
+            assert provider.bin_dir is not None
+            assert not (provider.bin_dir / "human-only-git").exists()
 
     def test_search_returns_empty_for_env_provider(self):
         # EnvProvider has no package index — it just exposes ambient PATH —

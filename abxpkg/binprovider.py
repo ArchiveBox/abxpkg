@@ -3511,6 +3511,14 @@ class EnvProvider(BinProvider):
         for abspath in bin_abspaths(bin_name_str, PATH=os.pathsep.join(search_paths)):
             if self.bin_dir is not None and Path(abspath).parent == self.bin_dir:
                 continue
+            # EnvProvider projects binaries discovered from the host OS into
+            # ``ABXPKG_LIB_DIR/env/bin``. Paths owned by another managed
+            # provider are already part of that provider's runtime and must
+            # fall through to it instead of being reverse-linked into env/bin.
+            # In particular, pnpm's generated shell launchers resolve package
+            # files relative to $0 and break when invoked through such a link.
+            if self._is_managed_by_other_provider(abspath):
+                continue
             if abspath not in candidates:
                 candidates.append(abspath)
 
@@ -3533,6 +3541,11 @@ class EnvProvider(BinProvider):
         if self.bin_dir is not None:
             managed_abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
         if managed_abspath:
+            if self._is_managed_by_other_provider(managed_abspath):
+                managed_path = Path(managed_abspath)
+                if managed_path.is_symlink() and managed_path.parent == self.bin_dir:
+                    managed_path.unlink(missing_ok=True)
+                return None
             return managed_abspath
 
         if not candidates:
