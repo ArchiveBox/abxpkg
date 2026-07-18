@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -556,6 +556,22 @@ def _same_runtime_provider(provider, loaded_provider) -> bool:
     )
 
 
+def _load_or_install_script_binary(binary_name: str, options: ScriptOptions):
+    if options.provider_names and options.provider_names[0] == "env":
+        host_binary = _build_binary(
+            binary_name,
+            replace(options, provider_names=["env"]),
+        )
+        try:
+            return host_binary.load(no_cache=options.no_cache)
+        except ABXPkgError:
+            pass
+    return _build_binary(binary_name, options).install(
+        dry_run=options.dry_run,
+        no_cache=options.no_cache,
+    )
+
+
 def _run_script(argv: list[str]) -> int | None:
     parsed = _parse_script_argv(argv)
     if parsed is None:
@@ -597,7 +613,15 @@ def _run_script(argv: list[str]) -> int | None:
             and not dependencies
             and not explicit_provider_selection
         ):
-            runtime_provider_names = options.provider_names
+            # Preserve the default behavior of exposing previously installed
+            # sibling packages, but do not instantiate every managed provider
+            # on a cold script launch. Provider roots are the durable install
+            # state; an absent root cannot contribute anything to the runtime.
+            runtime_provider_names = [
+                provider_name
+                for provider_name in options.provider_names
+                if (options.lib_dir / provider_name).is_dir()
+            ]
         runtime_providers = _build_providers(runtime_provider_names, options)
         for dep in dependencies:
             if isinstance(dep, str):
@@ -613,18 +637,11 @@ def _run_script(argv: list[str]) -> int | None:
                 binary_options = dep_options
                 continue
 
-            dep_binary = _build_binary(dep_name, dep_options).install(
-                dry_run=options.dry_run,
-                no_cache=options.no_cache,
-            )
+            dep_binary = _load_or_install_script_binary(dep_name, dep_options)
             if dep_binary.loaded_binprovider:
                 runtime_providers.append(dep_binary.loaded_binprovider)
 
-        target_binary = _build_binary(binary_name, binary_options)
-        binary = target_binary.install(
-            dry_run=options.dry_run,
-            no_cache=options.no_cache,
-        )
+        binary = _load_or_install_script_binary(binary_name, binary_options)
     except ABXPkgError as err:
         print(
             f"abxpkg: failed to resolve dependency: {_format_error(err)}",

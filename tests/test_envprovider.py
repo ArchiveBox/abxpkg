@@ -1,6 +1,8 @@
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -51,6 +53,32 @@ class TestEnvProvider:
 
         assert provider.uninstall("python") is False
         test_machine.assert_shallow_binary_loaded(provider.load("python"))
+
+    def test_provider_projects_host_python_atomically_under_concurrency(self, tmp_path):
+        """Parallel hook launches must all reuse the same host Python link."""
+        provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        host_python = Path(sys.executable).absolute()
+        provider.setup_PATH()
+        worker_count = 32
+        ready = Barrier(worker_count)
+
+        def project_host_python() -> Path:
+            ready.wait()
+            return Path(provider._link_loaded_binary("python3", host_python))
+
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            projected = list(
+                pool.map(lambda _index: project_host_python(), range(worker_count)),
+            )
+
+        expected_link = tmp_path / "lib" / "env" / "bin" / "python3"
+        assert projected == [expected_link] * worker_count
+        assert expected_link.is_symlink()
+        assert expected_link.readlink() == host_python
 
     def test_provider_direct_min_version_rejection_keeps_binary_available(
         self,

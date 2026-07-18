@@ -9,6 +9,7 @@ import subprocess
 import sys
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -2956,6 +2957,40 @@ def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
     )
     assert Path(payload["executable"]) == Path(sys.executable).absolute()
     assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
+
+
+def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_path):
+    """Cold parallel hooks must not race past EnvProvider into PipProvider."""
+    lib = tmp_path / "lib"
+    script = tmp_path / "host_python.py"
+    script.write_text(
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        "# ///\n"
+        "import sys\n"
+        "print(sys.executable)\n",
+    )
+
+    def run_script(_index: int) -> subprocess.CompletedProcess[str]:
+        return _run_abxpkg_cli(
+            f"--lib={lib}",
+            "run",
+            "--script",
+            "python3",
+            str(script),
+            timeout=30,
+        )
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(run_script, range(24)))
+
+    for result in results:
+        assert result.returncode == 0, result.stderr
+        assert Path(result.stdout.strip()).resolve() == Path(sys.executable).resolve()
+    managed_provider_dirs = [
+        path for path in lib.iterdir() if path.name not in {"env", "bin"}
+    ]
+    assert managed_provider_dirs == []
 
 
 def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):

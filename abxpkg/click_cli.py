@@ -1364,6 +1364,29 @@ def resolve_runtime_binary(
     install_before_run: bool = False,
     update_before_run: bool = False,
 ) -> tuple[Binary, list[BinProvider]]:
+    if (
+        install_before_run
+        and not update_before_run
+        and options.provider_names
+        and options.provider_names[0] == "env"
+    ):
+        # Loading EnvProvider is intentionally a separate first phase. Building
+        # every managed provider eagerly creates and inspects their environments,
+        # which is both unnecessary and expensive when a compatible host binary
+        # is already available. Only construct managed fallbacks after a real
+        # host miss or version rejection.
+        host_binary = build_binary(
+            binary_name,
+            replace(options, provider_names=["env"]),
+            dry_run=options.dry_run,
+        )
+        try:
+            host_binary = host_binary.load(no_cache=options.no_cache)
+        except ABXPkgError as err:
+            logger.debug("Host-first load missed %s: %s", binary_name, err)
+        else:
+            return host_binary, list(host_binary.binproviders)
+
     binary = build_binary(binary_name, options, dry_run=options.dry_run)
     update_provider_names = [
         provider_name
@@ -1396,10 +1419,13 @@ def resolve_runtime_binary(
                         no_cache=options.no_cache,
                     )
         elif install_before_run:
-            binary = binary.install(
-                dry_run=options.dry_run,
-                no_cache=options.no_cache,
-            )
+            try:
+                binary = binary.load(no_cache=options.no_cache)
+            except ABXPkgError:
+                binary = binary.install(
+                    dry_run=options.dry_run,
+                    no_cache=options.no_cache,
+                )
         else:
             binary = binary.load(no_cache=options.no_cache)
     except ABXPkgError as err:

@@ -3431,8 +3431,34 @@ class EnvProvider(BinProvider):
         if link_path.exists() or link_path.is_symlink():
             if link_path.is_symlink() and link_path.readlink() == target:
                 return TypeAdapter(HostBinPath).validate_python(link_path)
-            link_path.unlink()
-        link_path.symlink_to(target)
+        # Hooks commonly launch in parallel and project the same host binary
+        # into env/bin at the same time. Let one creator win, then reuse its
+        # link. Unlinking the shared destination first lets another process
+        # observe it missing (or lose a symlink_to race) and incorrectly fall
+        # through to a managed provider.
+        try:
+            link_path.symlink_to(target)
+            return TypeAdapter(HostBinPath).validate_python(link_path)
+        except FileExistsError:
+            if link_path.is_symlink() and link_path.readlink() == target:
+                return TypeAdapter(HostBinPath).validate_python(link_path)
+
+        # An existing link or file points somewhere else. Replace it atomically
+        # so readers never observe a missing env/bin entry.
+        temp_fd, temp_name = tempfile.mkstemp(
+            dir=self.bin_dir,
+            prefix=f".{link_name}.",
+            suffix=".tmp",
+        )
+        os.close(temp_fd)
+        temp_link = Path(temp_name)
+        try:
+            temp_link.unlink()
+            temp_link.symlink_to(target)
+            os.replace(temp_link, link_path)
+        finally:
+            if temp_link.exists() or temp_link.is_symlink():
+                temp_link.unlink()
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
