@@ -168,13 +168,16 @@ class CargoProvider(BinProvider):
         )
 
     def _cargo_executes(self, abspath) -> bool:
-        """Return True iff ``<abspath> --version`` exits cleanly with parseable output.
+        """Return True iff Cargo and its Rust compiler are fully initialized.
 
         Guards against partially broken cargo installs where the binary exists
         on PATH but won't actually run (e.g. brew's cargo dynamically linked
         to a libllhttp that's been removed). The base BinProvider load() does
         a version probe, but providers can persist cache entries that bypass
-        it; this is a final, no-cache executable check.
+        it; this is a final, no-cache executable check. Probe rustc too: rustup
+        can defer a stable-toolchain update until the first compiler process,
+        and letting a parallel ``cargo install`` trigger that update races
+        sibling rustc processes against a temporarily incomplete sysroot.
         """
         if abspath is None:
             return False
@@ -189,7 +192,24 @@ class CargoProvider(BinProvider):
             return False
         if proc.returncode != 0:
             return False
-        return bool(SemVer.parse(proc.stdout.strip() or proc.stderr.strip()))
+        if not SemVer.parse(proc.stdout.strip() or proc.stderr.strip()):
+            return False
+
+        rustc_abspath = Path(abspath).with_name("rustc")
+        if not rustc_abspath.is_file():
+            return False
+        try:
+            rustc_proc = subprocess.run(
+                [str(rustc_abspath), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=max(self.version_timeout, 120),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return rustc_proc.returncode == 0 and bool(
+            SemVer.parse(rustc_proc.stdout.strip() or rustc_proc.stderr.strip()),
+        )
 
     @log_method_call()
     def setup(
