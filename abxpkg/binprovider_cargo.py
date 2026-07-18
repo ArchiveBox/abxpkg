@@ -195,7 +195,11 @@ class CargoProvider(BinProvider):
         if not SemVer.parse(proc.stdout.strip() or proc.stderr.strip()):
             return False
 
-        rustc_abspath = Path(abspath).with_name("rustc")
+        try:
+            cargo_target = Path(abspath).resolve(strict=True)
+        except OSError:
+            return False
+        rustc_abspath = cargo_target.with_name("rustc")
         if not rustc_abspath.is_file():
             return False
         try:

@@ -1,6 +1,7 @@
 import tempfile
 from pathlib import Path
 import logging
+import shutil
 from typing import cast
 
 
@@ -9,6 +10,20 @@ from abxpkg.binprovider import BinProvider
 
 
 class TestCargoProvider:
+    def test_projected_host_cargo_initializes_real_sibling_rustc(self, test_machine):
+        test_machine.require_tool("cargo")
+        test_machine.require_tool("rustc")
+        cargo_abspath = Path(cast(str, shutil.which("cargo"))).resolve()
+        assert cargo_abspath.with_name("rustc").is_file()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            projected_cargo = Path(temp_dir) / "env" / "bin" / "cargo"
+            projected_cargo.parent.mkdir(parents=True)
+            projected_cargo.symlink_to(cargo_abspath)
+            assert not projected_cargo.with_name("rustc").exists()
+
+            assert CargoProvider()._cargo_executes(projected_cargo)
+
     def test_install_args_version_flag_wins_over_min_version(self, test_machine):
         test_machine.require_tool("cargo")
         with tempfile.TemporaryDirectory() as temp_dir:
