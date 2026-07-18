@@ -612,6 +612,7 @@ def _run_script(argv: list[str]) -> int | None:
             not runtime_provider_names
             and not dependencies
             and not explicit_provider_selection
+            and not raw_options.get("--deps-from")
         ):
             # Preserve the default behavior of exposing previously installed
             # sibling packages, but do not instantiate every managed provider

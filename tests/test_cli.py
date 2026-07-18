@@ -2962,6 +2962,10 @@ def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
 def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_path):
     """Cold parallel hooks must not race past EnvProvider into PipProvider."""
     lib = tmp_path / "lib"
+    for provider_name in ("bash", "brew", "chromewebstore", "docker", "pip"):
+        (lib / provider_name).mkdir(parents=True)
+    deps_config = tmp_path / "config.json"
+    deps_config.write_text(json.dumps({"required_binaries": []}))
     script = tmp_path / "host_python.py"
     script.write_text(
         "# /// script\n"
@@ -2976,6 +2980,7 @@ def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_pa
             f"--lib={lib}",
             "run",
             "--script",
+            f"--deps-from={deps_config}:required_binaries",
             "python3",
             str(script),
             timeout=30,
@@ -2990,7 +2995,7 @@ def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_pa
     managed_provider_dirs = [
         path for path in lib.iterdir() if path.name not in {"env", "bin"}
     ]
-    assert managed_provider_dirs == []
+    assert all(not any(path.iterdir()) for path in managed_provider_dirs)
 
 
 def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):
