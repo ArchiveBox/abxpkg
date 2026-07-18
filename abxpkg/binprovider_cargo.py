@@ -195,12 +195,8 @@ class CargoProvider(BinProvider):
         if not SemVer.parse(proc.stdout.strip() or proc.stderr.strip()):
             return False
 
-        try:
-            cargo_target = Path(abspath).resolve(strict=True)
-        except OSError:
-            return False
-        rustc_abspath = cargo_target.with_name("rustc")
-        if not rustc_abspath.is_file():
+        rustc_abspath = self._rustc_for_cargo(abspath)
+        if rustc_abspath is None:
             return False
         try:
             rustc_proc = subprocess.run(
@@ -214,6 +210,24 @@ class CargoProvider(BinProvider):
         return rustc_proc.returncode == 0 and bool(
             SemVer.parse(rustc_proc.stdout.strip() or rustc_proc.stderr.strip()),
         )
+
+    @staticmethod
+    def _rustc_for_cargo(cargo_abspath: str | Path) -> Path | None:
+        """Return the compiler shipped beside the selected Cargo executable."""
+        try:
+            rustc_abspath = Path(cargo_abspath).resolve(strict=True).with_name("rustc")
+        except OSError:
+            return None
+        return rustc_abspath if rustc_abspath.is_file() else None
+
+    def _cargo_build_env(self, cargo_abspath: str | Path) -> dict[str, str]:
+        """Keep Cargo on its matching compiler instead of another PATH toolchain."""
+        env = os.environ.copy()
+        if "RUSTC" not in env:
+            rustc_abspath = self._rustc_for_cargo(cargo_abspath)
+            if rustc_abspath is not None:
+                env["RUSTC"] = str(rustc_abspath)
+        return env
 
     @log_method_call()
     def setup(
@@ -354,6 +368,7 @@ class CargoProvider(BinProvider):
             bin_name=installer_bin,
             cmd=["install", *cargo_install_args, *install_args],
             timeout=timeout,
+            env=self._cargo_build_env(installer_bin),
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
         if (
@@ -365,6 +380,7 @@ class CargoProvider(BinProvider):
                 bin_name=installer_bin,
                 cmd=["install", *cargo_install_args[1:], *install_args],
                 timeout=timeout,
+                env=self._cargo_build_env(installer_bin),
             )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
@@ -400,6 +416,7 @@ class CargoProvider(BinProvider):
                 *install_args,
             ],
             timeout=timeout,
+            env=self._cargo_build_env(installer_bin),
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
         if (
@@ -416,6 +433,7 @@ class CargoProvider(BinProvider):
                     *install_args,
                 ],
                 timeout=timeout,
+                env=self._cargo_build_env(installer_bin),
             )
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
