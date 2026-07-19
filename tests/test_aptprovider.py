@@ -1,4 +1,3 @@
-import sys
 import logging
 
 import pytest
@@ -6,7 +5,6 @@ import pytest
 from abxpkg import AptProvider, Binary
 
 
-@pytest.mark.skipif("darwin" in sys.platform, reason="apt is not available on macOS")
 @pytest.mark.root_required
 class TestAptProvider:
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):

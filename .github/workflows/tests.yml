@@ -52,6 +52,9 @@ jobs:
     - name: Run pre-commit checks
       run: uv run prek run --all-files
 
+    - name: Run documentation code blocks
+      run: uv run pytest -vv --tb=long README.md AGENTS.md skills docs
+
   discover-standard-tests:
     needs: precheck
     runs-on: ubuntu-latest
@@ -68,6 +71,9 @@ jobs:
         json_array="["
         first=true
         for test_file in $(find tests -maxdepth 1 -name 'test_*.py' -type f | sort); do
+          if grep -Eq '@pytest\.mark\.(root_required|docker_required)' "$test_file"; then
+            continue
+          fi
           if [ "$first" = true ]; then
             first=false
           else
@@ -268,14 +274,7 @@ jobs:
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH"
-        set +e
         uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
-        status=$?
-        set -e
-        if [ "$status" -eq 0 ] || [ "$status" -eq 5 ]; then
-          exit 0
-        fi
-        exit "$status"
 
   discover-live-tests:
     needs: precheck
@@ -292,23 +291,18 @@ jobs:
       run: |
         json_array="["
         first=true
-        for test_file in $(rg -l "def test_provider_direct_methods_exercise_real_lifecycle" tests/test_*.py | sort); do
+        for test_file in $(rg -l '@pytest\.mark\.(root_required|docker_required)' tests/test_*.py | sort); do
           test_name=$(basename "$test_file" .py | sed 's/^test_//')
           needs_docker=false
           if grep -q "@pytest.mark.docker_required" "$test_file"; then
             needs_docker=true
           fi
 
-          os_targets="linux macOS"
-          if grep -q "@pytest.mark.docker_required" "$test_file" || grep -q "@pytest.mark.root_required" "$test_file" || grep -q 'skipif("darwin"' "$test_file"; then
-            os_targets="linux"
-          elif grep -q 'require_tool("brew")' "$test_file" && ! grep -q 'require_tool("apt-get")' "$test_file" && ! grep -q "operations.apt.packages" "$test_file" && ! grep -q "ansible.builtin.apt" "$test_file"; then
-            os_targets="macOS"
-          fi
+          os_targets="linux"
 
           for os_target in $os_targets; do
             if [ "$os_target" = "linux" ]; then
-              os_json='{"group":"Default"}'
+              os_json='"ubuntu-latest"'
             else
               os_json='"macOS-latest"'
             fi
@@ -452,17 +446,6 @@ jobs:
         done < <(printf '%s' "$PATH" | tr ':' '\n')
         printf 'PATH=%s\n' "$sanitized_path" >> "$GITHUB_ENV"
 
-    - name: Setup Docker
-      if: ${{ matrix.live.needs_docker }}
-      uses: docker/setup-docker-action@v5.0.0
-      env:
-        LIMA_START_ARGS: --vm-type=vz
-      with:
-        daemon-config: |
-          {
-            "debug": true
-          }
-
     - name: Setup venv and install pip dependencies
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
@@ -485,8 +468,8 @@ jobs:
         docker version \
         && docker info
 
-    - name: Run live package lifecycle test
+    - name: Run every privileged provider test
       run: |
         export PNPM_HOME="${RUNNER_TEMP}/pnpm"
         export PATH="$PNPM_HOME:$PATH:/nix/var/nix/profiles/default/bin:$PATH"
-        uv run pytest "${{ matrix.live.path }}" -k test_provider_direct_methods_exercise_real_lifecycle
+        uv run pytest -vv --tb=long "${{ matrix.live.path }}"

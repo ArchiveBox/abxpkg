@@ -1269,14 +1269,12 @@ source .venv/bin/activate
 uv run prek run --all-files
 ```
 
-<!--pytest.mark.skip(reason="pytest invocation")-->
-```bash
+```console
 # run the full test suite from tests/
 uv run pytest -sx tests/
 ```
 
-<!--pytest.mark.skip(reason="release/publish command")-->
-```bash
+```console
 # build distributions
 uv build && uv publish --username=__token__
 ```
