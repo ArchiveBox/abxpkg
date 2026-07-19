@@ -3089,6 +3089,7 @@ def test_run_script_dependency_uses_explicit_host_abspath(tmp_path):
     env_lib = tmp_path / "env-lib"
     env_result = _run_abxpkg_cli(
         f"--lib={env_lib}",
+        "--binproviders=env",
         "env",
         "--install",
         "--json",
