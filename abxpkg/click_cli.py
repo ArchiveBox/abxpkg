@@ -353,7 +353,7 @@ def build_providers(
 
 
 def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Binary:
-    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
+    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary, EnvProvider
 
     provider_names = options.provider_names
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
@@ -373,17 +373,28 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
                 ]
             break
 
+    providers = build_providers(
+        provider_names,
+        dry_run=dry_run,
+        install_root=options.install_root,
+        bin_dir=options.bin_dir,
+        euid=options.euid,
+        install_timeout=options.install_timeout,
+        version_timeout=options.version_timeout,
+    )
+    explicit_abspath = Path(binary_name).expanduser()
+    if explicit_abspath.is_absolute():
+        for provider in providers:
+            if type(provider) is EnvProvider:
+                provider.PATH = provider._merge_PATH(
+                    explicit_abspath.parent,
+                    PATH=provider.PATH,
+                    prepend=True,
+                )
+
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
-        "binproviders": build_providers(
-            provider_names,
-            dry_run=dry_run,
-            install_root=options.install_root,
-            bin_dir=options.bin_dir,
-            euid=options.euid,
-            install_timeout=options.install_timeout,
-            version_timeout=options.version_timeout,
-        ),
+        "binproviders": providers,
     }
     # Binary's field validators coerce str → SemVer, dict → BinaryOverrides,
     # etc., so just forward the parsed values verbatim. Binary.install /

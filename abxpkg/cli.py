@@ -503,7 +503,7 @@ def _script_deps_from(
 
 
 def _build_binary(binary_name: str, options: ScriptOptions):
-    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary
+    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary, EnvProvider
 
     provider_names = options.provider_names
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
@@ -517,9 +517,20 @@ def _build_binary(binary_name: str, options: ScriptOptions):
                 ]
             break
 
+    providers = _build_providers(provider_names, options)
+    explicit_abspath = Path(binary_name).expanduser()
+    if explicit_abspath.is_absolute():
+        for provider in providers:
+            if type(provider) is EnvProvider:
+                provider.PATH = provider._merge_PATH(
+                    explicit_abspath.parent,
+                    PATH=provider.PATH,
+                    prepend=True,
+                )
+
     kwargs: dict[str, Any] = {
         "name": binary_name,
-        "binproviders": _build_providers(provider_names, options),
+        "binproviders": providers,
     }
     for key in ("min_version", "postinstall_scripts", "min_release_age"):
         value = getattr(options, key)

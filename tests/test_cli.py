@@ -3043,6 +3043,64 @@ def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallback
     assert not {"bash", "brew", "docker", "pip"}.intersection(provider_dirs)
 
 
+def test_run_script_dependency_uses_explicit_host_abspath(tmp_path):
+    """Absolute dependency names must resolve through env before any fallback."""
+    lib = tmp_path / "lib"
+    host_python = tmp_path / "host-python"
+    host_python.symlink_to(Path(sys.executable).absolute())
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {
+                        "name": str(host_python),
+                        "binproviders": "env",
+                    },
+                ],
+            },
+        ),
+    )
+    script = tmp_path / "show_runtime.py"
+    script.write_text(
+        "# /// script\n"
+        "# ///\n"
+        "import json, sys\n"
+        "print(json.dumps({'executable': sys.executable}))\n",
+    )
+
+    result = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "run",
+        "--script",
+        f"--deps-from={config}:required_binaries",
+        "python3",
+        str(script),
+        timeout=15,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    linked_host = lib / "env" / "bin" / host_python.name
+    assert linked_host.is_symlink()
+    assert linked_host.readlink() == host_python.absolute()
+
+    env_lib = tmp_path / "env-lib"
+    env_result = _run_abxpkg_cli(
+        f"--lib={env_lib}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        timeout=15,
+    )
+    assert env_result.returncode == 0, env_result.stderr
+    env_linked_host = env_lib / "env" / "bin" / host_python.name
+    assert env_linked_host.is_symlink()
+    assert env_linked_host.readlink() == host_python.absolute()
+
+
 def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):
     """Considering apt as a fallback provider must not resolve/install apt off Linux."""
 
