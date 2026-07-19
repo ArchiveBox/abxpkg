@@ -236,7 +236,9 @@ CLI result lines are written to `stdout`. Progress logging is written to `stderr
 
 ## Shebang Line in Scripts
 
-⚡️ Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies), `abxpkg` lets you declare **arbitrary package dependencies** at the top of any script using a `/// script` metadata block.
+⚡️ Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies), `abxpkg` lets you declare **arbitrary package dependencies** at the top of any script.  
+It will automatically fetch, install, and make the packages available to your script across a wide variety of languages.
+
 
 ```javascript
 #!/usr/bin/env -S abxpkg run --script node
@@ -261,6 +263,8 @@ const { chromium } = require('playwright');
     await browser.close();
 })();
 ```
+
+<i><code>&lt;30ms</code> cold-start overhead once cached.</i>
 
 The metadata parser is comment-syntax-agnostic — it looks for `/// script` and `///` delimiters and strips the first whitespace-delimited token from each line, so `#`, `//`, `--`, `;`, and any other single-token comment prefix all work.
 
