@@ -164,35 +164,6 @@ abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
 
 Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--debug`, `--no-cache`, `--update`) are forwarded to `abxpkg`; everything after the binary name is forwarded to the binary itself.
 
-#### Shebang Line in Scripts
-
-Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies), `abxpkg` lets you declare **arbitrary package dependencies** at the top of any script using a `/// script` metadata block.
-
-```javascript
-#!/usr/bin/env -S abxpkg run --script node
-
-// /// script
-// dependencies = [
-//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},
-//     {name = "playwright", binproviders = ["pnpm", "npm"], install_args = ["playwright@next"]},
-//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},
-// ]
-// [tool.abxpkg]
-// ABXPKG_POSTINSTALL_SCRIPTS = true
-// ///
-
-const { chromium } = require('playwright');
-
-(async () => {
-    const browser = await chromium.launch();
-    const page = await browser.newPage();
-    await page.goto('https://example.com');
-    console.log(await page.title());
-    await browser.close();
-})();
-```
-
-The metadata parser is comment-syntax-agnostic — it looks for `/// script` and `///` delimiters and strips the first whitespace-delimited token from each line, so `#`, `//`, `--`, `;`, and any other single-token comment prefix all work.
 
 #### Per-`Binary` / per-`BinProvider` options as CLI flags
 
@@ -256,6 +227,44 @@ env ABXPKG_DRY_RUN=1 abxpkg install some-dangerous-package
 ```
 
 CLI result lines are written to `stdout`. Progress logging is written to `stderr` at `INFO` by default. Enable DEBUG logging with `ABXPKG_DEBUG=1` or `--debug`.
+
+<br/>
+
+---
+
+<br/>
+
+## Shebang Line in Scripts
+
+⚡️ Inspired by [`uv`'s inline script metadata](https://docs.astral.sh/uv/guides/scripts/#declaring-script-dependencies), `abxpkg` lets you declare **arbitrary package dependencies** at the top of any script using a `/// script` metadata block.
+
+```javascript
+#!/usr/bin/env -S abxpkg run --script node
+
+// /// script
+// dependencies = [
+//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},
+//     {name = "playwright", binproviders = ["pnpm", "npm"], install_args = ["playwright@next"]},
+//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},
+// ]
+// [tool.abxpkg]
+// ABXPKG_POSTINSTALL_SCRIPTS = true
+// ///
+
+const { chromium } = require('playwright');
+
+(async () => {
+    const browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto('https://example.com');
+    console.log(await page.title());
+    await browser.close();
+})();
+```
+
+The metadata parser is comment-syntax-agnostic — it looks for `/// script` and `///` delimiters and strips the first whitespace-delimited token from each line, so `#`, `//`, `--`, `;`, and any other single-token comment prefix all work.
+
+---
 
 <br/>
 
