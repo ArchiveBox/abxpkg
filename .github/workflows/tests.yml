@@ -291,7 +291,10 @@ jobs:
       run: |
         json_array="["
         first=true
-        for test_file in $(rg -l '@pytest\.mark\.(root_required|docker_required)' tests/test_*.py | sort); do
+        for test_file in $(find tests -maxdepth 1 -name 'test_*.py' -type f | sort); do
+          if ! grep -Eq '@pytest\.mark\.(root_required|docker_required)' "$test_file"; then
+            continue
+          fi
           test_name=$(basename "$test_file" .py | sed 's/^test_//')
           needs_docker=false
           if grep -q "@pytest.mark.docker_required" "$test_file"; then
@@ -312,6 +315,11 @@ jobs:
           done
         done
         json_array+="]"
+
+        if [ "$first" = true ]; then
+          echo "No root_required or docker_required test files were discovered" >&2
+          exit 1
+        fi
 
         echo "live-tests=$json_array" >> "$GITHUB_OUTPUT"
         echo "$json_array"
