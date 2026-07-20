@@ -1288,10 +1288,18 @@ def _deps_from_config_specs(
                     ):
                         values[str(key)] = str(prop["default"])
 
-            expanded = _expand_dependency_value(selected, values)
-            if isinstance(expanded, list):
-                deps.extend(expanded)
-            else:
+            selected_items = selected if isinstance(selected, list) else [selected]
+            for selected_item in selected_items:
+                expanded = _expand_dependency_value(selected_item, values)
+                if isinstance(selected_item, dict) and isinstance(expanded, dict):
+                    template_name = str(selected_item.get("name") or "").strip()
+                    template_match = re.fullmatch(
+                        r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+                        template_name,
+                    )
+                    if template_match:
+                        expanded = dict(expanded)
+                        expanded["_abxpkg_env_key"] = template_match.group(1)
                 deps.append(expanded)
     return deps
 
@@ -1333,6 +1341,9 @@ def build_deps_from_exec_env(
             install_before_run=install_before_run,
             update_before_run=update_before_run,
         )
+        env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
+        if env_key and binary.loaded_abspath:
+            env[str(env_key)] = str(binary.loaded_abspath)
         env = build_runtime_exec_env(
             binary,
             exec_env_providers,

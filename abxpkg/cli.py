@@ -498,7 +498,19 @@ def _script_deps_from(
             selected = selected[part]
         if isinstance(root, dict):
             properties.update(root.get("properties", {}))
-        deps.extend(_expand_script_value(selected, options, properties))
+        selected_items = selected if isinstance(selected, list) else [selected]
+        for selected_item in selected_items:
+            expanded = _expand_script_value(selected_item, options, properties)
+            if isinstance(selected_item, dict) and isinstance(expanded, dict):
+                template_name = str(selected_item.get("name") or "").strip()
+                template_match = re.fullmatch(
+                    r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+                    template_name,
+                )
+                if template_match:
+                    expanded = dict(expanded)
+                    expanded["_abxpkg_env_key"] = template_match.group(1)
+            deps.append(expanded)
     return deps
 
 
@@ -640,6 +652,7 @@ def _run_script(argv: list[str]) -> int | None:
                 if (options.lib_dir / provider_name).is_dir()
             ]
         runtime_providers = _build_providers(runtime_provider_names, options)
+        binary_env_key: str | None = None
         for dep in dependencies:
             if isinstance(dep, str):
                 dep_name = dep
@@ -652,13 +665,23 @@ def _run_script(argv: list[str]) -> int | None:
 
             if dep_name == binary_name:
                 binary_options = dep_options
+                if isinstance(dep, dict) and dep.get("_abxpkg_env_key"):
+                    binary_env_key = str(dep["_abxpkg_env_key"])
                 continue
 
             dep_binary = _load_or_install_script_binary(dep_name, dep_options)
+            if (
+                isinstance(dep, dict)
+                and dep.get("_abxpkg_env_key")
+                and dep_binary.loaded_abspath
+            ):
+                os.environ[str(dep["_abxpkg_env_key"])] = str(dep_binary.loaded_abspath)
             if dep_binary.loaded_binprovider:
                 runtime_providers.append(dep_binary.loaded_binprovider)
 
         binary = _load_or_install_script_binary(binary_name, binary_options)
+        if binary_env_key and binary.loaded_abspath:
+            os.environ[binary_env_key] = str(binary.loaded_abspath)
     except ABXPkgError as err:
         print(
             f"abxpkg: failed to resolve dependency: {_format_error(err)}",

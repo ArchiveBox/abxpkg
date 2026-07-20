@@ -1075,6 +1075,7 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
+    assert Path(payload["NODE_BINARY"]).is_file()
     assert str(hook_runtime / "venv" / "bin") in payload["PATH"].split(os.pathsep)
     assert any((hook_runtime / "venv").rglob("humanize"))
 
@@ -2931,7 +2932,7 @@ def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
     assert load_proc.returncode == 0, load_proc.stderr
     linked_python = lib / "env" / "bin" / "python3"
     assert linked_python.is_symlink()
-    assert linked_python.readlink() == Path(sys.executable).absolute()
+    assert linked_python.samefile(sys.executable)
 
     proc = _run_abxpkg_cli(
         f"--lib={lib}",
@@ -2955,7 +2956,7 @@ def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
         Path(payload["abxpkg_file"]).resolve()
         == Path(cli_module.__file__).parents[0] / "__init__.py"
     )
-    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["executable"]).samefile(sys.executable)
     assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
 
 
@@ -3081,7 +3082,7 @@ def test_run_script_dependency_uses_explicit_host_abspath(tmp_path):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout.strip().splitlines()[-1])
-    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["executable"]).samefile(sys.executable)
     linked_host = lib / "env" / "bin" / host_python.name
     assert linked_host.is_symlink()
     assert linked_host.readlink() == host_python.absolute()
@@ -3127,7 +3128,7 @@ def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["executable"]).samefile(sys.executable)
     if sys.platform != "linux":
         assert elapsed < 1
 
@@ -3240,7 +3241,7 @@ def test_run_script_without_declared_dependency_keeps_target_runtime_env_clean(
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["executable"]).samefile(sys.executable)
     assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
     assert str(lib / "uv" / "venv") not in payload["virtual_env"]
     assert str(lib / "uv" / "venv") not in payload["pythonpath"]
@@ -3375,7 +3376,7 @@ def test_run_script_keeps_active_runtime_imports_with_uv_provider_cache(
         Path(payload["abxpkg_file"]).resolve()
         == Path(cli_module.__file__).parents[0] / "__init__.py"
     )
-    assert Path(payload["executable"]) == Path(sys.executable).absolute()
+    assert Path(payload["executable"]).samefile(sys.executable)
     assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
     assert str(lib / "uv" / "venv") in payload["imagesize_file"]
     assert str(hook_runtime / "venv") in payload["humanize_file"]
@@ -3495,7 +3496,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "const fs = require('fs');\n"
         "const path = require('path');\n"
         "\n"
-        "const python = childProcess.execFileSync('python3', [\n"
+        "const python = childProcess.execFileSync(process.env.PYTHON_BINARY, [\n"
         "  '-c',\n"
         '  \'import json, sys; print(json.dumps({"executable": sys.executable, "version": list(sys.version_info[:3])}))\',\n'
         "], {encoding: 'utf8'}).trim();\n"
@@ -3503,6 +3504,8 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "const payload = {\n"
         "  nodeVersion: process.versions.node,\n"
         "  execPath: process.execPath,\n"
+        "  nodeBinary: process.env.NODE_BINARY,\n"
+        "  pythonBinary: process.env.PYTHON_BINARY,\n"
         "  python: JSON.parse(python),\n"
         "  puppeteerPackage,\n"
         "  puppeteerName: JSON.parse(fs.readFileSync(puppeteerPackage, 'utf8')).name,\n"
@@ -3528,6 +3531,8 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert int(payload["nodeVersion"].split(".", 1)[0]) >= 18
     assert payload["python"]["version"][:2] >= [3, 10]
+    assert Path(payload["nodeBinary"]).is_file()
+    assert Path(payload["pythonBinary"]).is_file()
     assert Path(payload["nodeModulesDir"]) == node_modules_dir
     assert Path(payload["pnpmHome"]) == node_modules_dir / ".bin"
     puppeteer_package = Path(payload["puppeteerPackage"])
