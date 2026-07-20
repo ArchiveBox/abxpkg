@@ -1,0 +1,20 @@
+tests/test_binary_service.py
+  s_f8414d52051f83::t_aa90ba67d0d253 305,408,443,647
+  s_f8414d52051f83::t_6baf1c84f5df62 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "63feb929a216a5e8d28b4962d349fdf1c5aa07c5",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
