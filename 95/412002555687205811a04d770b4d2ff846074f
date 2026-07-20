@@ -1,0 +1,60 @@
+abxpkg/binprovider_playwright.py
+  s_f8414d52051f83::t_a0d94e8c7ccb55 776-781,801-802,804
+  s_f8414d52051f83::t_27b6b3b9873f31 797-800
+abxpkg/binprovider_npm.py
+  s_f8414d52051f83::t_d491c1d45e57db 230
+  s_f8414d52051f83::t_b9f0dbeb603e85 70-74,390-391,393
+.github/resolve_ci_binaries.sh
+  s_f8414d52051f83::t_d491c1d45e57db 30-31
+  s_f8414d52051f83::t_752b9550125681 1-29,32-42
+abxpkg/binprovider_pyinfra.py
+  s_f8414d52051f83::t_0270a87edc4756 68-70,148-149
+  s_f8414d52051f83::t_8a6727b8ca58c5 150-151
+tests/test_npmprovider.py
+  s_f8414d52051f83::t_af376648c12b6d 90-92,95,97-99,101,105,112-113,115
+  s_f8414d52051f83::t_f9c72c573e1240 85,108-109
+  s_f8414d52051f83::t_b9f0dbeb603e85 86-89,93-94,96,100,102-104,106-107,110-111,114,116-121
+  s_f8414d52051f83::t_2ce5f5fc71884f 122-124
+abxpkg/binprovider_ansible.py
+  s_f8414d52051f83::t_49da0e27656a6d 72-73
+  s_f8414d52051f83::t_0270a87edc4756 77-78,214
+  s_f8414d52051f83::t_a7aca87a3d9883 135-136,138
+  s_f8414d52051f83::t_afa5ca7481e790 85-91,102-104
+  s_f8414d52051f83::t_e310521f8c075b 92-96,215-217
+abxpkg/binprovider.py
+  s_f8414d52051f83::t_c1f8252e43df91 1582-1583,1585-1586
+  s_f8414d52051f83::t_c30ae566424573 3916
+  s_f8414d52051f83::t_af376648c12b6d 1403-1412
+  s_f8414d52051f83::t_6765c092ceb615 1363
+  s_f8414d52051f83::t_acd8135f67ad8f 2149
+  s_f8414d52051f83::t_958ac787590c42 2294-2296
+abxpkg/binprovider_brew.py
+  s_f8414d52051f83::t_958ac787590c42 393-394
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_3d59d7a8a8da2d 249-254,256,261-262,265
+  s_f8414d52051f83::t_b71ae112cc97f1 43,135-140,142,146-155,158
+  s_f8414d52051f83::t_169cb94cbfa8aa 45-46
+  s_f8414d52051f83::t_0c644c8f07d77e 44
+.github/ci_binaries.json
+  s_f8414d52051f83::t_169cb94cbfa8aa 17-27
+  s_f8414d52051f83::t_b9f0dbeb603e85 77
+  s_f8414d52051f83::t_752b9550125681 1-16,28-76,78-107
+abxpkg/binprovider_pnpm.py
+  s_f8414d52051f83::t_c1f8252e43df91 932-933
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "95412002555687205811a04d770b4d2ff846074f",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
