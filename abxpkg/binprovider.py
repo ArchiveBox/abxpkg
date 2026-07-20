@@ -2046,7 +2046,7 @@ class BinProvider(BaseModel):
         validation_err = None
         version_outputs: list[str] = []
 
-        for version_arg in ("--version", "-version", "-v"):
+        for version_arg in ("--version", "-version", "-v", "-V"):
             proc = self.exec(
                 bin_name=abspath,
                 cmd=[version_arg],
@@ -2070,7 +2070,7 @@ class BinProvider(BaseModel):
                 validation_err = validation_err or err
 
         raise ValueError(
-            f"❌ Unable to find {bin_name} version from {bin_name} --version, -version or -v output\n{next((output for output in version_outputs if output), '')}".strip(),
+            f"❌ Unable to find {bin_name} version from {bin_name} --version, -version, -v or -V output\n{next((output for output in version_outputs if output), '')}".strip(),
         ) from validation_err
 
     def _ensure_writable_cache_dir(self, cache_dir: Path) -> bool:
@@ -2158,7 +2158,12 @@ class BinProvider(BaseModel):
         cwd_path = Path(cwd).resolve()
         bin_abspath = self._exec_bin_abspath(Path(bin_abspath))
         cmd = [str(bin_abspath), *(str(arg) for arg in cmd)]
-        is_version_probe = len(cmd) == 2 and cmd[1] in {"--version", "-version", "-v"}
+        is_version_probe = len(cmd) == 2 and cmd[1] in {
+            "--version",
+            "-version",
+            "-v",
+            "-V",
+        }
         exec_log_prefix = ACTIVE_EXEC_LOG_PREFIX.get()
         if should_log_command:
             if exec_log_prefix:
