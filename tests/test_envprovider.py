@@ -1,4 +1,5 @@
 import sys
+import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -289,6 +290,66 @@ class TestEnvProvider:
 
             result = binary.exec(cmd=("--version",), quiet=True)
             assert result.returncode == 0, result.stderr
+
+    @pytest.mark.parametrize(
+        ("package", "requested_bin", "projected_bin"),
+        [
+            ("defuddle", "defuddle", "defuddle"),
+            ("@llamaindex/liteparse", "lit", "liteparse"),
+            (
+                "readability-extractor",
+                "readability-extractor",
+                "readability-extractor",
+            ),
+        ],
+    )
+    def test_projected_host_pnpm_launcher_keeps_its_package_runtime(
+        self,
+        tmp_path,
+        package,
+        requested_bin,
+        projected_bin,
+    ):
+        host_provider = PnpmProvider(
+            install_root=tmp_path / "host-pnpm",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={requested_bin: {"install_args": [package]}},
+        )
+        host_binary = host_provider.install(requested_bin)
+        assert host_binary is not None
+        assert host_provider.install_root is not None
+        assert host_provider.bin_dir is not None
+        host_launcher = host_provider.bin_dir / projected_bin
+        assert host_launcher.is_file()
+
+        env_provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            PATH=str(host_provider.bin_dir),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded = env_provider.load(projected_bin, no_cache=True)
+
+        assert loaded is not None
+        assert loaded.loaded_abspath is not None
+        projected = tmp_path / "lib" / "env" / "bin" / projected_bin
+        assert loaded.loaded_abspath == projected
+        assert projected.is_symlink()
+        assert projected.readlink().is_absolute()
+        assert projected.resolve().is_relative_to(
+            host_provider.install_root / "node_modules" / ".pnpm",
+        )
+        assert not (tmp_path / "lib" / "env" / ".pnpm").exists()
+        result = subprocess.run(
+            [str(projected), "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (result.stdout + result.stderr).strip()
 
     def test_provider_does_not_reverse_link_shared_lib_bin_shims(self, monkeypatch):
         with tempfile.TemporaryDirectory() as tmpdir:

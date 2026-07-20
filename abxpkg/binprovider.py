@@ -6,6 +6,7 @@ import sys
 import pwd
 import json
 import inspect
+import shlex
 import stat
 import hashlib
 import platform
@@ -3417,9 +3418,9 @@ class EnvProvider(BinProvider):
             and source_path.is_symlink()
         ):
             return TypeAdapter(HostBinPath).validate_python(source_path)
-        target = source_path
         if self.bin_dir is None:
-            return TypeAdapter(HostBinPath).validate_python(target)
+            return TypeAdapter(HostBinPath).validate_python(source_path)
+        target = self._pnpm_launcher_target(source_path) or source_path
 
         link_name = Path(str(bin_name)).name
         if not link_name or link_name in {".", ".."} or "/" in str(bin_name):
@@ -3464,6 +3465,62 @@ class EnvProvider(BinProvider):
             if temp_link.exists() or temp_link.is_symlink():
                 temp_link.unlink()
         return TypeAdapter(HostBinPath).validate_python(link_path)
+
+    @staticmethod
+    def _pnpm_launcher_target(source_path: Path) -> Path | None:
+        """Resolve a pnpm shell shim to the executable package script it wraps.
+
+        pnpm's generated ``node_modules/.bin`` launchers locate their package
+        relative to ``$0``. A stable EnvProvider symlink changes ``$0`` to
+        ``ABXPKG_LIB_DIR/env/bin/<name>``, which incorrectly redirects the
+        launcher into a nonexistent ``env/.pnpm`` tree. Projecting the verified
+        package script itself preserves the env/bin symlink contract without
+        copying or relocating pnpm's runtime tree.
+        """
+        launcher_path = source_path.resolve(strict=False)
+        try:
+            with launcher_path.open("rb") as launcher_file:
+                launcher_bytes = launcher_file.read(64 * 1024)
+        except OSError:
+            return None
+        if not launcher_bytes.startswith(b"#!/bin/sh"):
+            return None
+        try:
+            launcher_text = launcher_bytes.decode("utf-8")
+        except UnicodeError:
+            return None
+
+        relative_prefix = "$basedir/../.pnpm/"
+        for line in reversed(launcher_text.splitlines()):
+            if not line.lstrip().startswith("exec ") or relative_prefix not in line:
+                continue
+            try:
+                tokens = shlex.split(line)
+            except ValueError:
+                continue
+            for token in tokens:
+                if not token.startswith(relative_prefix):
+                    continue
+                relative_target = token.removeprefix("$basedir/")
+                package_store = (launcher_path.parent.parent / ".pnpm").resolve(
+                    strict=False,
+                )
+                target = (launcher_path.parent / relative_target).resolve(
+                    strict=False,
+                )
+                if (
+                    target.is_relative_to(package_store)
+                    and target.is_file()
+                    and os.access(target, os.X_OK)
+                ):
+                    try:
+                        with target.open("rb") as target_file:
+                            has_shebang = target_file.read(2) == b"#!"
+                        if has_shebang:
+                            return target
+                    except OSError:
+                        continue
+        return None
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         # EnvProvider exposes stable managed links under ABXPKG_LIB_DIR/env/bin so
