@@ -1342,7 +1342,7 @@ def build_deps_from_exec_env(
         else:
             continue
 
-        binary, _candidate_providers = resolve_runtime_binary(
+        binary, _ = resolve_runtime_binary(
             dep_name,
             options=dep_options,
             install_before_run=install_before_run,
@@ -1731,7 +1731,7 @@ def build_command_exec_env(
         )
 
     for binary_name in names:
-        binary, runtime_binproviders = resolve_runtime_binary(
+        binary, _ = resolve_runtime_binary(
             binary_name,
             options=options,
             install_before_run=install_before_run,
@@ -1739,7 +1739,6 @@ def build_command_exec_env(
         )
         env = build_runtime_exec_env(
             binary,
-            runtime_binproviders,
             base_env=env,
         )
     return env
@@ -2146,7 +2145,7 @@ def _run_command_impl(
         install_before_run = True
 
     try:
-        binary, resolved_runtime_binproviders = resolve_runtime_binary(
+        binary, _ = resolve_runtime_binary(
             binary_name,
             options=binary_options,
             install_before_run=install_before_run,
@@ -2157,7 +2156,7 @@ def _run_command_impl(
         ctx.exit(1)
         return
     if not script_mode:
-        runtime_binproviders = resolved_runtime_binproviders
+        runtime_binproviders = []
     else:
         runtime_binproviders = [*runtime_binproviders]
 

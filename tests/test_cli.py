@@ -2916,43 +2916,6 @@ def test_run_script_applies_install_args_to_side_dependency(tmp_path):
     assert "24.2.0" in proc.stdout
 
 
-def test_run_merges_selected_provider_runtime_env_without_script(tmp_path):
-    """Plain run should merge runtime PATH/ENV from all selected providers."""
-
-    lib = tmp_path / "lib"
-
-    install_proc = _run_abxpkg_cli(
-        f"--lib={lib}",
-        "--binproviders=pip",
-        "--postinstall-scripts=True",
-        "--min-release-age=3",
-        "install",
-        "black",
-    )
-    assert install_proc.returncode == 0, install_proc.stderr
-
-    proc = _run_abxpkg_cli(
-        f"--lib={lib}",
-        "--binproviders=env,pip",
-        "run",
-        "python3",
-        "-c",
-        (
-            "import os, shutil, sys; "
-            "black = shutil.which('black'); "
-            "sys.stdout.write((black or '') + '\\n' + os.environ.get('PATH','')); "
-            "sys.exit(0 if black else 1)"
-        ),
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    lines = proc.stdout.splitlines()
-    assert lines
-    assert lines[0].startswith(str(lib / "pip" / "venv" / "bin"))
-    assert str(lib / "env" / "bin") in lines[1]
-    assert str(lib / "pip" / "venv" / "bin") in lines[1]
-
-
 def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
     """EnvProvider-linked python3 should run with active venv semantics intact."""
 
