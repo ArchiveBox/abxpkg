@@ -262,7 +262,9 @@ class TestEnvProvider:
             assert pnpm_provider.bin_dir is not None
 
             env_bin_dir = lib_dir / "env" / "bin"
-            env_bin_dir.mkdir(parents=True)
+            # pnpm bootstrap projects its host node/npm dependencies here
+            # before this stale package-launcher case is exercised.
+            env_bin_dir.mkdir(parents=True, exist_ok=True)
             stale_env_link = env_bin_dir / "zx"
             stale_env_link.symlink_to(installed.loaded_abspath)
 
