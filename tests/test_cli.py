@@ -1069,13 +1069,13 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
         "--install",
         "--json",
         f"--deps-from={config}:required_binaries",
-        "node",
         timeout=900,
     )
 
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
     assert Path(payload["NODE_BINARY"]).is_file()
+    assert payload["VIRTUAL_ENV"] == str(hook_runtime / "venv")
     assert str(hook_runtime / "venv" / "bin") in payload["PATH"].split(os.pathsep)
     assert any((hook_runtime / "venv").rglob("humanize"))
 

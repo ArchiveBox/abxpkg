@@ -1335,7 +1335,7 @@ def build_deps_from_exec_env(
         else:
             continue
 
-        binary, exec_env_providers = resolve_runtime_binary(
+        binary, _candidate_providers = resolve_runtime_binary(
             dep_name,
             options=dep_options,
             install_before_run=install_before_run,
@@ -1346,7 +1346,6 @@ def build_deps_from_exec_env(
             env[str(env_key)] = str(binary.loaded_abspath)
         env = build_runtime_exec_env(
             binary,
-            exec_env_providers,
             base_env=env,
         )
     return env
@@ -2351,12 +2350,16 @@ def env_command(
             explicit_provider_selection=explicit_provider_selection,
             base_env=base_env,
         )
-    final_env = build_command_exec_env(
-        binary_names,
-        options=options,
-        install_before_run=install_before_run,
-        update_before_run=update_before_run,
-        base_env=base_env,
+    final_env = (
+        build_command_exec_env(
+            binary_names,
+            options=options,
+            install_before_run=install_before_run,
+            update_before_run=update_before_run,
+            base_env=base_env,
+        )
+        if binary_names or not deps_from
+        else base_env
     )
     if json_output:
         _echo(json.dumps(render_env_delta_values(render_base_env, final_env), indent=2))
