@@ -1324,28 +1324,39 @@ str(SemVer(1, 9, 0))                                                # '1.9.0'
 `abxpkg` uses `uv` for local development, dependency sync, linting, and tests.
 
 ```bash
-git clone https://github.com/ArchiveBox/abxpkg && cd abxpkg
+checkout_dir="$(mktemp -d)"
+trap 'rm -rf "$checkout_dir"' EXIT
+git clone --depth=1 https://github.com/ArchiveBox/abxpkg "$checkout_dir"
+cd "$checkout_dir"
 
 # setup the venv and install packages
 uv sync --all-extras
-source .venv/bin/activate
 
 # run formatting/lint/type checks
 uv run prek run --all-files
 ```
 
-```console
-# run the full test suite from tests/
-uv run pytest -sx tests/
+```bash
+# Exercise representative core, environment, and provider behavior.
+uv run pytest -s \
+    tests/test_semver.py \
+    tests/test_binary.py \
+    tests/test_envprovider.py \
+    tests/test_module_api.py
 ```
 
-```console
-# build distributions
-uv build && uv publish --username=__token__
+The mandatory per-file CI matrix runs the complete standard suite, the
+host-mutating provider files, and every `root_required` and `docker_required`
+file on equipped isolated runners.
+
+```bash
+# build distributions and validate the publish command without uploading
+uv build
+uv publish --dry-run dist/*
 ```
 
 - Tests live under [`tests/`](./tests/).
-- Use `uv run pytest -sx tests/test_npmprovider.py` or a specific node like `uv run pytest -sx tests/test_npmprovider.py::TestNpmProvider::test_provider_dry_run_does_not_install_zx` when iterating on one provider.
+- Use `uv run pytest -s tests/test_npmprovider.py` or a specific node like `uv run pytest -s tests/test_npmprovider.py::TestNpmProvider::test_provider_dry_run_does_not_install_zx` when iterating on one provider.
 
 <br/>
 <br/>

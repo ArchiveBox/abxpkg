@@ -47,10 +47,8 @@ uv run abx yt-dlp --help
 
 ## Verification
 
-```console
-uv run pytest tests/test_cli.py -q
+```bash
 uv run pytest tests/test_chromewebstoreprovider.py -q
-uv run prek run --all-files
 ```
 
 Provider-specific logic belongs in provider classes. Shared provider infrastructure should stay provider-agnostic.
