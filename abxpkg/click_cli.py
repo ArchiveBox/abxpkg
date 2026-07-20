@@ -383,14 +383,21 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         version_timeout=options.version_timeout,
     )
     explicit_abspath = Path(binary_name).expanduser()
+    inferred_overrides: dict[str, Any] | None = None
     if explicit_abspath.is_absolute():
         for provider in providers:
             if type(provider) is EnvProvider:
-                provider.PATH = provider._merge_PATH(
-                    explicit_abspath.parent,
-                    PATH=provider.PATH,
-                    prepend=True,
-                )
+                env_provider = cast(EnvProvider, provider)
+                if env_provider._is_managed_by_other_provider(explicit_abspath):
+                    inferred_overrides = {
+                        "env": {"abspath": str(explicit_abspath)},
+                    }
+                else:
+                    env_provider.PATH = env_provider._merge_PATH(
+                        explicit_abspath.parent,
+                        PATH=env_provider.PATH,
+                        prepend=True,
+                    )
 
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
@@ -406,7 +413,7 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         ("min_version", options.min_version),
         ("postinstall_scripts", options.postinstall_scripts),
         ("min_release_age", options.min_release_age),
-        ("overrides", options.overrides),
+        ("overrides", merge_binary_overrides(inferred_overrides, options.overrides)),
     ):
         if value is not None:
             binary_kwargs[key] = value
@@ -1262,6 +1269,8 @@ def _deps_from_config_specs(
     options: CliOptions,
 ) -> list[Any]:
     deps: list[Any] = []
+    values = {key: str(value) for key, value in os.environ.items()}
+    values["ABXPKG_LIB_DIR"] = str(options.lib_dir)
     for raw_spec_group in raw_specs:
         for raw_spec in str(raw_spec_group or "").split(","):
             spec = raw_spec.strip()
@@ -1276,8 +1285,6 @@ def _deps_from_config_specs(
             for part in (selector or "dependencies").split("."):
                 selected = selected[part]
 
-            values = {key: str(value) for key, value in os.environ.items()}
-            values["ABXPKG_LIB_DIR"] = str(options.lib_dir)
             properties = root.get("properties") if isinstance(root, dict) else None
             if isinstance(properties, dict):
                 for key, prop in properties.items():

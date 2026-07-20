@@ -1080,6 +1080,41 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
     assert any((hook_runtime / "venv").rglob("humanize"))
 
 
+def test_env_command_layers_dependency_config_defaults(tmp_path):
+    lib = tmp_path / "lib"
+    runtime_config = tmp_path / "runtime.json"
+    plugin_config = tmp_path / "plugin.json"
+    runtime_config.write_text(
+        json.dumps(
+            {
+                "properties": {"PYTHON_BINARY": {"default": "python3"}},
+                "required_binaries": [],
+            },
+        ),
+    )
+    plugin_config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {"name": "{PYTHON_BINARY}", "binproviders": "env"},
+                ],
+            },
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--json",
+        f"--deps-from={runtime_config}:required_binaries",
+        f"--deps-from={plugin_config}:required_binaries",
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    assert Path(payload["PYTHON_BINARY"]).is_file()
+
+
 def test_render_env_assignment_lines_uses_shell_safe_double_quotes():
     lines = cli_module.render_env_assignment_lines(
         base_env={},

@@ -3530,6 +3530,18 @@ class EnvProvider(BinProvider):
     ) -> "AbspathFuncReturnValue":
         bin_name_str = str(bin_name)
 
+        explicit_path = Path(bin_name_str).expanduser()
+        if (
+            explicit_path.is_absolute()
+            and explicit_path.is_file()
+            and self._is_managed_by_other_provider(explicit_path)
+        ):
+            # An explicit path inside another abxpkg provider is already a
+            # managed binary, not a host candidate. Preserve its original
+            # location so package-manager launchers that resolve files relative
+            # to argv[0] keep working.
+            return TypeAdapter(HostBinPath).validate_python(explicit_path)
+
         search_paths = []
         for entry in str(self.PATH or "").split(os.pathsep):
             if not entry:
