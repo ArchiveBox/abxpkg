@@ -399,6 +399,10 @@ class ShallowBinary(BaseModel):
         assert os.path.isdir(cwd) and os.access(cwd, os.R_OK), (
             f"cwd must be a valid, accessible directory: {cwd}"
         )
+        if self.loaded_binprovider is not None and self.loaded_abspath is not None:
+            bin_name = str(
+                self.loaded_binprovider._exec_bin_abspath(Path(self.loaded_abspath)),
+            )
         cmd = [str(bin_name), *(str(arg) for arg in cmd)]
         logger.debug("Executing binary command: %s", format_command(cmd))
         kwargs.setdefault("capture_output", True)
@@ -2128,6 +2132,9 @@ class BinProvider(BaseModel):
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         return bin_abspath
+
+    def _is_managed_by_other_provider(self, abspath: HostBinPath | Path) -> bool:
+        return False
 
     # @validate_call
     def exec(

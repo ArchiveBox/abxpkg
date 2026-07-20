@@ -387,15 +387,14 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
     if explicit_abspath.is_absolute():
         for provider in providers:
             if type(provider) is EnvProvider:
-                env_provider = cast(EnvProvider, provider)
-                if env_provider._is_managed_by_other_provider(explicit_abspath):
+                if provider._is_managed_by_other_provider(explicit_abspath):
                     inferred_overrides = {
                         "env": {"abspath": str(explicit_abspath)},
                     }
                 else:
-                    env_provider.PATH = env_provider._merge_PATH(
+                    provider.PATH = provider._merge_PATH(
                         explicit_abspath.parent,
-                        PATH=env_provider.PATH,
+                        PATH=provider.PATH,
                         prepend=True,
                     )
 
@@ -1350,7 +1349,12 @@ def build_deps_from_exec_env(
         )
         env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
         if env_key and binary.loaded_abspath:
-            env[str(env_key)] = str(binary.loaded_abspath)
+            assert binary.loaded_binprovider is not None
+            env[str(env_key)] = str(
+                binary.loaded_binprovider._exec_bin_abspath(
+                    Path(binary.loaded_abspath),
+                ),
+            )
         env = build_runtime_exec_env(
             binary,
             base_env=env,

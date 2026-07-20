@@ -1,3 +1,4 @@
+import os
 import sys
 import subprocess
 import tempfile
@@ -80,6 +81,40 @@ class TestEnvProvider:
         assert projected == [expected_link] * worker_count
         assert expected_link.is_symlink()
         assert expected_link.readlink() == host_python
+
+    def test_projected_host_brew_executes_with_its_host_prefix(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_brew = Path(test_machine.require_tool("brew")).resolve()
+        host_prefix = host_brew.parent.parent
+        clean_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"}
+        }
+        env_provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            PATH=str(host_brew.parent),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded = env_provider.load("brew", no_cache=True)
+        assert loaded is not None
+        assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "brew"
+        assert loaded.loaded_abspath.is_symlink()
+
+        contaminated_env = {
+            **clean_env,
+            "HOMEBREW_PREFIX": str(tmp_path / "lib" / "brew"),
+            "HOMEBREW_CELLAR": str(tmp_path / "lib" / "brew" / "Cellar"),
+        }
+
+        result = loaded.exec(cmd=("--prefix",), env=contaminated_env)
+        assert result.returncode == 0, result.stderr
+        assert Path(result.args[0]) == host_brew
+        assert Path(result.stdout.strip()) == host_prefix
 
     def test_provider_direct_min_version_rejection_keeps_binary_available(
         self,

@@ -1080,6 +1080,60 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
     assert any((hook_runtime / "venv").rglob("humanize"))
 
 
+def test_env_command_exports_projected_host_brew_execution_target(
+    tmp_path,
+    test_machine,
+):
+    host_brew = Path(test_machine.require_tool("brew")).resolve()
+    host_prefix = host_brew.parent.parent
+
+    lib = tmp_path / "lib"
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "properties": {"CI_BREW_BIN": {"default": "brew"}},
+                "required_binaries": [
+                    {"name": "{CI_BREW_BIN}", "binproviders": ["env"]},
+                ],
+            },
+        ),
+    )
+    managed_prefix = lib / "brew"
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        env_overrides={
+            "HOMEBREW_PREFIX": str(managed_prefix),
+            "HOMEBREW_CELLAR": str(managed_prefix / "Cellar"),
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    projected = lib / "env" / "bin" / "brew"
+    assert projected.is_symlink()
+    assert projected.resolve() == host_brew
+    assert Path(payload["CI_BREW_BIN"]) == host_brew
+
+    result = subprocess.run(
+        [payload["CI_BREW_BIN"], "--prefix"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "HOMEBREW_PREFIX": str(managed_prefix),
+            "HOMEBREW_CELLAR": str(managed_prefix / "Cellar"),
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert Path(result.stdout.strip()) == host_prefix
+
+
 def test_env_command_layers_dependency_config_defaults(tmp_path):
     lib = tmp_path / "lib"
     runtime_config = tmp_path / "runtime.json"
