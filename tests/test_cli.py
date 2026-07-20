@@ -190,7 +190,11 @@ def test_env_deps_from_honors_dependency_binproviders(tmp_path):
         "--json",
         f"--deps-from={config_path}:required_binaries",
         "node",
-        env_overrides={"ABXPKG_LIB_DIR": str(lib_dir)},
+        env_overrides={
+            "ABXPKG_LIB_DIR": str(lib_dir),
+            "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
+            "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
+        },
     )
 
     assert proc.returncode == 0, proc.stderr
@@ -3577,6 +3581,8 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         env_overrides={
             "ABXPKG_LIB_DIR": str(lib),
             "ABXPKG_BINPROVIDERS": "env,pnpm",
+            "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
+            "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
         },
         timeout=900,
     )

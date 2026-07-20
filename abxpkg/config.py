@@ -187,6 +187,7 @@ def build_exec_env(
         apply_exec_env(extra_layer, env)
 
     seen_providers: set[int] = set()
+    first_writer_provider_keys: set[str] = set()
     for provider in providers:
         provider_id = id(provider)
         if provider_id in seen_providers:
@@ -196,8 +197,10 @@ def build_exec_env(
         provider.setup_PATH()
         provider_env = dict(provider.ENV)
         for key in _FIRST_WRITER_ENV_KEYS:
-            if env.get(key):
+            if key in first_writer_provider_keys:
                 provider_env.pop(key, None)
+            elif provider_env.get(key):
+                first_writer_provider_keys.add(key)
         consume_PATH_env(
             provider_env,
             prepend_layers=provider_path_prepend_layers,

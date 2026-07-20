@@ -334,6 +334,27 @@ class TestBinProvider:
             str(yarn_provider.install_root / "node_modules"),
         ]
 
+    def test_build_exec_env_replaces_stale_ambient_js_module_alias(self, tmp_path):
+        pnpm_provider = PnpmProvider(
+            install_root=tmp_path / "pnpm" / "packages" / "target",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        env = BinProvider.build_exec_env(
+            providers=[pnpm_provider],
+            base_env={
+                "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
+                "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
+            },
+        )
+
+        assert pnpm_provider.install_root is not None
+        assert env["NODE_MODULES_DIR"] == str(
+            pnpm_provider.install_root / "node_modules",
+        )
+        assert env["NODE_MODULE_DIR"] == env["NODE_MODULES_DIR"]
+
     def test_build_exec_env_keeps_provider_path_before_ambient_path(
         self,
         tmp_path,

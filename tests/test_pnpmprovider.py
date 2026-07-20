@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from abxpkg import Binary, PnpmProvider, SemVer
+from abxpkg.base_types import bin_abspath
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
@@ -96,14 +97,7 @@ class TestPnpmProvider:
             os.environ["PATH"] = constrained_path
             os.environ["NPM_BINARY"] = npm_binary
             try:
-                assert (
-                    PnpmProvider(PATH=os.environ["PATH"]).load(
-                        "pnpm",
-                        quiet=True,
-                        no_cache=True,
-                    )
-                    is None
-                )
+                assert bin_abspath("pnpm", PATH=os.environ["PATH"]) is None
                 provider = PnpmProvider(
                     install_root=install_root,
                     postinstall_scripts=True,

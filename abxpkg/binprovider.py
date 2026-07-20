@@ -388,8 +388,16 @@ class ShallowBinary(BaseModel):
         quiet=False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
+        execute_loaded_binary = (
+            bin_name is None
+            or str(bin_name) == self.name
+            or (
+                self.loaded_abspath is not None
+                and Path(str(bin_name)).expanduser() == self.loaded_abspath
+            )
+        )
         bin_name = str(bin_name or self.loaded_abspath or self.name)
-        if bin_name == self.name:
+        if execute_loaded_binary:
             assert self.loaded_abspath, (
                 "Binary must have a loaded_abspath, make sure to load() or install() first"
             )
@@ -399,7 +407,11 @@ class ShallowBinary(BaseModel):
         assert os.path.isdir(cwd) and os.access(cwd, os.R_OK), (
             f"cwd must be a valid, accessible directory: {cwd}"
         )
-        if self.loaded_binprovider is not None and self.loaded_abspath is not None:
+        if (
+            execute_loaded_binary
+            and self.loaded_binprovider is not None
+            and self.loaded_abspath is not None
+        ):
             bin_name = str(
                 self.loaded_binprovider._exec_bin_abspath(Path(self.loaded_abspath)),
             )
@@ -3427,6 +3439,26 @@ class EnvProvider(BinProvider):
             return TypeAdapter(HostBinPath).validate_python(source_path)
         if self.bin_dir is None:
             return TypeAdapter(HostBinPath).validate_python(source_path)
+        # A caller may create a fresh lib root while an earlier abxpkg
+        # ``env/bin`` projection is first on PATH (notably the isolated CLI
+        # tests in CI). Do not stack projections: EnvProvider executes one
+        # managed link hop so host launchers retain their original argv[0],
+        # and a second env/bin hop would become argv[0] instead. Preserve the
+        # final host/package-manager symlink; only peel abxpkg env/bin links.
+        seen_projection_paths: set[Path] = set()
+        while (
+            source_path.is_symlink()
+            and source_path.parent.name == "bin"
+            and source_path.parent.parent.name == "env"
+            and source_path not in seen_projection_paths
+        ):
+            seen_projection_paths.add(source_path)
+            projected_target = source_path.readlink()
+            source_path = (
+                projected_target
+                if projected_target.is_absolute()
+                else source_path.parent / projected_target
+            ).absolute()
         target = self._pnpm_launcher_target(source_path) or source_path
 
         link_name = Path(str(bin_name)).name

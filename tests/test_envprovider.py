@@ -122,6 +122,13 @@ class TestEnvProvider:
         test_machine,
     ):
         host_brew = Path(test_machine.require_tool("brew")).absolute()
+        while (
+            host_brew.is_symlink()
+            and host_brew.parent.name == "bin"
+            and host_brew.parent.parent.name == "env"
+        ):
+            target = host_brew.readlink()
+            host_brew = target if target.is_absolute() else host_brew.parent / target
         clean_env = {
             key: value
             for key, value in os.environ.items()
@@ -165,6 +172,44 @@ class TestEnvProvider:
         assert result.returncode == 0, result.stderr
         assert Path(result.args[0]) == host_brew
         assert Path(result.stdout.strip()) == host_prefix
+
+    def test_nested_env_projection_keeps_the_original_host_brew_launcher(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_brew = Path(test_machine.require_tool("brew")).absolute()
+        while (
+            host_brew.is_symlink()
+            and host_brew.parent.name == "bin"
+            and host_brew.parent.parent.name == "env"
+        ):
+            target = host_brew.readlink()
+            host_brew = target if target.is_absolute() else host_brew.parent / target
+        first_provider = EnvProvider(
+            install_root=tmp_path / "first" / "env",
+            PATH=str(host_brew.parent),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        first = first_provider.load("brew", no_cache=True)
+        assert first is not None
+        assert first.loaded_abspath is not None
+
+        second_provider = EnvProvider(
+            install_root=tmp_path / "second" / "env",
+            PATH=str(first.loaded_abspath.parent),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        second = second_provider.load("brew", no_cache=True)
+        assert second is not None
+        assert second.loaded_abspath is not None
+        assert second.loaded_abspath.readlink() == host_brew
+
+        result = second.exec(cmd=("--prefix",))
+        assert result.returncode == 0, result.stderr
+        assert Path(result.args[0]) == host_brew
 
     def test_provider_direct_min_version_rejection_keeps_binary_available(
         self,
