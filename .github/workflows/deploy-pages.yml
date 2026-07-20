@@ -16,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    # Deploy the generated site once, from the authoritative release commit.
+    if: github.event_name != 'push' || startsWith(github.event.head_commit.message, 'release:')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
