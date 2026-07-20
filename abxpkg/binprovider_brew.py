@@ -88,6 +88,16 @@ class BrewProvider(BinProvider):
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action == "install"
 
+    def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
+        installer = self._INSTALLER_BINARY
+        if (
+            installer is not None
+            and installer.loaded_abspath == bin_abspath
+            and installer.loaded_binprovider is not None
+        ):
+            return installer.loaded_binprovider._exec_bin_abspath(bin_abspath)
+        return super()._exec_bin_abspath(bin_abspath)
+
     def _brew_prefixes(self, no_cache: bool = False) -> list[Path]:
         """Collect candidate Homebrew prefixes from the installer binary and current PATH."""
         prefixes: list[Path] = []

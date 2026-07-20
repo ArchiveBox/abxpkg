@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .binary import Binary
-from .base_types import BinProviderName, PATHStr, BinName, InstallArgs
+from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, bin_abspaths
 from .semver import SemVer
 from .shallowbinary import ShallowBinary
 from .binprovider import (
@@ -81,7 +81,7 @@ def _pick_ansible_python_interpreter(installer_module: str) -> str:
         return sys.executable
     if _interpreter_has_module(sys.executable, "apt_pkg"):
         return sys.executable
-    candidates: list[str] = []
+    candidates: list[Path] = []
     for python_name in (
         "python3",
         "python3.13",
@@ -89,16 +89,20 @@ def _pick_ansible_python_interpreter(installer_module: str) -> str:
         "python3.11",
         "python3.10",
     ):
-        loaded = EnvProvider().load(python_name, no_cache=True)
-        if loaded and loaded.loaded_abspath:
-            candidate = str(loaded.loaded_abspath)
+        for candidate in bin_abspaths(python_name, PATH=DEFAULT_ENV_PATH):
             if candidate not in candidates:
                 candidates.append(candidate)
+
+    env_provider = EnvProvider()
+    env_provider.setup_PATH(no_cache=True)
     for candidate in candidates:
-        if candidate == sys.executable:
+        if candidate == Path(sys.executable):
             continue
-        if _interpreter_has_module(candidate, "apt_pkg"):
-            return candidate
+        if not _interpreter_has_module(str(candidate), "apt_pkg"):
+            continue
+        projected = env_provider._link_loaded_binary(candidate.name, candidate)
+        if _interpreter_has_module(str(projected), "apt_pkg"):
+            return str(projected)
     raise RuntimeError(
         "EnvProvider could not resolve a Python interpreter with apt_pkg",
     )

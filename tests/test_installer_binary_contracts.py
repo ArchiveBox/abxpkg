@@ -31,7 +31,7 @@ class TestInstallerBinaryContracts:
         ):
             assert "super().INSTALLER_BINARY" in _installer_source(provider_cls)
 
-    def test_pnpm_provider_resolves_installer_without_base_recursion(self):
+    def test_pnpm_provider_preserves_installer_source_ownership(self):
         provider = PnpmProvider(postinstall_scripts=True, min_release_age=3)
         abspath = provider.get_abspath("pnpm", quiet=True, no_cache=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -39,7 +39,12 @@ class TestInstallerBinaryContracts:
         assert abspath is not None
         assert installer.loaded_binprovider is not None
         assert installer.loaded_abspath == abspath
-        assert installer.loaded_binprovider.name == "env"
+        if abspath.resolve().is_relative_to(
+            provider._installer_provider_root().resolve(),
+        ):
+            assert installer.loaded_binprovider.name == "npm"
+        else:
+            assert installer.loaded_binprovider.name == "env"
 
     def test_browser_providers_do_not_delegate_to_base_resolver(self):
         for provider_cls in (PlaywrightProvider, PuppeteerProvider):
