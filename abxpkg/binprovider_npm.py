@@ -67,6 +67,11 @@ class NpmProvider(BinProvider):
     # detect_euid_to_use() fills this with ``<install_root>/node_modules/.bin`` in managed
     # mode; ambient mode leaves it unset so _load_PATH() discovers npm's real global bins.
     bin_dir: Path | None = None
+    # Optional export directory for logical names that differ from the package's
+    # real executable name (for example ``yarn-berry`` -> ``yarn``). Keeping the
+    # alias outside node_modules/.bin lets callers expose only the logical name
+    # without also putting every package executable on their runtime PATH.
+    alias_bin_dir: Path | None = None
 
     @computed_field
     @property
@@ -222,7 +227,7 @@ class NpmProvider(BinProvider):
             else None
         )
         if self.bin_dir:
-            entries = [self.bin_dir]
+            entries = [self.alias_bin_dir or self.bin_dir]
             if installer_dir is not None:
                 entries.append(installer_dir)
             return self._merge_PATH(*entries)
@@ -382,9 +387,10 @@ class NpmProvider(BinProvider):
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
         """Return the managed shim path for an npm-installed executable, if any."""
-        if self.bin_dir is None:
+        link_dir = self.alias_bin_dir or self.bin_dir
+        if link_dir is None:
             return None
-        return self.bin_dir / str(bin_name)
+        return link_dir / str(bin_name)
 
     def _refresh_bin_link(
         self,

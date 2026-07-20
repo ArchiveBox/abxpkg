@@ -6,7 +6,6 @@ import sys
 import pwd
 import json
 import inspect
-import shutil
 import stat
 import hashlib
 import platform
@@ -1361,13 +1360,9 @@ class BinProvider(BaseModel):
                 and os.access(manual_path, os.X_OK)
             ):
                 return True
-        return bool(
-            bin_abspath(self.INSTALLER_BIN, PATH=self.PATH)
-            or bin_abspath(self.INSTALLER_BIN),
-        )
+        return bool(bin_abspath(self.INSTALLER_BIN, PATH=self.PATH))
 
     @final
-    # @validate_call(config={'arbitrary_types_allowed': True})
     @log_method_call()
     def get_provider_with_overrides(
         self,
@@ -1395,14 +1390,6 @@ class BinProvider(BaseModel):
             self.version_timeout if version_timeout is None else version_timeout
         )
 
-        # overrides = {
-        #     'wget': {
-        #         'install_args': lambda: ['wget'],
-        #         'abspath': lambda: shutil.which('wget'),
-        #         'version': lambda: SemVer.parse(os.system('wget --version')),
-        #         'install': lambda: os.system('brew install wget'),
-        #     },
-        # }
         cache_must_reset = False
         for binname, bin_overrides in overrides.items():
             provider_field_overrides: dict[str, Any] = {}
@@ -1412,6 +1399,16 @@ class BinProvider(BaseModel):
                     provider_field_overrides[key] = value
                 else:
                     handler_overrides[key] = value
+
+            if (
+                "install_root" in provider_field_overrides
+                and "bin_dir" not in provider_field_overrides
+            ):
+                # Provider instances have already derived bin_dir from their
+                # default install_root. Re-run that derivation for a
+                # binary-specific root instead of carrying the stale path into
+                # the validated copy.
+                provider_field_overrides["bin_dir"] = None
 
             if provider_field_overrides:
                 updated_binprovider = type(self).model_validate(
@@ -1582,10 +1579,11 @@ class BinProvider(BaseModel):
         no_cache: bool = False,
         **context,
     ) -> "AbspathFuncReturnValue":  # aka str | Path | None
-        # If asked for the installer binary itself, resolve directly via
-        # bin_abspath (NOT via INSTALLER_BINARY, which would recurse back here).
+        # Installer dependencies are resolved by the provider's declared
+        # abxpkg chain, including EnvProvider host projection.
         if str(bin_name) == self.INSTALLER_BIN:
-            return bin_abspath(bin_name, PATH=self.PATH) or bin_abspath(bin_name)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            return installer.loaded_abspath
 
         if not self.PATH:
             return None
@@ -2148,7 +2146,7 @@ class BinProvider(BaseModel):
         ):
             bin_abspath = explicit_abspath
         else:
-            bin_abspath = self.get_abspath(str(bin_name)) or shutil.which(str(bin_name))
+            bin_abspath = self.get_abspath(str(bin_name))
         assert bin_abspath, (
             f"❌ BinProvider {self.name} cannot execute bin_name {bin_name} because it could not find its abspath. (Did {self.__class__.__name__}.install({bin_name}) fail?)"
         )
@@ -2293,8 +2291,9 @@ class BinProvider(BaseModel):
 
         sudo_failure_output = None
         if current_euid != 0 and run_as_uid != current_euid:
-            sudo_abspath = shutil.which("sudo", path=sudo_env["PATH"]) or shutil.which(
-                "sudo",
+            sudo = EnvProvider().load("sudo", no_cache=True)
+            sudo_abspath = (
+                str(sudo.loaded_abspath) if sudo and sudo.loaded_abspath else None
             )
             if sudo_abspath:
                 sudo_cmd = [sudo_abspath, "-n"]
@@ -3914,6 +3913,7 @@ class HandlerDict(TypedDict, total=False):
     euid: int | None
     install_root: Path | None
     bin_dir: Path | None
+    alias_bin_dir: Path | None
     dry_run: bool
     postinstall_scripts: bool | None
     min_release_age: float | None

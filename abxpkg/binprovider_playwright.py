@@ -773,26 +773,12 @@ class PlaywrightProvider(BinProvider):
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_cmd = ["install", *merged_args]
-        # Retry on dpkg lock contention (apt-get may be held by a
-        # concurrent process e.g. unattended-upgrades or a prior test).
-        import time as _time
-
-        proc = None
-        for attempt in range(3):
-            proc = self.exec(
-                bin_name=installer_bin,
-                cmd=install_cmd,
-                timeout=effective_timeout,
-            )
-            if proc.returncode == 0:
-                break
-            stderr = proc.stderr or ""
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", errors="replace")
-            if "dpkg" in stderr and "lock" in stderr and attempt < 2:
-                logger.warning("dpkg lock held, retrying in %ds...", 5 * (attempt + 1))
-                _time.sleep(5 * (attempt + 1))
-                continue
+        proc = self.exec(
+            bin_name=installer_bin,
+            cmd=install_cmd,
+            timeout=effective_timeout,
+        )
+        if proc.returncode != 0:
             self._raise_proc_error("install", bin_name, proc)
 
         # When ``playwright install --with-deps`` runs through the
@@ -808,9 +794,14 @@ class PlaywrightProvider(BinProvider):
             and self.install_root.is_dir()
             and os.geteuid() != 0
         ):
-            chown_bin = shutil.which("chown") or "/usr/sbin/chown"
+            chown_provider = EnvProvider().get_provider_with_overrides(
+                overrides={"chown": {"version": SemVer.parse("1.0.0")}},
+            )
+            chown = chown_provider.load("chown", no_cache=True)
+            if not chown or not chown.loaded_abspath:
+                raise RuntimeError("EnvProvider could not resolve chown")
             self.exec(
-                bin_name=chown_bin,
+                bin_name=chown.loaded_abspath,
                 cmd=[
                     "-R",
                     f"{os.getuid()}:{os.getgid()}",
@@ -827,7 +818,6 @@ class PlaywrightProvider(BinProvider):
             )
         if self.bin_dir is not None:
             self._refresh_symlink(bin_name, resolved)
-        assert proc is not None
         return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})

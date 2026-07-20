@@ -19,7 +19,6 @@ from .binprovider import (
     BinProvider,
     EnvProvider,
     OPERATING_SYSTEM,
-    DEFAULT_PATH,
     DEFAULT_ENV_PATH,
     remap_kwargs,
 )
@@ -70,31 +69,39 @@ def _pick_ansible_python_interpreter(installer_module: str) -> str:
     but some modules (notably ``ansible.builtin.apt``) require a native C
     extension (``apt_pkg``) that ships with the Debian/Ubuntu system Python
     via the ``python3-apt`` package and cannot be ``pip install``ed into an
-    arbitrary venv. When that is the case we fall back to the first system
-    Python on ``PATH`` that can ``import apt_pkg``.
+    arbitrary venv. When that is the case, EnvProvider resolves and projects
+    the installed Python interpreter that can import ``apt_pkg``.
     """
 
     needs_apt_pkg = installer_module in _APT_INSTALLER_MODULES or (
-        installer_module == "ansible.builtin.package" and shutil.which("apt-get")
+        installer_module == "ansible.builtin.package"
+        and EnvProvider().load("apt-get", no_cache=True)
     )
     if not needs_apt_pkg:
         return sys.executable
     if _interpreter_has_module(sys.executable, "apt_pkg"):
         return sys.executable
     candidates: list[str] = []
-    system_python = shutil.which("python3")
-    if system_python:
-        candidates.append(system_python)
-    for minor in (13, 12, 11, 10):
-        candidate = shutil.which(f"python3.{minor}")
-        if candidate and candidate not in candidates:
-            candidates.append(candidate)
+    for python_name in (
+        "python3",
+        "python3.13",
+        "python3.12",
+        "python3.11",
+        "python3.10",
+    ):
+        loaded = EnvProvider().load(python_name, no_cache=True)
+        if loaded and loaded.loaded_abspath:
+            candidate = str(loaded.loaded_abspath)
+            if candidate not in candidates:
+                candidates.append(candidate)
     for candidate in candidates:
         if candidate == sys.executable:
             continue
         if _interpreter_has_module(candidate, "apt_pkg"):
             return candidate
-    return sys.executable
+    raise RuntimeError(
+        "EnvProvider could not resolve a Python interpreter with apt_pkg",
+    )
 
 
 ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE = """
@@ -125,10 +132,10 @@ def render_ansible_module_extra_yaml(
 
 
 def get_homebrew_search_path() -> str | None:
-    brew_abspath = shutil.which("brew", path=DEFAULT_PATH) or shutil.which("brew")
-    if not brew_abspath:
+    brew = EnvProvider().load("brew", no_cache=True)
+    if not brew or not brew.loaded_abspath:
         return None
-    return str(Path(brew_abspath).parent)
+    return str(Path(brew.loaded_abspath).resolve().parent)
 
 
 def ansible_package_install(
@@ -204,7 +211,10 @@ def ansible_package_install(
             OPERATING_SYSTEM != "darwin"
             and installer_module != "community.general.homebrew"
         ):
-            sudo_bin = shutil.which("sudo", path=env["PATH"]) or shutil.which("sudo")
+            sudo = EnvProvider().load("sudo", no_cache=True)
+            sudo_bin = (
+                str(sudo.loaded_abspath) if sudo and sudo.loaded_abspath else None
+            )
             if os.geteuid() != 0 and sudo_bin:
                 sudo_proc = subprocess.run(
                     [

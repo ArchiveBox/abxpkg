@@ -389,13 +389,9 @@ class BrewProvider(BinProvider):
         Used to detect the case where ``brew install`` reports the package
         is already installed but the on-disk binary is broken (e.g. its
         dynamic-link dependencies got purged by a separate uninstall).
-        Looks up the binary in brew's PATH first, falling back to a bare
-        ``shutil.which`` so it works during the initial install before
-        ``setup_PATH`` populates ``self.PATH``.
         """
-        from shutil import which as shutil_which
-
-        candidate = bin_abspath(bin_name, PATH=self.PATH) or shutil_which(bin_name)
+        self.setup_PATH(no_cache=True)
+        candidate = bin_abspath(bin_name, PATH=self.PATH)
         if not candidate:
             # No binary on disk to test — defer the call (the post-install
             # load() will still validate the install via the version probe).

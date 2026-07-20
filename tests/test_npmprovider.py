@@ -82,6 +82,46 @@ class TestNpmProvider:
             assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
 
+    def test_logical_package_bin_alias_can_be_exported_without_sibling_bins(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            install_root = temp_dir_path / "npm-root"
+            alias_bin_dir = temp_dir_path / "aliases" / "bin"
+            binary = Binary(
+                name="yarn-berry",
+                binproviders=[NpmProvider()],
+                postinstall_scripts=True,
+                min_release_age=0,
+                min_version=SemVer("4.13.0"),
+                overrides={
+                    "npm": {
+                        "install_root": install_root,
+                        "alias_bin_dir": alias_bin_dir,
+                        "install_args": ["@yarnpkg/cli-dist@4.13.0"],
+                    },
+                },
+            )
+
+            installed = binary.install()
+
+            assert installed is not None
+            assert installed.is_valid
+            assert installed.loaded_version == SemVer("4.13.0")
+            assert installed.loaded_abspath == alias_bin_dir / "yarn-berry"
+            assert installed.loaded_abspath.is_symlink()
+            provider = installed.loaded_binprovider
+            assert isinstance(provider, NpmProvider)
+            assert provider.bin_dir is not None
+            assert provider.bin_dir == install_root / "node_modules" / ".bin"
+            assert (
+                installed.loaded_abspath.resolve()
+                == (provider.bin_dir / "yarn").resolve()
+            )
+            assert {path.name for path in alias_bin_dir.iterdir()} == {"yarn-berry"}
+            result = installed.exec(cmd=("--version",), quiet=True)
+            assert result.returncode == 0, result.stderr
+            assert result.stdout.strip() == "4.13.0"
+
     def test_explicit_prefix_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,
         test_machine,

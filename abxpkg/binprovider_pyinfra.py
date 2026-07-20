@@ -21,7 +21,6 @@ from .binprovider import (
     BinProvider,
     EnvProvider,
     OPERATING_SYSTEM,
-    DEFAULT_PATH,
     DEFAULT_ENV_PATH,
     remap_kwargs,
 )
@@ -66,9 +65,9 @@ def pyinfra_package_install(
     # (``linuxbrew``) installs broken whenever the caller happened to be root.
     if installer_module == "operations.brew.packages" and os.geteuid() == 0:
         try:
-            brew_abspath = shutil.which("brew")
-            if brew_abspath:
-                brew_owner_uid = Path(brew_abspath).resolve().stat().st_uid
+            brew = EnvProvider().load("brew", no_cache=True)
+            if brew and brew.loaded_abspath:
+                brew_owner_uid = Path(brew.loaded_abspath).resolve().stat().st_uid
                 if brew_owner_uid != 0:
                     _sudo_user = pwd.getpwuid(brew_owner_uid).pw_name
         except Exception:
@@ -146,7 +145,10 @@ def pyinfra_package_install(
             OPERATING_SYSTEM != "darwin"
             and installer_module != "operations.brew.packages"
         ):
-            sudo_bin = shutil.which("sudo", path=os.environ.get("PATH", DEFAULT_PATH))
+            sudo = EnvProvider().load("sudo", no_cache=True)
+            sudo_bin = (
+                str(sudo.loaded_abspath) if sudo and sudo.loaded_abspath else None
+            )
             if os.geteuid() != 0 and sudo_bin:
                 sudo_proc = subprocess.run(
                     [sudo_bin, "-n", "--", *cmd],

@@ -1,0 +1,107 @@
+{
+  "properties": {
+    "CI_BREW_BIN": {"default": "brew"},
+    "CI_NIX_BIN": {"default": "nix"},
+    "CI_NODE_BIN": {"default": "node"},
+    "CI_NPM_BIN": {"default": "npm"},
+    "CI_PNPM_BIN": {"default": "pnpm"},
+    "CI_YARN_BIN": {"default": "yarn"},
+    "CI_YARN_BERRY_BIN": {"default": "yarn-berry"},
+    "CI_BUN_BIN": {"default": "bun"},
+    "CI_DENO_BIN": {"default": "deno"},
+    "CI_GO_BIN": {"default": "go"},
+    "CI_APT_GET_BIN": {"default": "apt-get"},
+    "CI_DPKG_BIN": {"default": "dpkg"},
+    "CI_DOCKER_BIN": {"default": "docker"}
+  },
+  "docs_binaries": [
+    {
+      "name": "{CI_NODE_BIN}",
+      "binproviders": ["env", "brew", "apt"],
+      "min_version": "22.0.0",
+      "overrides": {
+        "brew": {"install_args": ["node"]},
+        "apt": {"install_args": ["nodejs"]}
+      }
+    }
+  ],
+  "common_binaries": [
+    {"name": "{CI_BREW_BIN}", "binproviders": ["env"]},
+    {"name": "{CI_NIX_BIN}", "binproviders": ["env"]},
+    {
+      "name": "{CI_NODE_BIN}",
+      "binproviders": ["env", "brew", "apt"],
+      "min_version": "22.0.0",
+      "overrides": {
+        "brew": {"install_args": ["node"]},
+        "apt": {"install_args": ["nodejs"]}
+      }
+    },
+    {
+      "name": "{CI_NPM_BIN}",
+      "binproviders": ["env", "brew"],
+      "overrides": {"brew": {"install_args": ["node"]}}
+    },
+    {
+      "name": "{CI_PNPM_BIN}",
+      "binproviders": ["env", "npm"],
+      "min_version": "10.19.0",
+      "min_release_age": 0,
+      "overrides": {
+        "npm": {
+          "install_root": "{ABXPKG_LIB_DIR}/npm/packages/pnpm",
+          "install_args": ["pnpm@10.19.0"]
+        }
+      }
+    },
+    {
+      "name": "{CI_YARN_BIN}",
+      "binproviders": ["env", "npm"],
+      "min_version": "1.22.22",
+      "min_release_age": 0,
+      "overrides": {
+        "npm": {
+          "install_root": "{ABXPKG_LIB_DIR}/npm/packages/yarn-classic",
+          "install_args": ["yarn@1.22.22"]
+        }
+      }
+    },
+    {
+      "name": "{CI_YARN_BERRY_BIN}",
+      "binproviders": ["env", "npm"],
+      "min_version": "4.13.0",
+      "min_release_age": 0,
+      "overrides": {
+        "npm": {
+          "install_root": "{ABXPKG_LIB_DIR}/npm/packages/yarn-berry",
+          "alias_bin_dir": "{ABXPKG_LIB_DIR}/npm/aliases/yarn-berry/bin",
+          "install_args": ["@yarnpkg/cli-dist@4.13.0"]
+        }
+      }
+    },
+    {
+      "name": "{CI_BUN_BIN}",
+      "binproviders": ["env", "brew"],
+      "overrides": {"brew": {"install_args": ["bun"]}}
+    },
+    {
+      "name": "{CI_DENO_BIN}",
+      "binproviders": ["env", "brew"],
+      "min_version": "2.0.0",
+      "overrides": {"brew": {"install_args": ["deno"]}}
+    },
+    {
+      "name": "{CI_GO_BIN}",
+      "binproviders": ["env", "brew"],
+      "min_version": "1.25.0",
+      "overrides": {"brew": {"install_args": ["go"]}}
+    }
+  ],
+  "linux_binaries": [
+    {"name": "{CI_APT_GET_BIN}", "binproviders": ["env"]},
+    {"name": "{CI_DPKG_BIN}", "binproviders": ["env"]}
+  ],
+  "docker_binaries": [
+    {"name": "{CI_DOCKER_BIN}", "binproviders": ["env"]}
+  ]
+}
