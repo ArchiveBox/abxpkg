@@ -233,11 +233,19 @@ class PnpmProvider(BinProvider):
                 return loaded
         return None
 
-    def _cache_node_dependency(self, no_cache: bool = False) -> None:
+    def _managed_env_provider(self) -> EnvProvider:
+        """Return the host-discovery provider for this pnpm installation."""
+        managed_lib_dir = self._managed_lib_dir()
+        if managed_lib_dir is None:
+            return EnvProvider()
+        env_root = managed_lib_dir / "env"
+        return EnvProvider(install_root=env_root, bin_dir=env_root / "bin")
+
+    def _cache_node_dependency(self, no_cache: bool = False):
         try:
             node_loaded = Binary(
                 name="node",
-                binproviders=[EnvProvider(install_root=None, bin_dir=None)],
+                binproviders=[self._managed_env_provider()],
             ).load(no_cache=no_cache)
         except Exception:
             node_loaded = None
@@ -260,6 +268,27 @@ class PnpmProvider(BinProvider):
                 resolved_provider=node_loaded.loaded_binprovider,
                 cache_kind="dependency",
             )
+        return node_loaded
+
+    @staticmethod
+    def _pnpm_package_for_node(node_version: SemVer | None) -> str:
+        """Select the newest pnpm major supported by the discovered Node runtime."""
+        version = tuple(node_version) if node_version is not None else None
+        if version is None or version >= (22, 13, 0):
+            return "pnpm"
+        if version >= (18, 12, 0):
+            return "pnpm@10"
+        if version >= (16, 14, 0):
+            return "pnpm@8"
+        if version >= (14, 6, 0):
+            return "pnpm@7"
+        if version >= (12, 17, 0):
+            return "pnpm@6"
+        if version >= (10, 16, 0):
+            return "pnpm@5"
+        if version >= (10, 13, 0):
+            return "pnpm@4"
+        return "pnpm@3"
 
     def _managed_lib_dir(self) -> Path | None:
         """Return the ABX-managed lib root implied by install_root, if any.
@@ -321,15 +350,34 @@ class PnpmProvider(BinProvider):
         from .binprovider_npm import NpmProvider
 
         npm_root = self._installer_provider_root()
+        node_loaded = self._cache_node_dependency(no_cache=no_cache)
+        pnpm_package = self._pnpm_package_for_node(
+            node_loaded.loaded_version if node_loaded is not None else None,
+        )
+        npm_provider = NpmProvider(
+            install_root=npm_root,
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"pnpm": {"install_args": [pnpm_package]}},
+        )
+
+        # npm is a host dependency. Project it into the managed env/bin before
+        # giving it to the npm provider so no programmatic path relies on the
+        # ambient host path (or the human-convenience LIB_DIR/bin directory).
+        try:
+            host_npm = Binary(
+                name="npm",
+                binproviders=[self._managed_env_provider()],
+            ).load(no_cache=no_cache)
+        except Exception:
+            host_npm = None
+        if host_npm and host_npm.loaded_abspath:
+            npm_provider._INSTALLER_BINARY = host_npm
+
         loaded = Binary(
             name=self.INSTALLER_BIN,
-            binproviders=[
-                NpmProvider(
-                    install_root=npm_root,
-                    postinstall_scripts=True,
-                    min_release_age=0,
-                ),
-            ],
+            binproviders=[npm_provider],
             postinstall_scripts=True,
             min_release_age=0,
         ).install(no_cache=no_cache)

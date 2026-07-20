@@ -11,6 +11,29 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestPnpmProvider:
+    @pytest.mark.parametrize(
+        ("node_version", "expected_package"),
+        [
+            (SemVer(24, 0, 0), "pnpm"),
+            (SemVer(22, 13, 0), "pnpm"),
+            (SemVer(22, 12, 0), "pnpm@10"),
+            (SemVer(18, 12, 0), "pnpm@10"),
+            (SemVer(18, 11, 0), "pnpm@8"),
+            (SemVer(16, 14, 0), "pnpm@8"),
+            (SemVer(14, 6, 0), "pnpm@7"),
+            (SemVer(12, 17, 0), "pnpm@6"),
+            (SemVer(10, 16, 0), "pnpm@5"),
+            (SemVer(10, 13, 0), "pnpm@4"),
+            (SemVer(8, 15, 0), "pnpm@3"),
+        ],
+    )
+    def test_self_bootstrap_selects_pnpm_compatible_with_node(
+        self,
+        node_version,
+        expected_package,
+    ):
+        assert PnpmProvider._pnpm_package_for_node(node_version) == expected_package
+
     def test_store_dir_reuses_existing_install_root_store(self, tmp_path):
         install_root = tmp_path / "pnpm"
         expected_store = tmp_path / "existing-store"
@@ -100,6 +123,8 @@ class TestPnpmProvider:
             assert installer.loaded_abspath.is_relative_to(
                 install_root / "npm",
             )
+            installer_version = installer.exec(cmd=("--version",), quiet=True)
+            assert installer_version.returncode == 0
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
@@ -107,6 +132,45 @@ class TestPnpmProvider:
                 installed.loaded_abspath
                 == install_root / "node_modules" / ".bin" / "zx"
             )
+
+    def test_self_bootstrap_projects_host_dependencies_into_managed_env_bin(
+        self,
+        test_machine,
+    ):
+        npm_binary = Path(test_machine.require_tool("npm")).absolute()
+        node_binary = Path(test_machine.require_tool("node")).absolute()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lib_dir = Path(temp_dir) / "lib"
+            host_bin = Path(temp_dir) / "host-bin"
+            host_bin.mkdir()
+            (host_bin / "npm").symlink_to(npm_binary)
+            (host_bin / "node").symlink_to(node_binary)
+            old_path = os.environ.get("PATH", "")
+            old_npm_binary = os.environ.get("NPM_BINARY")
+            os.environ["PATH"] = str(host_bin)
+            os.environ["NPM_BINARY"] = str(host_bin / "npm")
+            provider = PnpmProvider(
+                install_root=lib_dir / "pnpm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+
+            try:
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+            finally:
+                os.environ["PATH"] = old_path
+                if old_npm_binary is None:
+                    os.environ.pop("NPM_BINARY", None)
+                else:
+                    os.environ["NPM_BINARY"] = old_npm_binary
+
+            assert installer.exec(cmd=("--version",), quiet=True).returncode == 0
+            assert (lib_dir / "env" / "bin" / "npm").is_symlink()
+            assert (lib_dir / "env" / "bin" / "node").is_symlink()
+            assert (lib_dir / "env" / "bin" / "npm").resolve() == npm_binary.resolve()
+            assert (lib_dir / "env" / "bin" / "node").resolve() == node_binary.resolve()
+            assert not (lib_dir / "bin").exists()
 
     def test_self_bootstrap_uses_host_npm_when_top_level_provider_excludes_env(
         self,
