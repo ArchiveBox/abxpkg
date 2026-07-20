@@ -158,7 +158,7 @@ Think `npx` / `uvx` / `pipx run` — but for **every** package manager abxpkg su
 
 ```bash
 abx --binproviders=env python3 --version        # run an existing host binary through the same resolution path
-abx --binproviders=env sh -c 'printf "abx works\n"'
+abx --binproviders=env python3 -c 'print("abx works")'
 ```
 
 Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--debug`, `--no-cache`, `--update`) are forwarded to `abxpkg`; everything after the binary name is forwarded to the binary itself.
