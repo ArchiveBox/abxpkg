@@ -1,0 +1,27 @@
+tests/test_installer_binary_contracts.py
+  s_f8414d52051f83::t_1e8edcec90f360 34,42-47
+abxpkg/binprovider_ansible.py
+  s_f8414d52051f83::t_1e8edcec90f360 15,84,92,95-96,99-101,103-105
+  s_f8414d52051f83::t_351f9aca3dcfca 97
+abxpkg/binprovider_brew.py
+  s_f8414d52051f83::t_1e8edcec90f360 91-100
+tests/test_envprovider.py
+  s_f8414d52051f83::t_1e8edcec90f360 11,118-164
+  s_f8414d52051f83::t_b3b9662452927a 165-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "bb1e3f92f9eaeee8af09573bc345f7f20ad6af8c",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
