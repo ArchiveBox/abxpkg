@@ -1,0 +1,20 @@
+abxpkg/click_cli.py
+  s_f8414d52051f83::t_d84b80afd323ea 1345,1734,2148
+  s_f8414d52051f83::t_c907ef808a40e4 2159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "633827d754f1adbca8ac051fc29eae19bbd34872",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
