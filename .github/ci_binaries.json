@@ -82,8 +82,12 @@
     {
       "name": "{CI_BUN_BIN}",
       "binproviders": ["env", "brew"],
-      "postinstall_scripts": true,
-      "overrides": {"brew": {"install_args": ["bun"]}}
+      "overrides": {
+        "brew": {
+          "install_args": ["bun"],
+          "postinstall_scripts": true
+        }
+      }
     },
     {
       "name": "{CI_DENO_BIN}",
