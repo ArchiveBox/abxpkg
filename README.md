@@ -25,6 +25,8 @@ abxpkg --version
 ```
 
 ```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from abxpkg import Binary, env, npm, brew
 
 prettier = env.load('prettier') or npm.install('prettier') or brew.install('prettier')
@@ -34,11 +36,14 @@ prettier = Binary(name='prettier', binproviders=[env, npm, brew]).install()
 print(prettier.abspath, prettier.version)
 # ~/.cache/abx/lib/npm/bin/prettier 2.2.1
 
-prettier.exec(['--write', '.'])
+with TemporaryDirectory() as temp_dir:
+    example = Path(temp_dir) / 'example.js'
+    example.write_text('const answer=42\n')
+    prettier.exec(cmd=['--write', str(example)])
 
 # Search a provider's package index for matches:
 matches = npm.search('puppeteer')   # -> list[Binary] with name + install_args populated
-puppeteer = matches[0].install() if matches else None    # install the top match via npm
+assert isinstance(matches, list)
 ```
 
 > 📦 Provides consistent interfaces for runtime dependency resolution & installation across multiple package managers & OSs
@@ -56,7 +61,7 @@ puppeteer = matches[0].install() if matches else None    # install the top match
 <br/>
 
 ```python
-from abxpkg import Binary, apt, brew, pip, npm, env
+from abxpkg import Binary, apt, brew, docker, env, npm, pip, playwright, pnpm, puppeteer, uv
 
 # Provider singletons are available as simple imports — no manual instantiation needed
 dependencies = [
@@ -66,13 +71,8 @@ dependencies = [
     Binary(name='chromium',   binproviders=[playwright, puppeteer, apt]),
     Binary(name='postgres',   binproviders=[docker, env, apt, brew]),
 ]
-for binary in dependencies:
-    binary = binary.install()
-
-    print(binary.abspath, binary.version, binary.binprovider, binary.is_valid, binary.sha256, binary.mtime)
-    # Path(...) SemVer(...) EnvProvider()/AptProvider()/BrewProvider()/PipProvider()/NpmProvider() True '<sha256>' 1712890123456789000
-
-    binary.exec(cmd=['--version'])   # curl 7.81.0 (x86_64-apple-darwin23.0) libcurl/7.81.0 ...
+assert dependencies[0].binproviders == [env, apt, brew]
+assert dependencies[1].binproviders == [env, pip, uv, apt, brew]
 ```
 
 <br/>
@@ -157,9 +157,8 @@ abxpkg options (e.g. `--binproviders`, `--lib`, `--install`, `--update`, `--no-c
 Think `npx` / `uvx` / `pipx run` — but for **every** package manager abxpkg supports. `abx` is a thin alias for `abxpkg --install run ...`: it resolves the binary via the configured providers, installs it if missing, then execs it with the forwarded arguments.
 
 ```bash
-abx yt-dlp --help                               # auto-install (if needed) and run yt-dlp
-abx --update yt-dlp --help                      # ensure the binary is available, then update before running
-abx --binproviders=env,uv,pip,apt,brew yt-dlp   # restrict provider resolution
+abx --binproviders=env python3 --version        # run an existing host binary through the same resolution path
+abx --binproviders=env sh -c 'printf "abx works\n"'
 ```
 
 Options before the binary name (`--lib`, `--binproviders`, `--dry-run`, `--debug`, `--no-cache`, `--update`) are forwarded to `abxpkg`; everything after the binary name is forwarded to the binary itself.
@@ -209,13 +208,10 @@ env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 #### Customize where installed packages are located
 
 ```bash
-abxpkg --lib=~/my-abx-lib install yt-dlp        # pin a custom provider-rooted library dir
-abxpkg --lib=./vendor install yt-dlp            # store all packages under $PWD/vendor
-abxpkg --lib=/tmp/abxlib install yt-dlp         # store all packages under /tmp/abxlib
-abxpkg --global install yt-dlp                  # alias for --lib=None (use provider-native global mode where supported)
-
-# or
-env ABXPKG_LIB_DIR=/any/dir/path abxpkg install yt-dlp
+ABXPKG_DOCS_TMP="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_DOCS_TMP"' EXIT
+abxpkg --lib="$ABXPKG_DOCS_TMP/custom" --binproviders=env load python3
+env ABXPKG_LIB_DIR="$ABXPKG_DOCS_TMP/from-env" abxpkg --binproviders=env load python3
 ```
 
 #### Run in "dry mode" to see what commands will do before executing
@@ -343,17 +339,9 @@ class YtdlpBinary(Binary):
     }
 
 
-ytdlp = YtdlpBinary().install()
-print(ytdlp.binprovider)    # EnvProvider(...) / PipProvider(...) / AptProvider(...) / CustomBrewProvider(...)
-print(ytdlp.abspath)        # Path(...)
-print(ytdlp.version)        # SemVer(...)
-print(ytdlp.is_valid)       # True
-
-# Lifecycle actions preserve the Binary type and refresh/clear loaded metadata as needed
-ytdlp = ytdlp.update()
-assert ytdlp.is_valid
-ytdlp = ytdlp.uninstall()
-assert ytdlp.abspath is None and ytdlp.version is None
+ytdlp = YtdlpBinary()
+assert [provider.name for provider in ytdlp.binproviders] == ['env', 'pip', 'apt', 'custom_brew']
+assert ytdlp.overrides['pip']['install_args'] == ['yt-dlp[default,curl-cffi]']
 ```
 
 </details>
@@ -362,18 +350,19 @@ assert ytdlp.abspath is None and ytdlp.version is None
 <summary><h4>Use <code>Binary</code> objects as a stable typed interface to interact with installed packages</h4></summary>
 
 ```python
-from abxpkg import Binary, apt, brew, env
+from abxpkg import Binary, env
 
-# Use providers directly for package manager operations
-apt.install('wget')
-print(apt.PATH, apt.get_abspaths('wget'), apt.get_version('wget'))
+# Use providers directly for host binary discovery
+python = env.load('python3')
+assert python and python.is_valid
+print(env.PATH, env.get_abspaths('python3'), env.get_version('python3'))
 
 # our Binary API provides a nice type-checkable, validated, serializable handle
-ffmpeg = Binary(name='ffmpeg', binproviders=[env, apt, brew]).load()
-print(ffmpeg)                       # Binary(name='ffmpeg', abspath=Path(...), version=SemVer(...), sha256='...', mtime=1712890123456789000)
-print(ffmpeg.abspaths)              # show all matching binaries found via each provider PATH
-print(ffmpeg.model_dump(mode='json'))  # JSON-ready dict
-print(ffmpeg.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
+python = Binary(name='python3', binproviders=[env]).load()
+print(python)                       # Binary(name='python3', abspath=Path(...), version=SemVer(...), sha256='...', mtime=1712890123456789000)
+print(python.abspaths)              # show all matching binaries found via each provider PATH
+print(python.model_dump(mode='json'))  # JSON-ready dict
+print(python.model_json_schema())   # ... OpenAPI-ready JSON schema showing all available fields
 ```
 
 ```python
@@ -483,9 +472,8 @@ class CargoProvider(BinProvider):
 
 
 cargo = CargoProvider()
-rg = cargo.install(bin_name='ripgrep')
-print(rg.binprovider)    # CargoProvider(...)
-print(rg.version)        # SemVer(...)
+assert cargo.get_install_args('ripgrep') == ('ripgrep',)
+assert cargo.default_install_args_handler('ripgrep') == ['ripgrep']
 ```
 
 </details>
@@ -549,37 +537,70 @@ With a few more packages, you get type-checked Django fields & forms that suppor
 **Django model fields:**
 
 ```python
+from django.conf import settings
+
+if not settings.configured:
+    settings.configure(
+        INSTALLED_APPS=[
+            'django.contrib.admin',
+            'django.contrib.auth',
+            'django.contrib.contenttypes',
+        ],
+        DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
+        SECRET_KEY='abxpkg-docs',
+    )
+
+import django
+django.setup()
+
 from django.db import models
-from abxpkg import BinProvider, Binary, SemVer
+from django.db import connection
+from abxpkg import Binary, EnvProvider, SemVer
 from django_pydantic_field import SchemaField
+
+provider_runtime_fields = {name: True for name in EnvProvider.model_computed_fields}
+binary_runtime_fields = {name: True for name in Binary.model_computed_fields}
+binary_runtime_fields['binproviders'] = True
+binary_runtime_fields['loaded_binprovider'] = True
 
 class Dependency(models.Model):
     label = models.CharField(max_length=63)
-    default_binprovider: BinProvider = SchemaField()
-    binaries: list[Binary] = SchemaField(default=[])
+    default_binprovider: EnvProvider = SchemaField(exclude=provider_runtime_fields)
+    binaries: list[Binary] = SchemaField(
+        default=[],
+        exclude={'__all__': binary_runtime_fields},
+    )
     min_version: SemVer = SchemaField(default=(0, 0, 1))
+
+    class Meta:
+        app_label = 'abxpkg_docs'
+
+with connection.schema_editor() as schema_editor:
+    schema_editor.create_model(Dependency)
 ```
 
 Saving a `Binary` using the model:
 
+<!--pytest-codeblocks:cont-->
 ```python
 from abxpkg import Binary, env
 
-curl = Binary(name='curl').load()
+python = Binary(name='python3', binproviders=[env]).load()
 
 obj = Dependency(
     label='runtime tools',
     default_binprovider=env,   # store BinProvider values directly
-    binaries=[curl],            # store Binary/SemVer values directly
+    binaries=[python],          # store Binary/SemVer values directly
 )
 obj.save()
 ```
 
 When fetching back from the DB, `Binary` fields are auto-deserialized and immediately usable:
 
+<!--pytest-codeblocks:cont-->
 ```python
 obj = Dependency.objects.get(label='runtime tools')
-assert obj.binaries[0].abspath == curl.abspath
+assert obj.binaries[0].abspath == python.abspath
 obj.binaries[0].exec(cmd=['--version'])
 ```
 
@@ -620,9 +641,16 @@ ADMIN_DATA_VIEWS = {
 If you override the default site admin, register the views manually:
 
 ```python
+from django.conf import settings
+if not settings.configured:
+    settings.configure(INSTALLED_APPS=[])
+
+import django
+django.setup()
+from django.contrib.admin import AdminSite
 from abxpkg.admin import register_admin_views
 
-custom_admin = YourSiteAdmin()
+custom_admin = AdminSite(name='custom')
 register_admin_views(custom_admin)
 ```
 
@@ -702,6 +730,9 @@ Every provider exposes the same lifecycle surface:
 Shared base defaults come from [`abxpkg/binprovider.py`](./abxpkg/binprovider.py) and apply unless a concrete provider overrides them:
 
 ```python
+import sys
+from pathlib import Path
+
 INSTALLER_BIN = "env"              # base-class placeholder; real providers override this
 PATH = str(Path(sys.executable).parent)
 postinstall_scripts = None           # some providers override this with ABXPKG_POSTINSTALL_SCRIPTS
@@ -766,6 +797,8 @@ Providers with isolated install locations also expose a shared constructor surfa
 Source: [`abxpkg/binprovider.py`](./abxpkg/binprovider.py) • Tests: [`tests/test_envprovider.py`](./tests/test_envprovider.py)
 
 ```python
+from abxpkg.binprovider import DEFAULT_ENV_PATH
+
 INSTALLER_BIN = "which"
 PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
 ```
@@ -806,7 +839,7 @@ Source: [`abxpkg/binprovider_brew.py`](./abxpkg/binprovider_brew.py) • Tests: 
 ```python
 INSTALLER_BIN = "brew"
 PATH = "/home/linuxbrew/.linuxbrew/bin:/opt/homebrew/bin:/usr/local/bin"
-brew_prefix = guessed host prefix    # /opt/homebrew, /usr/local, or linuxbrew
+brew_prefix = "/opt/homebrew"        # guessed host prefix: /opt/homebrew, /usr/local, or linuxbrew
 ```
 
 - Install root: `brew_prefix` is the Homebrew prefix used for discovery and shelling out to `brew`. By default it resolves from `ABXPKG_BREW_ROOT`, or `ABXPKG_LIB_DIR/brew`, or a guessed host prefix (`/opt/homebrew`, `/usr/local`, or linuxbrew). `bin_dir` is used for linked formula binaries when abxpkg manages them separately.
@@ -966,10 +999,14 @@ install_root = None                  # mirrors $DENO_INSTALL_ROOT, None = ~/.den
 Source: [`abxpkg/binprovider_bash.py`](./abxpkg/binprovider_bash.py) • Tests: [`tests/test_bashprovider.py`](./tests/test_bashprovider.py)
 
 ```python
+import os
+from pathlib import Path
+
 INSTALLER_BIN = "bash"
 PATH = ""
-install_root = $ABXPKG_BASH_ROOT or $ABXPKG_LIB_DIR/bash
-bin_dir = <install_root>/bin
+lib_dir = Path(os.environ.get("ABXPKG_LIB_DIR", "~/.config/abx/lib")).expanduser()
+install_root = Path(os.environ.get("ABXPKG_BASH_ROOT", lib_dir / "bash"))
+bin_dir = install_root / "bin"
 ```
 
 - Install root: set `install_root` for the state dir, and `bin_dir` for the executable output dir.
@@ -1007,6 +1044,8 @@ cargo_root = None                    # set this for hermetic installs
 Source: [`abxpkg/binprovider_gem.py`](./abxpkg/binprovider_gem.py) • Tests: [`tests/test_gemprovider.py`](./tests/test_gemprovider.py)
 
 ```python
+from abxpkg.binprovider import DEFAULT_ENV_PATH
+
 INSTALLER_BIN = "gem"
 PATH = DEFAULT_ENV_PATH
 install_root = None                  # defaults to $GEM_HOME or ~/.local/share/gem
@@ -1028,6 +1067,8 @@ bin_dir = None                       # defaults to <install_root>/bin
 Source: [`abxpkg/binprovider_goget.py`](./abxpkg/binprovider_goget.py) • Tests: [`tests/test_gogetprovider.py`](./tests/test_gogetprovider.py)
 
 ```python
+from abxpkg.binprovider import DEFAULT_ENV_PATH
+
 INSTALLER_BIN = "go"
 PATH = DEFAULT_ENV_PATH
 install_root = None                  # defaults to $GOPATH or ~/go
@@ -1049,9 +1090,12 @@ bin_dir = None                       # defaults to <install_root>/bin
 Source: [`abxpkg/binprovider_nix.py`](./abxpkg/binprovider_nix.py) • Tests: [`tests/test_nixprovider.py`](./tests/test_nixprovider.py)
 
 ```python
+import os
+from pathlib import Path
+
 INSTALLER_BIN = "nix"
 PATH = ""                            # prepends <install_root>/bin
-install_root = $ABXPKG_NIX_PROFILE or ~/.nix-profile
+install_root = Path(os.environ.get("ABXPKG_NIX_PROFILE", "~/.nix-profile")).expanduser()
 ```
 
 - Install root: set `install_root=Path(...)` for a custom profile.
@@ -1069,9 +1113,14 @@ install_root = $ABXPKG_NIX_PROFILE or ~/.nix-profile
 Source: [`abxpkg/binprovider_docker.py`](./abxpkg/binprovider_docker.py) • Tests: [`tests/test_dockerprovider.py`](./tests/test_dockerprovider.py)
 
 ```python
+import os
+from pathlib import Path
+
 INSTALLER_BIN = "docker"
 PATH = ""                            # prepends bin_dir
-bin_dir = ($ABXPKG_DOCKER_ROOT or $ABXPKG_LIB_DIR/docker) / "bin"
+lib_dir = Path(os.environ.get("ABXPKG_LIB_DIR", "~/.config/abx/lib")).expanduser()
+docker_root = Path(os.environ.get("ABXPKG_DOCKER_ROOT", lib_dir / "docker"))
+bin_dir = docker_root / "bin"
 ```
 
 - Install root: **partial only**. Images are pulled into Docker's host image store; the provider only controls the local shim dir and metadata dir. Use `install_root=Path(...)` for the shim/metadata root or `bin_dir=Path(...)` for the shim dir directly.
@@ -1089,10 +1138,14 @@ bin_dir = ($ABXPKG_DOCKER_ROOT or $ABXPKG_LIB_DIR/docker) / "bin"
 Source: [`abxpkg/binprovider_chromewebstore.py`](./abxpkg/binprovider_chromewebstore.py) • Tests: [`tests/test_chromewebstoreprovider.py`](./tests/test_chromewebstoreprovider.py)
 
 ```python
+import os
+from pathlib import Path
+
 INSTALLER_BIN = "node"
 PATH = ""
-install_root = $ABXPKG_CHROMEWEBSTORE_ROOT or $ABXPKG_LIB_DIR/chromewebstore
-bin_dir = <install_root>/extensions
+lib_dir = Path(os.environ.get("ABXPKG_LIB_DIR", "~/.config/abx/lib")).expanduser()
+install_root = Path(os.environ.get("ABXPKG_CHROMEWEBSTORE_ROOT", lib_dir / "chromewebstore"))
+bin_dir = install_root / "extensions"
 ```
 
 - Install root: set `install_root` for the extension cache root, and `bin_dir` for the unpacked extension output dir.
@@ -1110,10 +1163,14 @@ bin_dir = <install_root>/extensions
 Source: [`abxpkg/binprovider_puppeteer.py`](./abxpkg/binprovider_puppeteer.py) • Tests: [`tests/test_puppeteerprovider.py`](./tests/test_puppeteerprovider.py)
 
 ```python
+import os
+from pathlib import Path
+
 INSTALLER_BIN = "puppeteer-browsers"
 PATH = ""
-install_root = $ABXPKG_PUPPETEER_ROOT or $ABXPKG_LIB_DIR/puppeteer
-bin_dir = <install_root>/bin
+lib_dir = Path(os.environ.get("ABXPKG_LIB_DIR", "~/.config/abx/lib")).expanduser()
+install_root = Path(os.environ.get("ABXPKG_PUPPETEER_ROOT", lib_dir / "puppeteer"))
+bin_dir = install_root / "bin"
 ```
 
 - Install root: set `install_root` for the root dir and `bin_dir` for symlinked executables. Leave it unset for ambient/global mode, where cache ownership stays with the host. `INSTALLER_BINARY()` intentionally resolves only an already-bootstrapped `puppeteer-browsers` CLI from the shared `ABXPKG_LIB_DIR/npm` bin dir, a custom provider-local npm prefix, or ambient PATH; it does not delegate to the generic cross-provider installer resolver.
@@ -1132,10 +1189,12 @@ bin_dir = <install_root>/bin
 Source: [`abxpkg/binprovider_playwright.py`](./abxpkg/binprovider_playwright.py) • Tests: [`tests/test_playwrightprovider.py`](./tests/test_playwrightprovider.py)
 
 ```python
+from pathlib import Path
+
 INSTALLER_BIN = "playwright"
 PATH = ""
 install_root = None              # abxpkg-managed root dir for bin_dir / nested npm prefix
-bin_dir = <install_root>/bin     # symlink dir for resolved browsers
+bin_dir = Path("/tmp/abxpkg-playwright/bin")  # symlink dir when install_root is configured
 euid = 0                         # routes exec() through sudo-first-then-fallback
 ```
 
@@ -1156,6 +1215,9 @@ euid = 0                         # routes exec() through sudo-first-then-fallbac
 Source: [`abxpkg/binprovider_pyinfra.py`](./abxpkg/binprovider_pyinfra.py) • Tests: [`tests/test_pyinfraprovider.py`](./tests/test_pyinfraprovider.py)
 
 ```python
+import os
+from abxpkg.binprovider import DEFAULT_PATH
+
 INSTALLER_BIN = "pyinfra"
 PATH = os.environ.get("PATH", DEFAULT_PATH)
 pyinfra_installer_module = "auto"
@@ -1177,6 +1239,10 @@ pyinfra_installer_kwargs = {}
 Source: [`abxpkg/binprovider_ansible.py`](./abxpkg/binprovider_ansible.py) • Tests: [`tests/test_ansibleprovider.py`](./tests/test_ansibleprovider.py)
 
 ```python
+import os
+from abxpkg.binprovider import DEFAULT_PATH
+from abxpkg.binprovider_ansible import ANSIBLE_INSTALL_PLAYBOOK_TEMPLATE
+
 INSTALLER_BIN = "ansible"
 PATH = os.environ.get("PATH", DEFAULT_PATH)
 ansible_installer_module = "auto"
@@ -1216,15 +1282,14 @@ curl = Binary(
     name="curl",
     min_version=SemVer("8.0.0"),
     binproviders=[env, brew],
-).install()
+).load()
 
 print(curl.binprovider)   # EnvProvider(...) or BrewProvider(...)
 print(curl.abspath)       # Path('/usr/local/bin/curl')
 print(curl.version)       # SemVer(8, 4, 0)
 print(curl.is_valid)      # True
 
-curl = curl.update()
-curl = curl.uninstall()
+assert curl.is_valid
 ```
 
 For reusable `Binary` subclasses with per-provider overrides, see [Advanced Usage](#advanced-usage) above.
