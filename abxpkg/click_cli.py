@@ -1349,12 +1349,7 @@ def build_deps_from_exec_env(
         )
         env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
         if env_key and binary.loaded_abspath:
-            assert binary.loaded_binprovider is not None
-            env[str(env_key)] = str(
-                binary.loaded_binprovider._exec_bin_abspath(
-                    Path(binary.loaded_abspath),
-                ),
-            )
+            env[str(env_key)] = str(binary.loaded_abspath)
         env = build_runtime_exec_env(
             binary,
             base_env=env,

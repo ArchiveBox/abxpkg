@@ -1080,7 +1080,7 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
     assert any((hook_runtime / "venv").rglob("humanize"))
 
 
-def test_env_command_exports_projected_host_brew_execution_target(
+def test_env_command_exports_and_runs_projected_host_brew(
     tmp_path,
     test_machine,
 ):
@@ -1117,14 +1117,16 @@ def test_env_command_exports_projected_host_brew_execution_target(
     projected = lib / "env" / "bin" / "brew"
     assert projected.is_symlink()
     assert projected.resolve() == host_brew
-    assert Path(payload["CI_BREW_BIN"]) == host_brew
+    assert Path(payload["CI_BREW_BIN"]) == projected
 
-    result = subprocess.run(
-        [payload["CI_BREW_BIN"], "--prefix"],
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
+    result = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "run",
+        "--install",
+        "--binproviders=env",
+        payload["CI_BREW_BIN"],
+        "--prefix",
+        env_overrides={
             **os.environ,
             "HOMEBREW_PREFIX": str(managed_prefix),
             "HOMEBREW_CELLAR": str(managed_prefix / "Cellar"),

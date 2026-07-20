@@ -143,16 +143,16 @@ jobs:
 
     - name: Environment diagnostic
       run: |
-        "$CI_BREW_BIN" --version
-        "$CI_NIX_BIN" --version
-        "$CI_NODE_BIN" --version
-        "$CI_NPM_BIN" --version
-        "$CI_PNPM_BIN" --version
-        "$CI_YARN_BIN" --version
-        "$CI_YARN_BERRY_BIN" --version
-        "$CI_BUN_BIN" --version
-        "$CI_DENO_BIN" --version
-        "$CI_GO_BIN" version
+        uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
+        uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
 
     - name: Run standard test file
       run: uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
