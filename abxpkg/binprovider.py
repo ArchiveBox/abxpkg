@@ -3499,7 +3499,7 @@ class EnvProvider(BinProvider):
 
         relative_prefix = "$basedir/../.pnpm/"
         for line in reversed(launcher_text.splitlines()):
-            if not line.lstrip().startswith("exec ") or relative_prefix not in line:
+            if relative_prefix not in line:
                 continue
             try:
                 tokens = shlex.split(line)
@@ -3520,13 +3520,7 @@ class EnvProvider(BinProvider):
                     and target.is_file()
                     and os.access(target, os.X_OK)
                 ):
-                    try:
-                        with target.open("rb") as target_file:
-                            has_shebang = target_file.read(2) == b"#!"
-                        if has_shebang:
-                            return target
-                    except OSError:
-                        continue
+                    return target
         return None
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
