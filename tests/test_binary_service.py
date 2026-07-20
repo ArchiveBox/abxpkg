@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Self
 
 import pytest
+import abxbus
 
 from abxpkg import Binary, BinProviderName, EnvProvider
 from abxpkg.exceptions import BinaryLoadError
@@ -15,7 +16,6 @@ from abxpkg.semver import SemVer
 def test_binary_request_events_allow_parallel_scheduling_by_default(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
     event = BinaryRequestEvent(name="python")
@@ -272,7 +272,6 @@ class _MemoryBinaryCacheBackend:
 def test_binary_cache_service_emits_cached_binary_before_resolver(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import (
         BinaryCacheService,
         BinaryEvent,
@@ -303,7 +302,7 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
         async def _install_or_find(self, event: Any) -> Binary | BinaryEvent:
             raise AssertionError("cache hit should satisfy request before install")
 
-    async def run() -> tuple[Any, BinaryEvent, list[str]]:
+    async def run() -> tuple[Any, BinaryEvent, list[Any]]:
         bus = abxbus.EventBus(name="test_binary_cache_service_hit")
         BinaryCacheService(bus, backend=backend)
         NoResolutionService(bus, probe=_InstallProbe(), output_dir=tmp_path)
@@ -347,7 +346,6 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
 
 
 def test_binary_cache_service_stores_resolved_binary_event() -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import (
         BinaryCacheService,
         BinaryRequestEvent,
@@ -387,7 +385,6 @@ def test_binary_cache_service_stores_resolved_binary_event() -> None:
 
 
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryCacheService, BinaryRequestEvent
 
     missing_path = tmp_path / "missing-tool"
@@ -408,7 +405,7 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
     )
     missing_path.unlink()
 
-    async def run() -> list[str]:
+    async def run() -> list[Any]:
         bus = abxbus.EventBus(name="test_binary_cache_service_invalidates")
         BinaryCacheService(bus, backend=backend)
         request = await bus.emit(
@@ -430,7 +427,6 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
 def test_binary_service_trusts_injected_binary_event_for_same_request(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
 
     injected_path = tmp_path / "injected-tool"
@@ -444,7 +440,7 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
         async def _install_or_find(self, event: Any) -> Binary | BinaryEvent:
             raise AssertionError("install should not run after an injected event")
 
-    async def run() -> tuple[_InstallProbe, BinaryRequestEvent, BinaryEvent, list[str]]:
+    async def run() -> tuple[_InstallProbe, BinaryRequestEvent, BinaryEvent, list[Any]]:
         probe = _InstallProbe()
         bus = abxbus.EventBus(name="test_binary_service_trusts_injected_event")
 
@@ -490,7 +486,6 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
 def test_binary_service_ignores_binary_events_from_other_requests(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
 
     stale_path = tmp_path / "stale-tool"
@@ -561,7 +556,6 @@ def test_binary_service_ignores_binary_events_from_other_requests(
 def test_binary_service_allows_parallel_installs_for_different_provider_roots(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
 
     async def run() -> _InstallProbe:
@@ -605,7 +599,6 @@ def test_binary_service_allows_parallel_installs_for_different_provider_roots(
 def test_binary_service_serializes_installs_for_same_provider_root(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryRequestEvent
 
     async def run() -> _InstallProbe:
@@ -645,14 +638,13 @@ def test_binary_service_serializes_installs_for_same_provider_root(
 def test_binary_service_rechecks_same_request_after_install_semaphore(
     tmp_path: Path,
 ) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
 
     injected_path = tmp_path / "race-target"
     injected_path.write_text("#!/bin/sh\nexit 0\n")
     injected_path.chmod(injected_path.stat().st_mode | stat.S_IXUSR)
 
-    async def run() -> tuple[_InstallProbe, list[str], list[str]]:
+    async def run() -> tuple[_InstallProbe, list[Any], list[Any]]:
         loop = asyncio.get_running_loop()
         second_load_seen = asyncio.Event()
         probe = _InstallProbe(sleep_seconds=0.35)
@@ -717,7 +709,6 @@ def test_binary_service_rechecks_same_request_after_install_semaphore(
 
 
 def test_binary_service_failed_install_raises_from_handler(tmp_path: Path) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryRequestEvent
     from abxpkg.exceptions import BinaryInstallError
 
@@ -762,7 +753,6 @@ def test_binary_service_failed_install_raises_from_handler(tmp_path: Path) -> No
 
 
 def test_binary_service_loads_env_binary_from_request() -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
     async def run() -> tuple[BinaryRequestEvent, BinaryEvent]:
@@ -809,7 +799,6 @@ def test_binary_service_loads_env_binary_from_request() -> None:
 
 
 def test_binary_service_installs_real_pip_binary_from_request(tmp_path: Path) -> None:
-    abxbus = pytest.importorskip("abxbus")
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
     async def run() -> BinaryEvent:
