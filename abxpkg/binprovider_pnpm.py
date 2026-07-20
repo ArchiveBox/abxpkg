@@ -208,6 +208,16 @@ class PnpmProvider(BinProvider):
         self.PATH = self._merge_PATH(*path_entries, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
 
+    def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
+        installer = self._INSTALLER_BINARY
+        if (
+            installer is not None
+            and installer.loaded_abspath == bin_abspath
+            and installer.loaded_binprovider is not None
+        ):
+            return installer.loaded_binprovider._exec_bin_abspath(bin_abspath)
+        return super()._exec_bin_abspath(bin_abspath)
+
     def _cached_installer_binary(self, no_cache: bool = False):
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
@@ -321,11 +331,16 @@ class PnpmProvider(BinProvider):
         return self.cache_dir / "npm"
 
     def _load_installer_at(self, abspath: Path, no_cache: bool = False):
-        loaded = EnvProvider(
-            PATH=str(abspath.parent),
-            install_root=None,
-            bin_dir=None,
-        ).load(bin_name=self.INSTALLER_BIN, no_cache=True)
+        env_provider = (
+            self._managed_env_provider()
+            if self._managed_lib_dir() is not None
+            else EnvProvider(PATH=str(abspath.parent), install_root=None, bin_dir=None)
+        )
+        # INSTALLER_BINARY already selected this exact candidate. Keep the
+        # projection provider constrained to its directory so a different,
+        # newer pnpm elsewhere on ambient PATH cannot replace it here.
+        env_provider.PATH = str(abspath.parent)
+        loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=True)
         if loaded and loaded.loaded_abspath:
             if loaded.loaded_version and loaded.loaded_sha256:
                 self.write_cached_binary(

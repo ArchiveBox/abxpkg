@@ -172,6 +172,47 @@ class TestPnpmProvider:
             assert (lib_dir / "env" / "bin" / "node").resolve() == node_binary.resolve()
             assert not (lib_dir / "bin").exists()
 
+    def test_host_pnpm_and_node_are_projected_before_execution(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lib_dir = Path(temp_dir) / "lib"
+            provider = PnpmProvider(
+                install_root=lib_dir / "pnpm",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            pnpm_binary = provider.get_abspath("pnpm", quiet=True, no_cache=True)
+            assert pnpm_binary is not None
+            old_pnpm_binary = os.environ.get("PNPM_BINARY")
+            os.environ["PNPM_BINARY"] = str(pnpm_binary)
+
+            try:
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+                assert installer.loaded_abspath is not None
+                version = provider.exec(
+                    bin_name=installer.loaded_abspath,
+                    cmd=("--version",),
+                    quiet=True,
+                )
+            finally:
+                if old_pnpm_binary is None:
+                    os.environ.pop("PNPM_BINARY", None)
+                else:
+                    os.environ["PNPM_BINARY"] = old_pnpm_binary
+
+            projected_pnpm = lib_dir / "env" / "bin" / "pnpm"
+            projected_node = lib_dir / "env" / "bin" / "node"
+            assert installer.loaded_abspath == projected_pnpm
+            assert projected_pnpm.is_symlink()
+            assert projected_node.is_symlink()
+            assert projected_pnpm.resolve() == Path(pnpm_binary).resolve()
+            assert version.returncode == 0, version.stderr
+            assert not (lib_dir / "bin").exists()
+
     def test_self_bootstrap_uses_host_npm_when_top_level_provider_excludes_env(
         self,
         test_machine,
