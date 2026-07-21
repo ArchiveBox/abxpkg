@@ -198,6 +198,7 @@ class TestEnvProvider:
         )
         assert "HOMEBREW_PREFIX" not in combined_env
         assert "HOMEBREW_CELLAR" not in combined_env
+        assert "HOMEBREW_NO_INSTALL_CLEANUP" not in combined_env
 
         result = loaded.exec(cmd=("--prefix",), env=combined_env)
         assert result.returncode == 0, result.stderr
@@ -211,6 +212,7 @@ class TestEnvProvider:
         assert scoped_env["HOMEBREW_CELLAR"] == str(
             managed_brew.install_root / "Cellar",
         )
+        assert scoped_env["HOMEBREW_NO_INSTALL_CLEANUP"] == "1"
 
     def test_brew_provider_executes_projected_installer_through_env_provider(
         self,

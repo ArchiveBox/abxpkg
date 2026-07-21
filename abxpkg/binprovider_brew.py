@@ -47,7 +47,11 @@ class BrewProvider(BinProvider):
     # executed by this provider, but must not leak into a combined dependency
     # environment where `brew` may be a host binary selected by EnvProvider.
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
-        {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"},
+        {
+            "HOMEBREW_PREFIX",
+            "HOMEBREW_CELLAR",
+            "HOMEBREW_NO_INSTALL_CLEANUP",
+        },
     )
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"  # Seeded with common brew bin roots; setup_PATH() lazily normalizes it to the resolved brew/runtime bin dirs.
@@ -86,6 +90,10 @@ class BrewProvider(BinProvider):
         return {
             "HOMEBREW_PREFIX": str(self.install_root),
             "HOMEBREW_CELLAR": str(self.install_root / "Cellar"),
+            # `brew install` may otherwise run a periodic full cleanup and
+            # remove dependencies belonging to unrelated host formulae. A
+            # provider install must not mutate packages outside its target.
+            "HOMEBREW_NO_INSTALL_CLEANUP": "1",
         }
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:

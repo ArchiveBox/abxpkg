@@ -80,7 +80,7 @@ jobs:
         uv pip install pip
 
     - name: Resolve live documentation runtimes with abxpkg
-      run: .github/resolve_ci_binaries.sh common_binaries linux_binaries docker_binaries
+      run: .github/resolve_ci_binaries.sh manager_binaries node_npm_binaries pnpm_binaries yarn_binaries bun_binaries deno_binaries go_binaries cargo_binaries gem_binaries python_cli_binaries host_utility_binaries linux_binaries docker_binaries
 
     - name: Run live documentation code blocks
       run: uv run pytest -vv --tb=long -m live_required README.md AGENTS.md skills docs
@@ -169,24 +169,26 @@ jobs:
 
     - name: Resolve test runtimes with abxpkg
       run: |
-        sections=(common_binaries)
-        if [[ "${{ runner.os }}" == "Linux" ]]; then
-          sections+=(linux_binaries)
+        sections=()
+        while IFS= read -r section; do
+          [[ -z "$section" ]] || sections+=("$section")
+        done < <(.github/ci_test_sections.sh "${{ matrix.test.path }}" "${{ runner.os }}")
+        if [[ "${#sections[@]}" -gt 0 ]]; then
+          .github/resolve_ci_binaries.sh "${sections[@]}"
         fi
-        .github/resolve_ci_binaries.sh "${sections[@]}"
 
     - name: Environment diagnostic
       run: |
-        uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
-        uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
+        [[ -z "${CI_BREW_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
+        [[ -z "${CI_NIX_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
+        [[ -z "${CI_NODE_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
+        [[ -z "${CI_NPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
+        [[ -z "${CI_PNPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
+        [[ -z "${CI_YARN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
+        [[ -z "${CI_YARN_BERRY_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
+        [[ -z "${CI_BUN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
+        [[ -z "${CI_DENO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
+        [[ -z "${CI_GO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
 
     - name: Run standard test file
       run: uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
@@ -283,7 +285,11 @@ jobs:
 
     - name: Resolve integration runtimes with abxpkg
       run: |
-        sections=(common_binaries linux_binaries)
+        sections=()
+        while IFS= read -r section; do
+          [[ -z "$section" ]] || sections+=("$section")
+        done < <(.github/ci_test_sections.sh "${{ matrix.live.path }}" "Linux")
+        sections+=(linux_binaries)
         if [[ "${{ matrix.live.needs_docker }}" == "true" ]]; then
           sections+=(docker_binaries)
         fi
