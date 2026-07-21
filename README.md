@@ -18,9 +18,17 @@ It's designed for when you have to detect or install binary or source dependenci
 
 Stop distributing your apps via `curl | sh`! Instead you can bake package installation into your app, or use our `uv`-style [`abxpkg run --script`](https://github.com/ArchiveBox/abxpkg/#shebang-line-in-scripts) shebang headers to auto-install dependencies for you.
 
-
+<!--
 ```bash
-pip install abxpkg    # uv tool install abxpkg
+ABXPKG_INSTALL_TEST="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_INSTALL_TEST"' EXIT
+uv venv "$ABXPKG_INSTALL_TEST/.venv"
+. "$ABXPKG_INSTALL_TEST/.venv/bin/activate"
+```
+-->
+<!--pytest-codeblocks:cont-->
+```bash
+uv pip install abxpkg    # uv tool install abxpkg
 abxpkg --version
 ```
 
@@ -94,8 +102,19 @@ assert dependencies[1].binproviders == [env, pip, uv, apt, brew]
 
 ### Install
 
+<!--
 ```bash
-pip install abxpkg
+ABXPKG_USAGE_TEST="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_USAGE_TEST"' EXIT
+uv venv "$ABXPKG_USAGE_TEST/.venv"
+. "$ABXPKG_USAGE_TEST/.venv/bin/activate"
+export UV_TOOL_DIR="$ABXPKG_USAGE_TEST/tools"
+export UV_TOOL_BIN_DIR="$ABXPKG_USAGE_TEST/bin"
+```
+-->
+<!--pytest-codeblocks:cont-->
+```bash
+uv pip install abxpkg
 # or
 uv tool install abxpkg
 ```
@@ -373,7 +392,7 @@ from abxpkg import Binary, BinProvider, BrewProvider, EnvProvider
 # or define binaries as classes for type checking
 class CurlBinary(Binary):
     name: str = 'curl'
-    binproviders: list[InstanceOf[BinProvider]] = [BrewProvider(), EnvProvider()]
+    binproviders: list[InstanceOf[BinProvider]] = [EnvProvider(), BrewProvider()]
 
 curl = CurlBinary().install()
 assert isinstance(curl, CurlBinary)                                 # CurlBinary is a unique type you can use in annotations now
