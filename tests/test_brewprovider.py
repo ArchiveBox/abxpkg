@@ -174,8 +174,12 @@ class TestBrewProvider:
 
     def test_helper_install_args_used_by_native_brew_backend(self, test_machine):
         test_machine.require_tool("brew")
-        primary = _pick_formula_for_live_cycle()
-        extra = "fzy" if primary != "fzy" else "watch"
+        # Keep this multi-package contract independent of the lifecycle
+        # candidate picker. ``watch`` pulls a comparatively large dependency
+        # closure on fresh macOS runners, while these two leaf formulae test
+        # the same native multi-argument install path.
+        primary = "hello"
+        extra = "fzy"
 
         provider = BrewProvider(
             postinstall_scripts=True,
