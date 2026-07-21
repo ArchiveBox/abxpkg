@@ -132,7 +132,7 @@ class TestEnvProvider:
         clean_env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"}
+            if key not in BrewProvider.EXEC_ONLY_ENV_KEYS
         }
         env_provider = EnvProvider(
             install_root=tmp_path / "lib" / "env",
@@ -165,7 +165,7 @@ class TestEnvProvider:
         clean_env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"}
+            if key not in BrewProvider.EXEC_ONLY_ENV_KEYS
         }
         host_prefix_result = subprocess.run(
             [str(host_brew), "--prefix"],
@@ -230,7 +230,7 @@ class TestEnvProvider:
         clean_env = {
             key: value
             for key, value in os.environ.items()
-            if key not in {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"}
+            if key not in BrewProvider.EXEC_ONLY_ENV_KEYS
         }
         host_prefix_result = subprocess.run(
             [str(host_brew), "--prefix"],
