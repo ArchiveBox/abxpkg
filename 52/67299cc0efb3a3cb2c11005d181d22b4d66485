@@ -1,0 +1,37 @@
+pyproject.toml
+  s_f8414d52051f83::t_f12ddac454a11e 3
+tests/test_pnpmprovider.py
+  s_f8414d52051f83::t_6c87471192b03c 2,6,16-26,31-50,52-64,66-97,102
+  s_f8414d52051f83::t_c960d17a53a564 27-30,98-101
+  s_f8414d52051f83::t_85de8db998564a 65
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_c93e793826fa80 22,36,56,70,90,123,132,135-138,154,201,228,230,249,270
+tests/test_binprovider.py
+  s_f8414d52051f83::t_4513ec93224733 33-37
+  s_f8414d52051f83::t_7d7ab428e95938 4,27-32,38-84
+.github/workflows/release.yml
+  s_f8414d52051f83::t_c93e793826fa80 28,45
+abxpkg/binprovider.py
+  s_f8414d52051f83::t_69dbe83aee3b17 17-19,133-140,147-148,574-577,581-586,588-589,595-605,607-611,624-625,627-631,2700,2968,3109
+  s_f8414d52051f83::t_3ee0763caad304 129-132,141-146,587,606,617-623,626,2767,2769-2773
+  s_f8414d52051f83::t_ef15b970a4d352 580
+  s_f8414d52051f83::t_31469f9797f120 578-579,590-594,612-616
+.github/workflows/deploy-pages.yml
+  s_f8414d52051f83::t_c93e793826fa80 19,26-28,53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "5267299cc0efb3a3cb2c11005d181d22b4d66485",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
