@@ -1,0 +1,33 @@
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_2c807c8597d0bf 449,454-455,458-459
+  s_f8414d52051f83::t_c1eb90752f0aa0 340-344,358,375,396,420-448,450-453,460-470
+  s_f8414d52051f83::t_5fb4bf8568546b 456-457,471
+bin/release.sh
+  s_f8414d52051f83::t_486faaeac946f5 15,132,138-144,152,154,156-157,159-168
+  s_f8414d52051f83::t_73baaad40dc18c 179,181-182,252
+  s_f8414d52051f83::t_5fb4bf8568546b 318-322
+  s_f8414d52051f83::t_c1eb90752f0aa0 14,173-175,185-189,191-192,195-232,315
+.github/workflows/deploy-pages.yml
+  s_f8414d52051f83::t_c1eb90752f0aa0 14-15
+.github/workflows/release.yml
+  s_f8414d52051f83::t_5fb4bf8568546b 30-34
+  s_f8414d52051f83::t_486faaeac946f5 4-6,38,40
+pyproject.toml
+  s_f8414d52051f83::t_5fb4bf8568546b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.15",
+  "base_commit_sha": "5c76402c6ef4ed545331173eb484c29f4f15e3d4",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
