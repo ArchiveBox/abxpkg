@@ -859,12 +859,16 @@ class BinProvider(BaseModel):
         cache: dict[str, dict[str, object]] | None = None,
         cache_context: str | None = None,
         cache_context_hash: str | None = None,
+        setup_path: bool = True,
     ) -> ShallowBinary | None:
         # Cache context includes lazily-derived provider fields like PATH.
         # Direct cache readers (list/version/installer discovery) do not pass
         # through load(), so normalize the provider before comparing context or
-        # every valid record looks stale in a fresh process.
-        self.setup_PATH()
+        # every valid record looks stale in a fresh process. Installer discovery
+        # already supplies the stored context and skips setup here because setup
+        # may itself need the installer binary.
+        if setup_path:
+            self.setup_PATH()
         derived_env_path = self.derived_env_path
         if derived_env_path is None:
             return None
@@ -1300,9 +1304,20 @@ class BinProvider(BaseModel):
                 cached_abspath = cached_record.get("abspath")
                 if not isinstance(cached_abspath, str):
                     continue
+                cached_context = cached_record.get("cache_context")
+                cached_context_hash = cached_record.get("cache_context_hash")
+                if not isinstance(cached_context, str) or not isinstance(
+                    cached_context_hash,
+                    str,
+                ):
+                    continue
                 loaded = self.load_cached_binary(
                     self.INSTALLER_BIN,
                     Path(cached_abspath),
+                    cache=cache,
+                    cache_context=cached_context,
+                    cache_context_hash=cached_context_hash,
+                    setup_path=False,
                 )
                 if loaded and loaded.loaded_abspath:
                     self._INSTALLER_BINARY = loaded
@@ -3859,6 +3874,7 @@ class EnvProvider(BinProvider):
         cache: dict[str, dict[str, object]] | None = None,
         cache_context: str | None = None,
         cache_context_hash: str | None = None,
+        setup_path: bool = True,
     ) -> ShallowBinary | None:
         if self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
@@ -3884,6 +3900,7 @@ class EnvProvider(BinProvider):
             cache=cache,
             cache_context=cache_context,
             cache_context_hash=cache_context_hash,
+            setup_path=setup_path,
         )
 
     @log_method_call()

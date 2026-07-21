@@ -7,6 +7,34 @@ from abxpkg import AptProvider, Binary
 
 @pytest.mark.root_required
 class TestAptProvider:
+    def test_fresh_provider_loads_cached_installer_before_setting_up_path(
+        self,
+        test_machine,
+        tmp_path,
+    ):
+        test_machine.require_tool("apt-get")
+
+        install_root = tmp_path / "apt"
+        seeded_provider = AptProvider(install_root=install_root)
+        seeded_installer = seeded_provider.INSTALLER_BINARY()
+        assert seeded_installer.is_valid
+        assert seeded_provider.derived_env_path is not None
+        assert seeded_provider.derived_env_path.is_file()
+
+        fresh_provider = AptProvider(install_root=install_root)
+        fresh_provider.setup_PATH()
+
+        assert fresh_provider._INSTALLER_BINARY is not None
+        loaded_installer = fresh_provider.INSTALLER_BINARY()
+        assert loaded_installer.is_valid
+        assert loaded_installer.loaded_abspath == seeded_installer.loaded_abspath
+        assert str(loaded_installer.loaded_abspath.parent) in fresh_provider.PATH.split(
+            ":",
+        )
+        loaded_bash = fresh_provider.load("bash")
+        assert loaded_bash is not None
+        assert loaded_bash.is_valid
+
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
 
