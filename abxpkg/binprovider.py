@@ -3563,7 +3563,11 @@ class EnvProvider(BinProvider):
         # Dereference only the managed link itself: run the binary EnvProvider
         # discovered, but do not chase any further symlink chain owned by the OS
         # or package manager.
-        if not bin_abspath.is_symlink():
+        if (
+            self.bin_dir is None
+            or bin_abspath.parent != self.bin_dir
+            or not bin_abspath.is_symlink()
+        ):
             return bin_abspath
         linked_to = bin_abspath.readlink()
         return linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to

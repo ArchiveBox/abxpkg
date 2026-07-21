@@ -191,6 +191,10 @@ class TestEnvProvider:
         installer = env_provider.load("brew", no_cache=True)
         assert installer is not None
         assert installer.loaded_abspath is not None
+        # EnvProvider may unwrap its own env/bin projection, but Homebrew's
+        # launcher is itself a symlink on Linux. That host-owned hop must be
+        # preserved because brew derives HOMEBREW_PREFIX from argv[0].
+        assert env_provider._exec_bin_abspath(host_brew) == host_brew
 
         provider = BrewProvider(
             install_root=tmp_path / "lib" / "brew",
