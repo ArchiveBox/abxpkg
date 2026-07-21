@@ -3645,11 +3645,7 @@ class EnvProvider(BinProvider):
         resolved_provider = self._resolved_provider_from_cache_record(
             projection_record,
         )
-        if (
-            no_cache
-            and result.loaded_version is not None
-            and result.loaded_sha256 is not None
-        ):
+        if result.loaded_version is not None and result.loaded_sha256 is not None:
             self.write_cached_binary(
                 bin_name,
                 installed_abspath,

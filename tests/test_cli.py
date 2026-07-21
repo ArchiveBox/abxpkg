@@ -274,6 +274,13 @@ def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
     )
     assert version.returncode == 0, version.stderr
     assert version.stdout.strip() == "10.19.0"
+    refreshed_projection_records = [
+        record
+        for record in load_derived_cache(lib_dir / "env" / "derived.env").values()
+        if record.get("bin_name") == "pnpm" and record.get("cache_kind") == "projection"
+    ]
+    assert len(refreshed_projection_records) == 1
+    assert refreshed_projection_records[0]["resolved_provider_name"] == "npm"
 
 
 @pytest.fixture(autouse=True)
