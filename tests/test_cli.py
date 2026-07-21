@@ -205,6 +205,61 @@ def test_env_deps_from_honors_dependency_binproviders(tmp_path):
     assert (package_root / "node_modules" / "abxbus" / "package.json").exists()
 
 
+def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
+    lib_dir = tmp_path / "lib"
+    package_root = lib_dir / "npm" / "packages" / "pnpm"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "properties": {"CI_PNPM_BIN": {"default": "pnpm"}},
+                "required_binaries": [
+                    {
+                        "name": "{CI_PNPM_BIN}",
+                        "binproviders": ["npm"],
+                        "min_version": "10.19.0",
+                        "min_release_age": 0,
+                        "overrides": {
+                            "npm": {
+                                "install_root": str(package_root),
+                                "install_args": ["pnpm@10.19.0"],
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config_path}:required_binaries",
+        timeout=120,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    projected = lib_dir / "env" / "bin" / "pnpm"
+    assert Path(payload["CI_PNPM_BIN"]) == projected
+    assert projected.is_symlink()
+    assert projected.resolve().is_relative_to(package_root / "node_modules" / "pnpm")
+    assert payload["PATH"].split(os.pathsep)[0] == str(projected.parent)
+
+    version = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        "--binproviders=env",
+        "run",
+        str(projected),
+        "--version",
+        timeout=30,
+    )
+    assert version.returncode == 0, version.stderr
+    assert version.stdout.strip() == "10.19.0"
+
+
 @pytest.fixture(autouse=True)
 def restore_abxpkg_logger():
     package_logger = logging.getLogger("abxpkg")
@@ -1088,8 +1143,23 @@ def test_env_command_exports_and_runs_projected_host_brew(
     tmp_path,
     test_machine,
 ):
-    host_brew = Path(test_machine.require_tool("brew")).resolve()
-    host_prefix = host_brew.parent.parent
+    host_brew = Path(test_machine.require_tool("brew")).absolute()
+    while (
+        host_brew.is_symlink()
+        and host_brew.parent.name == "bin"
+        and host_brew.parent.parent.name == "env"
+    ):
+        target = host_brew.readlink()
+        host_brew = target if target.is_absolute() else host_brew.parent / target
+    host_prefix_result = subprocess.run(
+        [str(host_brew), "--prefix"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert host_prefix_result.returncode == 0, host_prefix_result.stderr
+    assert host_prefix_result.stderr == ""
+    host_prefix = Path(host_prefix_result.stdout.strip())
 
     lib = tmp_path / "lib"
     config = tmp_path / "config.json"
@@ -1120,7 +1190,7 @@ def test_env_command_exports_and_runs_projected_host_brew(
     payload = json.loads(proc.stdout)
     projected = lib / "env" / "bin" / "brew"
     assert projected.is_symlink()
-    assert projected.resolve() == host_brew
+    assert projected.samefile(host_brew)
     assert Path(payload["CI_BREW_BIN"]) == projected
 
     result = _run_abxpkg_cli(
@@ -1137,6 +1207,7 @@ def test_env_command_exports_and_runs_projected_host_brew(
         },
     )
     assert result.returncode == 0, result.stderr
+    assert result.stderr == ""
     assert Path(result.stdout.strip()) == host_prefix
 
 

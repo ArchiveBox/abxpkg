@@ -3579,11 +3579,23 @@ class EnvProvider(BinProvider):
         if self.install_root is None:
             return False
 
+        absolute_abspath = Path(abspath).expanduser().absolute()
+        if self.bin_dir is not None and absolute_abspath.parent == self.bin_dir:
+            derived_env_path = self.derived_env_path
+            if derived_env_path and derived_env_path.is_file():
+                for record in load_derived_cache(derived_env_path).values():
+                    if (
+                        isinstance(record, dict)
+                        and record.get("provider_name") == self.name
+                        and record.get("abspath") == str(absolute_abspath)
+                    ):
+                        return False
+
         lib_dir = self.install_root.parent
         if not lib_dir.is_dir():
             return False
 
-        resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
+        resolved_abspath = absolute_abspath.resolve(strict=False)
         for provider_root in lib_dir.iterdir():
             if not provider_root.is_dir() or provider_root == self.install_root:
                 continue
@@ -3780,7 +3792,11 @@ class EnvProvider(BinProvider):
         resolved_provider: "BinProvider | None" = None,
         cache_kind: str = "binary",
     ) -> tuple[MTimeNs, EUID] | None:
-        if self._is_managed_by_other_provider(abspath):
+        absolute_abspath = Path(abspath).expanduser().absolute()
+        is_direct_projection = (
+            self.bin_dir is not None and absolute_abspath.parent == self.bin_dir
+        )
+        if not is_direct_projection and self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
             return None
         if logger.isEnabledFor(py_logging.DEBUG):

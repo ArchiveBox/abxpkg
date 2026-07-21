@@ -1344,6 +1344,8 @@ def build_deps_from_exec_env(
     explicit_provider_selection: bool,
     base_env: dict[str, str],
 ) -> dict[str, str]:
+    from . import EnvProvider
+
     env = dict(base_env)
     for dep in deps:
         if isinstance(dep, str):
@@ -1372,13 +1374,47 @@ def build_deps_from_exec_env(
             install_before_run=install_before_run,
             update_before_run=update_before_run,
         )
+        projected_abspath = binary.loaded_abspath
+        env_provider: EnvProvider | None = None
+        if projected_abspath is not None:
+            projection_provider = cast(
+                EnvProvider,
+                build_providers(
+                    ["env"],
+                    dry_run=False,
+                    install_root=None,
+                    bin_dir=None,
+                    euid=options.euid,
+                    install_timeout=options.install_timeout,
+                    version_timeout=options.version_timeout,
+                )[0],
+            )
+            projection_provider.setup_PATH()
+            projected_abspath = projection_provider._link_loaded_binary(
+                Path(dep_name).name,
+                projected_abspath,
+            )
+            if binary.loaded_version is not None and binary.loaded_sha256 is not None:
+                projection_provider.write_cached_binary(
+                    Path(dep_name).name,
+                    projected_abspath,
+                    binary.loaded_version,
+                    binary.loaded_sha256,
+                    resolved_provider_name="env",
+                    resolved_provider=projection_provider,
+                )
+            env_provider = projection_provider
         env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
-        if env_key and binary.loaded_abspath:
-            env[str(env_key)] = str(binary.loaded_abspath)
+        if env_key and projected_abspath:
+            env[str(env_key)] = str(projected_abspath)
         env = build_runtime_exec_env(
             binary,
             base_env=env,
         )
+        if env_provider is not None:
+            from .config import build_exec_env as build_provider_exec_env
+
+            env = build_provider_exec_env(providers=[env_provider], base_env=env)
     return env
 
 
