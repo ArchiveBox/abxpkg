@@ -36,6 +36,7 @@ abxpkg version
 
 ## Basic Usage
 
+<!-- pytest.mark.live_required -->
 ```bash
 uv run abxpkg load wget
 uv run abxpkg install yt-dlp
@@ -47,6 +48,7 @@ uv run abx yt-dlp --help
 
 ## Verification
 
+<!-- pytest.mark.live_required -->
 ```bash
 uv run pytest tests/test_chromewebstoreprovider.py -q
 ```

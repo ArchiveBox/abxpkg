@@ -49,7 +49,41 @@ jobs:
       run: uv run prek run --all-files
 
     - name: Run documentation code blocks
-      run: uv run pytest -vv --tb=long README.md AGENTS.md skills docs
+      run: uv run pytest -vv --tb=long -m "not live_required" README.md AGENTS.md skills docs
+
+  live-documentation:
+    needs: precheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Setup Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v8.0.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: Install Nix
+      uses: DeterminateSystems/nix-installer-action@v22
+
+    - name: Setup venv and install pip dependencies
+      run: |
+        uv venv --python "3.12"
+        uv sync --all-extras --all-groups --no-cache
+        uv pip install pip
+
+    - name: Resolve live documentation runtimes with abxpkg
+      run: .github/resolve_ci_binaries.sh common_binaries linux_binaries docker_binaries
+
+    - name: Run live documentation code blocks
+      run: uv run pytest -vv --tb=long -m live_required README.md AGENTS.md skills docs
 
   discover-standard-tests:
     needs: precheck

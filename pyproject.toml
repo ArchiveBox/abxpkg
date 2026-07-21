@@ -138,6 +138,7 @@ addopts = ["--codeblocks"]
 markers = [
     "root_required: tests that require root privileges and run in the privileged live-integration job",
     "docker_required: tests that require a working Docker daemon and run in the Linux live-integration job",
+    "live_required: documentation examples that require provisioned package-manager runtimes or live indexes",
 ]
 
 [tool.ty.src]

@@ -23,8 +23,17 @@ import json
 import os
 from pathlib import Path
 
+from abxpkg.base_types import is_forbidden_convenience_lib_bin
+
 values = json.loads(os.environ['ABXPKG_CI_ENV_JSON'])
 values['ABXPKG_LIB_DIR'] = os.environ['ABXPKG_LIB_DIR']
+projected_path = str(values.get('PATH', ''))
+host_path = os.environ.get('PATH', '')
+values['PATH'] = os.pathsep.join(dict.fromkeys(
+    entry
+    for entry in (*projected_path.split(os.pathsep), *host_path.split(os.pathsep))
+    if entry and not is_forbidden_convenience_lib_bin(entry)
+))
 
 env_file = os.environ.get('GITHUB_ENV')
 if not env_file:

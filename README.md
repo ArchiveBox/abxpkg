@@ -22,8 +22,10 @@ Stop distributing your apps via `curl | sh`! Instead you can bake package instal
 ```bash
 ABXPKG_INSTALL_TEST="$(mktemp -d)"
 trap 'rm -rf "$ABXPKG_INSTALL_TEST"' EXIT
-uv venv "$ABXPKG_INSTALL_TEST/.venv"
+export ABXPKG_LIB_DIR="$ABXPKG_INSTALL_TEST/lib"
+uv venv --python 3.12 "$ABXPKG_INSTALL_TEST/.venv"
 . "$ABXPKG_INSTALL_TEST/.venv/bin/activate"
+cd "$ABXPKG_INSTALL_TEST"
 ```
 -->
 <!--pytest-codeblocks:cont-->
@@ -104,37 +106,75 @@ assert dependencies[1].binproviders == [env, pip, uv, apt, brew]
 
 <!--
 ```bash
-ABXPKG_USAGE_TEST="$(mktemp -d)"
-trap 'rm -rf "$ABXPKG_USAGE_TEST"' EXIT
-uv venv "$ABXPKG_USAGE_TEST/.venv"
-. "$ABXPKG_USAGE_TEST/.venv/bin/activate"
-export UV_TOOL_DIR="$ABXPKG_USAGE_TEST/tools"
-export UV_TOOL_BIN_DIR="$ABXPKG_USAGE_TEST/bin"
+ABXPKG_PIP_INSTALL_TEST="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_PIP_INSTALL_TEST"' EXIT
+export ABXPKG_LIB_DIR="$ABXPKG_PIP_INSTALL_TEST/lib"
+uv venv --python 3.12 "$ABXPKG_PIP_INSTALL_TEST/.venv"
+. "$ABXPKG_PIP_INSTALL_TEST/.venv/bin/activate"
+cd "$ABXPKG_PIP_INSTALL_TEST"
 ```
 -->
 <!--pytest-codeblocks:cont-->
 ```bash
 uv pip install abxpkg
-# or
+abxpkg --version
+```
+
+Or install the isolated CLI tool:
+
+<!--
+```bash
+ABXPKG_TOOL_INSTALL_TEST="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_TOOL_INSTALL_TEST"' EXIT
+export ABXPKG_LIB_DIR="$ABXPKG_TOOL_INSTALL_TEST/lib"
+export UV_TOOL_DIR="$ABXPKG_TOOL_INSTALL_TEST/tools"
+export UV_TOOL_BIN_DIR="$ABXPKG_TOOL_INSTALL_TEST/bin"
+export UV_PYTHON=3.12
+cd "$ABXPKG_TOOL_INSTALL_TEST"
+```
+-->
+<!--pytest-codeblocks:cont-->
+```bash
 uv tool install abxpkg
+"$UV_TOOL_BIN_DIR/abxpkg" --version
 ```
 
 ### CLI
 
 Installing `abxpkg` also provides an `abxpkg` CLI entrypoint:
 
+<!--
+```bash
+ABXPKG_CLI_TEST="$(mktemp -d)"
+trap 'rm -rf "$ABXPKG_CLI_TEST"' EXIT
+export ABXPKG_LIB_DIR="$ABXPKG_CLI_TEST/lib"
+abxpkg() { uv run --project "$PWD" abxpkg "$@"; }
+```
+-->
+<!--pytest-codeblocks:cont-->
 ```bash
 abxpkg --version
 abxpkg version
 abxpkg list
 
-abxpkg install yt-dlp
-abxpkg update yt-dlp
-abxpkg uninstall yt-dlp
-abxpkg load yt-dlp
-abxpkg env yt-dlp
-abxpkg activate yt-dlp
+abxpkg --binproviders=env,pip install yt-dlp
+abxpkg --binproviders=env,pip load yt-dlp
+abxpkg --binproviders=env,pip env yt-dlp
+abxpkg --binproviders=env,pip activate yt-dlp
+abxpkg --binproviders=env,pip update yt-dlp
+abxpkg --binproviders=env,pip uninstall yt-dlp
+```
 
+<!--pytest-codeblocks:cont-->
+<!--
+```bash
+test ! -e "$ABXPKG_LIB_DIR/env/bin/yt-dlp"
+test ! -e "$ABXPKG_LIB_DIR/pip/bin/yt-dlp"
+```
+-->
+
+<!-- pytest.mark.live_required -->
+```bash
 abxpkg search chromium                          # search all providers in parallel
 abxpkg --binproviders=apt,npm,brew search node  # restrict to specific providers
 ```
@@ -316,7 +356,7 @@ from abxpkg import Binary, SemVer, env, brew
 
 curl = Binary(
     name="curl",
-    min_version=SemVer("8.0.0"),
+    min_version=SemVer("7.0.0"),
     binproviders=[env, brew],
 ).install()
 ```
@@ -407,8 +447,8 @@ curl.exec(cmd=['--version'])                                        # curl 8.4.0
 <summary><h4>Customize binary resolution/install/other behavior via per-provider or per-binary overrides</h4></summary>
 
 ```python
-import os
 import platform
+import shutil
 from pydantic import InstanceOf
 from abxpkg import BinProvider, Binary, BinProviderName, BinName, HandlerDict
 from abxpkg import env, apt
@@ -420,15 +460,15 @@ class DockerBinary(Binary):
     overrides: dict[BinProviderName, HandlerDict] = {
         'env': {
             # prefer podman if installed, fall back to docker
-            'abspath': lambda: os.which('podman') or os.which('docker') or os.which('docker-ce'),
+            'abspath': shutil.which('podman') or shutil.which('docker') or shutil.which('docker-ce'),
         },
         'apt': {
             # vary the installed package name based on CPU architecture
             'install_args': {
-                'amd64': ['docker'],
-                'armv7l': ['docker-ce'],
-                'arm64': ['docker-ce'],
-            }.get(platform.machine(), 'docker'),
+                'x86_64': ['docker.io'],
+                'armv7l': ['docker.io'],
+                'aarch64': ['docker.io'],
+            }.get(platform.machine(), ['docker.io']),
         },
     }
 
@@ -1299,13 +1339,13 @@ from abxpkg import Binary, SemVer, env, brew
 
 curl = Binary(
     name="curl",
-    min_version=SemVer("8.0.0"),
+    min_version=SemVer("7.0.0"),
     binproviders=[env, brew],
 ).load()
 
 print(curl.binprovider)   # EnvProvider(...) or BrewProvider(...)
 print(curl.abspath)       # Path('/usr/local/bin/curl')
-print(curl.version)       # SemVer(8, 4, 0)
+print(curl.version)       # SemVer(7, 88, 1) or newer
 print(curl.is_valid)      # True
 
 assert curl.is_valid
@@ -1355,6 +1395,7 @@ uv sync --all-extras
 uv run prek run --all-files
 ```
 
+<!-- pytest.mark.live_required -->
 ```bash
 # Exercise representative core, environment, and provider behavior.
 uv run pytest -s \

@@ -32,6 +32,7 @@ abxpkg version
 
 ## Basic Usage
 
+<!-- pytest.mark.live_required -->
 ```bash
 uv run abxpkg load wget
 uv run abxpkg install yt-dlp
@@ -55,6 +56,7 @@ print(binary.abspath, binary.version, binary.is_valid)
 
 Use targeted tests and real providers:
 
+<!-- pytest.mark.live_required -->
 ```bash
 uv run pytest tests/test_cli.py -q
 uv run prek run --all-files
