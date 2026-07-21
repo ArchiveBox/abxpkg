@@ -11,6 +11,8 @@ PYPI_PACKAGE="abxpkg"
 REQUIRED_WORKFLOWS=(
     "tests.yml|Run Tests"
 )
+TESTED_ARTIFACT_NAME_PREFIX="abxpkg-dist"
+REQUIRED_TEST_RUN_ID="${REQUIRED_TEST_RUN_ID:-}"
 
 source_optional_env() {
     if [[ -f "${REPO_DIR}/.env" ]]; then
@@ -127,15 +129,19 @@ require_clean_exact_checkout() {
 require_successful_workflows() {
     local slug="$1"
     local release_sha="$2"
-    local workflow_spec workflow_file workflow_name runs state run_id attempts
+    local workflow_spec workflow_file workflow_name runs run_id run
 
     for workflow_spec in "${REQUIRED_WORKFLOWS[@]}"; do
         workflow_file="${workflow_spec%%|*}"
         workflow_name="${workflow_spec#*|}"
-        attempts=0
 
-        run_id=""
-        while [[ "${attempts}" -lt 12 ]]; do
+        if [[ "${workflow_file}" == "tests.yml" && -n "${REQUIRED_TEST_RUN_ID}" ]]; then
+            run_id="${REQUIRED_TEST_RUN_ID}"
+            run="$(env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run view \
+                "${run_id}" \
+                --repo "${slug}" \
+                --json databaseId,workflowName,headSha,status,conclusion,event)"
+        else
             runs="$(env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run list \
                 --repo "${slug}" \
                 --workflow "${workflow_file}" \
@@ -143,70 +149,87 @@ require_successful_workflows() {
                 --commit "${release_sha}" \
                 --limit 10 \
                 --json databaseId,workflowName,headSha,status,conclusion,event)"
-            state="$(jq -r --arg name "${workflow_name}" --arg sha "${release_sha}" '
+            run="$(jq -c --arg name "${workflow_name}" --arg sha "${release_sha}" '
                 [.[] | select(.workflowName == $name and .headSha == $sha and .event == "push")]
-                | if length == 1
-                  then (.[0].databaseId | tostring)
-                  elif length == 0 then "missing"
-                  else "ambiguous"
-                  end
+                | if length == 1 then .[0] else empty end
             ' <<<"${runs}")"
+            run_id="$(jq -r '.databaseId // empty' <<<"${run}")"
+        fi
 
-            case "${state}" in
-                missing)
-                    attempts=$((attempts + 1))
-                    if [[ "${attempts}" -lt 12 ]]; then
-                        sleep 5
-                    fi
-                    continue
-                    ;;
-                ambiguous)
-                    echo "Found multiple ${workflow_name} push runs for ${release_sha}; refusing an ambiguous release gate" >&2
-                    return 1
-                    ;;
-                *)
-                    run_id="${state}"
-                    break
-                    ;;
-            esac
-        done
-
-        if [[ -z "${run_id}" ]]; then
-            echo "Required workflow ${workflow_name} was not discovered for ${release_sha} after 12 attempts" >&2
+        if [[ -z "${run_id}" || -z "${run}" ]]; then
+            echo "Required workflow ${workflow_name} has no unique push run for ${release_sha}" >&2
+            return 1
+        fi
+        if ! jq -e \
+            --arg name "${workflow_name}" \
+            --arg sha "${release_sha}" \
+            '.workflowName == $name and .headSha == $sha and .event == "push" and .status == "completed" and .conclusion == "success"' \
+            <<<"${run}" >/dev/null; then
+            echo "Required workflow ${workflow_name} (${run_id}) is not a successful push run for ${release_sha}: ${run}" >&2
             return 1
         fi
 
-        echo "Watching required workflow: ${workflow_name} (${run_id})"
-        env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run watch \
-            "${run_id}" \
-            --repo "${slug}" \
-            --exit-status
         echo "Required workflow passed: ${workflow_name} (${run_id})"
-    done
-}
-
-wait_for_pypi() {
-    local version="$1"
-    local attempts=0
-    until curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null; do
-        attempts=$((attempts + 1))
-        if [[ "${attempts}" -ge 30 ]]; then
-            echo "Timed out waiting for ${PYPI_PACKAGE}==${version} on PyPI" >&2
-            return 1
+        if [[ "${workflow_file}" == "tests.yml" ]]; then
+            REQUIRED_TEST_RUN_ID="${run_id}"
         fi
-        sleep 10
     done
 }
 
-build_artifacts() {
+verify_pypi_release() {
     local version="$1"
 
-    rm -rf "${REPO_DIR}/dist"
-    uv build --out-dir "${REPO_DIR}/dist"
-    if ! compgen -G "${REPO_DIR}/dist/${PYPI_PACKAGE}-${version}*" >/dev/null; then
-        echo "Missing build artifacts for ${PYPI_PACKAGE}==${version}" >&2
+    curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/${version}/json" | jq -e --arg version "${version}" '.info.version == $version' >/dev/null
+}
+
+download_tested_artifacts() {
+    local slug="$1"
+    local release_sha="$2"
+    local version="$3"
+    local run_id="$4"
+
+    if [[ -z "${run_id}" ]]; then
+        echo "Required test workflow run ID is missing" >&2
         return 1
     fi
+
+    rm -rf "${REPO_DIR}/dist"
+    mkdir -p "${REPO_DIR}/dist"
+    env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run download \
+        "${run_id}" \
+        --repo "${slug}" \
+        --name "${TESTED_ARTIFACT_NAME_PREFIX}-${release_sha}" \
+        --dir "${REPO_DIR}/dist"
+
+    RELEASE_VERSION="${version}" uv run --no-project python - <<'PY'
+from hashlib import sha256
+from pathlib import Path
+import os
+
+dist = Path("dist")
+version = os.environ["RELEASE_VERSION"]
+checksum_path = dist / "SHA256SUMS"
+if not checksum_path.is_file():
+    raise SystemExit("Tested artifact is missing SHA256SUMS")
+
+expected = {}
+for line in checksum_path.read_text().splitlines():
+    digest, separator, filename = line.partition("  ")
+    if not separator or len(digest) != 64 or not filename:
+        raise SystemExit(f"Invalid checksum line: {line!r}")
+    expected[filename] = digest
+
+artifacts = sorted(path for path in dist.iterdir() if path.name != "SHA256SUMS")
+wheel = [path for path in artifacts if path.name.startswith(f"abxpkg-{version}") and path.suffix == ".whl"]
+sdist = [path for path in artifacts if path.name == f"abxpkg-{version}.tar.gz"]
+if len(wheel) != 1 or len(sdist) != 1 or set(expected) != {wheel[0].name, sdist[0].name}:
+    raise SystemExit(f"Unexpected tested distributions: {[path.name for path in artifacts]}")
+
+for artifact in artifacts:
+    actual = sha256(artifact.read_bytes()).hexdigest()
+    if actual != expected[artifact.name]:
+        raise SystemExit(f"Checksum mismatch for {artifact.name}")
+PY
 }
 
 publish_artifacts() {
@@ -226,7 +249,7 @@ publish_artifacts() {
     else
         uv publish --trusted-publishing always "${artifacts[@]}"
     fi
-    wait_for_pypi "${version}"
+    verify_pypi_release "${version}"
 }
 
 create_release() {
@@ -289,9 +312,14 @@ main() {
     fi
 
     require_successful_workflows "${slug}" "${release_sha}"
-    build_artifacts "${version}"
+    download_tested_artifacts "${slug}" "${release_sha}" "${version}" "${REQUIRED_TEST_RUN_ID}"
     create_release "${slug}" "${version}" "${release_sha}"
     publish_artifacts "${version}"
+    gh release upload "${TAG_PREFIX}${version}" --repo "${slug}" \
+        "${REPO_DIR}"/dist/abxpkg-*.whl \
+        "${REPO_DIR}"/dist/abxpkg-*.tar.gz \
+        "${REPO_DIR}"/dist/SHA256SUMS \
+        --clobber
 
     released_tag="$(gh release view "${TAG_PREFIX}${version}" --repo "${slug}" --json tagName,targetCommitish --jq '[.tagName, .targetCommitish] | @tsv')"
     if [[ "${released_tag}" != $'v'"${version}"$'\t'"${release_sha}" ]]; then

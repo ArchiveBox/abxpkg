@@ -337,9 +337,11 @@ jobs:
             else
               os_json='"macOS-15"'
             fi
-            entry="{\"name\":\"${test_name}-${os_target}\",\"path\":\"$test_file\",\"os\":${os_json},\"os_name\":\"${os_target}\",\"needs_docker\":$needs_docker}"
-            if [ "$first" = true ]; then first=false; else json_array+=","; fi
-            json_array+="$entry"
+            for python_version in 3.12.13 3.13.14 3.14.6; do
+              entry="{\"name\":\"${test_name}-${os_target}\",\"path\":\"$test_file\",\"os\":${os_json},\"os_name\":\"${os_target}\",\"python_version\":\"${python_version}\",\"needs_docker\":$needs_docker}"
+              if [ "$first" = true ]; then first=false; else json_array+=","; fi
+              json_array+="$entry"
+            done
           done
         done
         json_array+="]"
@@ -353,7 +355,7 @@ jobs:
         echo "$json_array"
 
   live-integration:
-    name: ${{ matrix.live.name }}
+    name: ${{ matrix.live.name }} py${{ matrix.live.python_version }}
     needs: discover-live-tests
     runs-on: ${{ matrix.live.os }}
     timeout-minutes: 20
@@ -370,7 +372,7 @@ jobs:
     - name: Setup Python
       uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
       with:
-        python-version: '3.12'
+        python-version: ${{ matrix.live.python_version }}
 
     - name: Install uv
       uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
@@ -391,7 +393,7 @@ jobs:
 
     - name: Setup venv and install pip dependencies
       run: |
-        uv venv --python "3.12"
+        uv venv --python "${{ matrix.live.python_version }}"
         uv sync --all-extras
         uv pip install pip
 
@@ -415,3 +417,55 @@ jobs:
 
     - name: Run every privileged provider test
       run: uv run pytest -vv --tb=long -m "root_required or docker_required" "${{ matrix.live.path }}"
+
+  package:
+    needs:
+      - precheck
+      - live-documentation
+      - build
+      - playwright
+      - live-integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+    - name: Setup Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: '3.12'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      with:
+        version: "0.10.6"
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: Build and validate distributions
+      run: |
+        uv build --out-dir dist
+        uv publish --dry-run --trusted-publishing never dist/*.whl dist/*.tar.gz
+        uv run --no-project python - <<'PY' > dist/SHA256SUMS
+        from hashlib import sha256
+        from pathlib import Path
+
+        dist = Path("dist")
+        artifacts = sorted((*dist.glob("*.whl"), *dist.glob("*.tar.gz")))
+        if len(list(dist.glob("*.whl"))) != 1 or len(list(dist.glob("*.tar.gz"))) != 1:
+            raise SystemExit(f"Expected one wheel and one sdist, found: {artifacts}")
+        for artifact in artifacts:
+            print(f"{sha256(artifact.read_bytes()).hexdigest()}  {artifact.name}")
+        PY
+
+    - name: Upload tested distributions
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: abxpkg-dist-${{ github.sha }}
+        path: |
+          dist/*.whl
+          dist/*.tar.gz
+          dist/SHA256SUMS
+        if-no-files-found: error
+        retention-days: 90
