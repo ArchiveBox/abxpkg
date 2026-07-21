@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   precheck:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -33,6 +33,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
       with:
+        version: "0.10.6"
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
@@ -52,8 +53,7 @@ jobs:
       run: uv run pytest -vv --tb=long -m "not live_required" README.md AGENTS.md skills docs
 
   live-documentation:
-    needs: precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -67,6 +67,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
       with:
+        version: "0.10.6"
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
@@ -86,8 +87,7 @@ jobs:
       run: uv run pytest -vv --tb=long -m live_required README.md AGENTS.md skills docs
 
   discover-standard-tests:
-    needs: precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       test-files: ${{ steps.set-matrix.outputs.test-files }}
@@ -120,7 +120,7 @@ jobs:
 
   build:
     name: ${{ matrix.target.os_name }} py${{ matrix.target.python_version }} ${{ matrix.test.name }}
-    needs: [precheck, discover-standard-tests]
+    needs: discover-standard-tests
     runs-on: ${{ matrix.target.os }}
     timeout-minutes: 20
     if: ${{ needs.discover-standard-tests.outputs.test-files != '[]' }}
@@ -129,10 +129,13 @@ jobs:
       max-parallel: 20
       matrix:
         target:
-        - os: ubuntu-latest
+        - os: ubuntu-24.04
           os_name: linux
           python_version: '3.12'
-        - os: macOS-latest
+        - os: ubuntu-24.04
+          os_name: linux
+          python_version: '3.13'
+        - os: macOS-15
           os_name: macOS
           python_version: '3.14'
         test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
@@ -148,6 +151,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
       with:
+        version: "0.10.6"
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
@@ -194,8 +198,7 @@ jobs:
       run: uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ matrix.test.path }}"
 
   discover-live-tests:
-    needs: precheck
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     outputs:
       live-tests: ${{ steps.set-matrix.outputs.live-tests }}
@@ -222,9 +225,9 @@ jobs:
 
           for os_target in $os_targets; do
             if [ "$os_target" = "linux" ]; then
-              os_json='"ubuntu-latest"'
+              os_json='"ubuntu-24.04"'
             else
-              os_json='"macOS-latest"'
+              os_json='"macOS-15"'
             fi
             entry="{\"name\":\"${test_name}-${os_target}\",\"path\":\"$test_file\",\"os\":${os_json},\"os_name\":\"${os_target}\",\"needs_docker\":$needs_docker}"
             if [ "$first" = true ]; then first=false; else json_array+=","; fi
@@ -243,7 +246,7 @@ jobs:
 
   live-integration:
     name: ${{ matrix.live.name }}
-    needs: [precheck, discover-live-tests]
+    needs: discover-live-tests
     runs-on: ${{ matrix.live.os }}
     timeout-minutes: 20
     if: ${{ needs.discover-live-tests.outputs.live-tests != '[]' }}
@@ -264,6 +267,7 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@v8.0.0
       with:
+        version: "0.10.6"
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 

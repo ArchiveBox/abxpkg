@@ -1,7 +1,9 @@
 import logging
+import multiprocessing
 import os
 import subprocess
 import tempfile
+import traceback
 from pathlib import Path
 
 import pytest
@@ -11,7 +13,93 @@ from abxpkg.base_types import bin_abspath
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
+def _concurrent_pnpm_bootstrap_worker(
+    lib_dir: str,
+    host_bin: str,
+    worker_index: int,
+    barrier,
+    results,
+) -> None:
+    os.environ["ABXPKG_LIB_DIR"] = lib_dir
+    os.environ["PATH"] = os.pathsep.join([host_bin, "/usr/bin", "/bin"])
+    os.environ["NPM_BINARY"] = str(Path(host_bin) / "npm")
+    os.environ.pop("PNPM_BINARY", None)
+    os.environ.pop("ABXPKG_NPM_CACHE_DIR", None)
+    os.environ["ABXPKG_TMP_CACHE_DIR"] = str(
+        Path(lib_dir) / "worker-caches" / str(worker_index),
+    )
+    provider = PnpmProvider(
+        install_root=Path(lib_dir) / "pnpm" / "packages" / f"worker-{worker_index}",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    try:
+        barrier.wait()
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+        version = installer.exec(cmd=("--version",), quiet=True)
+        results.put(
+            (
+                version.returncode == 0,
+                str(installer.loaded_abspath),
+                version.stderr,
+            ),
+        )
+    except BaseException:
+        results.put((False, "", traceback.format_exc()))
+
+
 class TestPnpmProvider:
+    def test_concurrent_managed_roots_share_one_safe_pnpm_bootstrap(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        npm_binary = Path(test_machine.require_tool("npm")).resolve()
+        node_binary = Path(test_machine.require_tool("node")).resolve()
+        lib_dir = tmp_path / "lib"
+        host_bin = tmp_path / "host-bin"
+        host_bin.mkdir()
+        (host_bin / "npm").symlink_to(npm_binary)
+        (host_bin / "node").symlink_to(node_binary)
+
+        process_count = 20
+        context = multiprocessing.get_context("spawn")
+        barrier = context.Barrier(process_count)
+        results = context.Queue()
+        processes = [
+            context.Process(
+                target=_concurrent_pnpm_bootstrap_worker,
+                args=(
+                    str(lib_dir),
+                    str(host_bin),
+                    worker_index,
+                    barrier,
+                    results,
+                ),
+            )
+            for worker_index in range(process_count)
+        ]
+
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(180)
+
+        outcomes = [results.get(timeout=5) for _ in processes]
+        assert all(process.exitcode == 0 for process in processes)
+        assert all(success for success, _path, _error in outcomes), outcomes
+        expected_installer = (
+            lib_dir / "npm" / "packages" / "pnpm" / "node_modules" / ".bin" / "pnpm"
+        )
+        assert expected_installer.is_file()
+        assert {Path(path).resolve() for _success, path, _error in outcomes} == {
+            expected_installer.resolve(),
+        }
+        npm_mutation_logs = list(
+            (lib_dir / "worker-caches").glob("*/npm/_logs/*-debug-0.log"),
+        )
+        assert len(npm_mutation_logs) == 1, npm_mutation_logs
+
     @pytest.mark.parametrize(
         ("node_version", "expected_package"),
         [

@@ -14,6 +14,9 @@ import subprocess
 import signal
 import functools
 import tempfile
+import threading
+import fcntl
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 from typing import (
@@ -123,6 +126,26 @@ ACTIVE_EXEC_LOG_PREFIX: ContextVar[str | None] = ContextVar(
     "abxpkg_active_exec_log_prefix",
     default=None,
 )
+MUTATION_LOCK_CONTENDED: ContextVar[bool] = ContextVar(
+    "abxpkg_mutation_lock_contended",
+    default=False,
+)
+_MUTATION_LOCK_STATE = threading.local()
+
+
+def mutation_locked(method):
+    """Serialize one provider root's complete mutation lifecycle."""
+
+    @functools.wraps(method)
+    def locked(self, *args, **kwargs):
+        with self.mutation_lock() as contended:
+            contention_token = MUTATION_LOCK_CONTENDED.set(contended)
+            try:
+                return method(self, *args, **kwargs)
+            finally:
+                MUTATION_LOCK_CONTENDED.reset(contention_token)
+
+    return locked
 
 
 def env_flag_is_true(name: str) -> bool:
@@ -547,6 +570,64 @@ class BinProvider(BaseModel):
             extra_env=extra_env,
             include_exec_only_env=include_exec_only_env,
         )
+
+    def mutation_lock_path(self) -> Path | None:
+        """Return the process-shared lock protecting this managed install root."""
+        if self.install_root is None:
+            return None
+        resource = str(self.install_root.expanduser().resolve(strict=False))
+        lock_name = hashlib.sha256(resource.encode()).hexdigest()
+        return Path("/tmp/abxpkg-mutation-locks") / f"{lock_name}.lock"
+
+    @contextmanager
+    def mutation_lock(self):
+        """Lock install/update/uninstall across instances, threads, and processes."""
+        lock_path = self.mutation_lock_path()
+        if lock_path is None or self.dry_run:
+            yield False
+            return
+
+        lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o1777)
+        try:
+            lock_path.parent.chmod(0o1777)
+        except PermissionError:
+            pass
+        process_id = os.getpid()
+        state_pid = getattr(_MUTATION_LOCK_STATE, "pid", None)
+        if state_pid != process_id:
+            _MUTATION_LOCK_STATE.pid = process_id
+            _MUTATION_LOCK_STATE.held = {}
+        held = _MUTATION_LOCK_STATE.held
+        lock_key = str(lock_path)
+        if lock_key in held:
+            lock_file, depth = held[lock_key]
+            held[lock_key] = (lock_file, depth + 1)
+            try:
+                yield MUTATION_LOCK_CONTENDED.get()
+            finally:
+                lock_file, depth = held[lock_key]
+                held[lock_key] = (lock_file, depth - 1)
+            return
+
+        lock_fd = os.open(
+            lock_path,
+            os.O_RDONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
+            0o666,
+        )
+        lock_file = os.fdopen(lock_fd)
+        contended = False
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            contended = True
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+        held[lock_key] = (lock_file, 1)
+        try:
+            yield contended
+        finally:
+            held.pop(lock_key, None)
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
 
     @staticmethod
     def _provider_identity(provider: "BinProvider") -> tuple[str, str, str]:
@@ -2616,6 +2697,7 @@ class BinProvider(BaseModel):
             )
 
     @final
+    @mutation_locked
     @log_method_call(include_result=True)
     @validate_call
     def install(
@@ -2682,9 +2764,13 @@ class BinProvider(BaseModel):
             )
             postinstall_scripts = True
         installed: ShallowBinary | None = None
-        if not no_cache and not self.dry_run:
+        if (not no_cache or MUTATION_LOCK_CONTENDED.get()) and not self.dry_run:
             try:
-                installed = self.load(bin_name=bin_name, quiet=True, no_cache=False)
+                installed = self.load(
+                    bin_name=bin_name,
+                    quiet=True,
+                    no_cache=no_cache,
+                )
             except Exception:
                 installed = None
             if installed is not None and (
@@ -2879,6 +2965,7 @@ class BinProvider(BaseModel):
         return result
 
     @final
+    @mutation_locked
     @log_method_call(include_result=True)
     @validate_call
     def update(
@@ -3019,6 +3106,7 @@ class BinProvider(BaseModel):
         return result
 
     @final
+    @mutation_locked
     @log_method_call(include_result=True)
     @validate_call
     def uninstall(

@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 import sys
 
@@ -23,6 +24,64 @@ from abxpkg import (
 
 
 class TestBinProvider:
+    def test_mutation_lock_is_root_keyed_reentrant_and_setup_neutral(self, tmp_path):
+        install_root = tmp_path / "not-created"
+        first = NpmProvider(install_root=install_root)
+        second = PnpmProvider(install_root=install_root)
+        disjoint = NpmProvider(install_root=tmp_path / "other-root")
+
+        first_lock_path = first.mutation_lock_path()
+        assert first_lock_path is not None
+        assert first_lock_path == second.mutation_lock_path()
+        assert first_lock_path != disjoint.mutation_lock_path()
+        assert first_lock_path.parent == Path("/tmp/abxpkg-mutation-locks")
+        assert not install_root.exists()
+
+        with first.mutation_lock() as outer_contended:
+            with second.mutation_lock() as inner_contended:
+                assert outer_contended is False
+                assert inner_contended is False
+
+        assert not install_root.exists()
+
+    def test_mutation_lock_serializes_same_root_across_instances_and_threads(
+        self,
+        tmp_path,
+    ):
+        install_root = tmp_path / "shared-root"
+        first = NpmProvider(install_root=install_root)
+        second = NpmProvider(install_root=install_root)
+        first_acquired = threading.Event()
+        release_first = threading.Event()
+        second_acquired = threading.Event()
+        contention: list[bool] = []
+
+        def hold_first_lock() -> None:
+            with first.mutation_lock():
+                first_acquired.set()
+                release_first.wait()
+
+        def wait_for_same_lock() -> None:
+            first_acquired.wait()
+            with second.mutation_lock() as contended:
+                contention.append(contended)
+                second_acquired.set()
+
+        first_thread = threading.Thread(target=hold_first_lock)
+        second_thread = threading.Thread(target=wait_for_same_lock)
+        first_thread.start()
+        second_thread.start()
+        assert first_acquired.wait(5)
+        assert not second_acquired.wait(0.1)
+        release_first.set()
+        first_thread.join(5)
+        second_thread.join(5)
+
+        assert not first_thread.is_alive()
+        assert not second_thread.is_alive()
+        assert second_acquired.is_set()
+        assert contention == [True]
+
     def test_default_env_path_keeps_ambient_and_standard_package_dirs(
         self,
         tmp_path,
