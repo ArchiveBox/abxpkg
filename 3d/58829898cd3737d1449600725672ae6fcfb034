@@ -1,0 +1,30 @@
+abxpkg/binprovider_brew.py
+  s_f8414d52051f83::t_c4c1b68e659590 50-54,93-96
+.github/ci_binaries.json
+  s_f8414d52051f83::t_1495d980bbda47 21,140-141
+  s_f8414d52051f83::t_51d014b4fb927c 37,39-41,55-57,69-71,96-98,108-110,116-118
+  s_f8414d52051f83::t_9c93b5c90a5b8b 13-20,126-139,142
+.github/ci_test_sections.sh
+  s_f8414d52051f83::t_17862008c79e58 1-64
+  s_f8414d52051f83::t_1495d980bbda47 65-72
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_6718138de8271c 83,172-177,182-191,288-292
+tests/test_envprovider.py
+  s_f8414d52051f83::t_c4c1b68e659590 201,215
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "3d58829898cd3737d1449600725672ae6fcfb034",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
