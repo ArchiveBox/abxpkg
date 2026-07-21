@@ -30,10 +30,30 @@ from .logging import (
     get_logger,
     log_subprocess_output,
 )
+from .config import merge_exec_path
 
 logger = get_logger(__name__)
 
 SYSTEM_TEMP_DIR = tempfile.gettempdir()
+
+
+def _resolve_pyinfra_brew_abspath() -> Path:
+    """Resolve brew once and return the launcher behind EnvProvider's projection."""
+    env_provider = EnvProvider()
+    brew = env_provider.load("brew", no_cache=True)
+    if not brew or not brew.loaded_abspath:
+        raise RuntimeError(
+            "Pyinfra Homebrew operations require brew to resolve through EnvProvider",
+        )
+    resolved_brew_abspath = env_provider._exec_bin_abspath(Path(brew.loaded_abspath))
+    if not resolved_brew_abspath.is_file() or not os.access(
+        resolved_brew_abspath,
+        os.X_OK,
+    ):
+        raise RuntimeError(
+            f"Pyinfra resolved an unusable Homebrew launcher: {resolved_brew_abspath}",
+        )
+    return resolved_brew_abspath
 
 
 def pyinfra_package_install(
@@ -59,15 +79,23 @@ def pyinfra_package_install(
         # TODO: non-stock pyinfra modules from other libraries?
         assert installer_module.startswith("operations.")
 
+    resolved_brew_abspath: Path | None = None
+    if installer_module == "operations.brew.packages":
+        # Pyinfra shells out to the literal command `brew`. Invoking the stable
+        # LIB_DIR/env/bin projection directly changes Homebrew's argv[0]-based
+        # prefix detection to LIB_DIR/env. Resolve it through EnvProvider once,
+        # then peel only that provider-owned projection so Pyinfra finds the
+        # original host/managed Homebrew launcher first on PATH.
+        resolved_brew_abspath = _resolve_pyinfra_brew_abspath()
+
     # Homebrew refuses to run as root, so when we're invoked as root we have
     # to drop privileges to the user that owns ``brew``. Previously this was
     # only wired up for the macOS auto-detect branch, which left live Linux
     # (``linuxbrew``) installs broken whenever the caller happened to be root.
     if installer_module == "operations.brew.packages" and os.geteuid() == 0:
         try:
-            brew = EnvProvider().load("brew", no_cache=True)
-            if brew and brew.loaded_abspath:
-                brew_owner_uid = Path(brew.loaded_abspath).resolve().stat().st_uid
+            if resolved_brew_abspath is not None:
+                brew_owner_uid = resolved_brew_abspath.resolve().stat().st_uid
                 if brew_owner_uid != 0:
                     _sudo_user = pwd.getpwuid(brew_owner_uid).pw_name
         except Exception:
@@ -139,6 +167,11 @@ def pyinfra_package_install(
         cmd = [pyinfra_abspath, "--yes", "@local", str(deploy_path)]
         env = os.environ.copy()
         env["TMPDIR"] = SYSTEM_TEMP_DIR
+        if resolved_brew_abspath is not None:
+            env["PATH"] = merge_exec_path(
+                str(resolved_brew_abspath.parent),
+                base_path=env.get("PATH", ""),
+            )
         proc = None
         sudo_failure_output = None
         if (

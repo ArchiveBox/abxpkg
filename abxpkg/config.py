@@ -7,7 +7,7 @@ import shlex
 from collections.abc import Iterable, Mapping, MutableMapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import ClassVar, Protocol, runtime_checkable
 
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
@@ -28,6 +28,7 @@ _FIRST_WRITER_ENV_KEYS = frozenset(
 @runtime_checkable
 class SupportsExecEnv(Protocol):
     PATH: str
+    EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]]
 
     def setup_PATH(self) -> None: ...
 
@@ -127,6 +128,7 @@ def build_exec_env(
     *,
     base_env: Mapping[str, str] | None = None,
     extra_env: Mapping[str, str] | None = None,
+    include_exec_only_env: bool = True,
 ) -> dict[str, str]:
     """Build the final env used for runtime execution.
 
@@ -196,6 +198,9 @@ def build_exec_env(
 
         provider.setup_PATH()
         provider_env = dict(provider.ENV)
+        if not include_exec_only_env:
+            for key in getattr(provider, "EXEC_ONLY_ENV_KEYS", ()):
+                provider_env.pop(key, None)
         for key in _FIRST_WRITER_ENV_KEYS:
             if key in first_writer_provider_keys:
                 provider_env.pop(key, None)

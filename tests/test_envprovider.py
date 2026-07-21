@@ -156,6 +156,62 @@ class TestEnvProvider:
         assert Path(result.args[0]) == host_brew
         assert Path(result.stdout.strip()) == host_prefix
 
+    def test_combined_dependency_env_does_not_retarget_projected_host_brew(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_brew = Path(test_machine.require_tool("brew")).resolve()
+        clean_env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"}
+        }
+        host_prefix_result = subprocess.run(
+            [str(host_brew), "--prefix"],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=clean_env,
+        )
+        host_prefix = Path(host_prefix_result.stdout.strip())
+
+        env_provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            PATH=str(host_brew.parent),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded = env_provider.load("brew", no_cache=True)
+        assert loaded is not None
+        assert loaded.loaded_abspath is not None
+
+        managed_brew = BrewProvider(
+            install_root=tmp_path / "lib" / "brew",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        combined_env = BrewProvider.build_exec_env(
+            providers=[env_provider, managed_brew],
+            base_env=clean_env,
+            include_exec_only_env=False,
+        )
+        assert "HOMEBREW_PREFIX" not in combined_env
+        assert "HOMEBREW_CELLAR" not in combined_env
+
+        result = loaded.exec(cmd=("--prefix",), env=combined_env)
+        assert result.returncode == 0, result.stderr
+        assert Path(result.stdout.strip()) == host_prefix
+
+        scoped_env = managed_brew.build_exec_env(
+            providers=[managed_brew],
+            base_env=clean_env,
+        )
+        assert scoped_env["HOMEBREW_PREFIX"] == str(managed_brew.install_root)
+        assert scoped_env["HOMEBREW_CELLAR"] == str(
+            managed_brew.install_root / "Cellar",
+        )
+
     def test_brew_provider_executes_projected_installer_through_env_provider(
         self,
         tmp_path,

@@ -1412,6 +1412,7 @@ def build_deps_from_exec_env(
         env = build_runtime_exec_env(
             binary,
             base_env=env,
+            include_exec_only_env=False,
         )
         if env_provider is not None:
             from .config import build_exec_env as build_provider_exec_env
@@ -1581,6 +1582,7 @@ def build_runtime_exec_env(
     runtime_binproviders: Iterable[BinProvider] = (),
     *,
     base_env: dict[str, str] | None = None,
+    include_exec_only_env: bool = True,
 ) -> dict[str, str]:
     from .config import build_exec_env as build_provider_exec_env
 
@@ -1601,6 +1603,7 @@ def build_runtime_exec_env(
             *other_runtime_binproviders,
         ],
         base_env=env,
+        include_exec_only_env=include_exec_only_env,
     )
 
 

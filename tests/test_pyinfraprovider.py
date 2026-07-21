@@ -1,19 +1,26 @@
-import shutil
 import subprocess
 import logging
+import os
+from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, SemVer
+from abxpkg import Binary, EnvProvider, SemVer
 from abxpkg.binprovider import BinProvider
-from abxpkg.binprovider_pyinfra import PyinfraProvider, pyinfra_package_install
+from abxpkg.binprovider_pyinfra import (
+    PyinfraProvider,
+    _resolve_pyinfra_brew_abspath,
+    pyinfra_package_install,
+)
+from abxpkg.config import merge_exec_path
 from abxpkg.exceptions import BinaryInstallError
 from typing import cast
 
 
 def _pyinfra_provider_for_host(test_machine):
     test_machine.require_tool("pyinfra")
-    if not shutil.which("apt-get"):
+    apt = EnvProvider().load("apt-get", no_cache=True)
+    if apt is None:
         test_machine.require_tool("brew")
     provider = PyinfraProvider(
         postinstall_scripts=True,
@@ -31,7 +38,7 @@ def _pyinfra_provider_for_host(test_machine):
             "ranger",
             "mc",
         )
-        if shutil.which("apt-get")
+        if apt is not None
         else (
             "hello",
             "jq",
@@ -47,6 +54,36 @@ def _pyinfra_provider_for_host(test_machine):
 
 
 class TestPyinfraProvider:
+    def test_brew_operations_put_resolved_launcher_before_env_projection(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("brew")
+        env_provider = EnvProvider()
+        projected = env_provider.load("brew", no_cache=True)
+        assert projected is not None
+        assert projected.loaded_abspath is not None
+        assert env_provider.bin_dir is not None
+        assert projected.loaded_abspath.parent == env_provider.bin_dir
+        assert projected.loaded_abspath.is_symlink()
+
+        resolved_brew = _resolve_pyinfra_brew_abspath()
+        pyinfra_path = merge_exec_path(
+            str(resolved_brew.parent),
+            base_path=str(env_provider.PATH),
+        )
+
+        assert Path(pyinfra_path.split(os.pathsep)[0]) == resolved_brew.parent
+        assert resolved_brew != projected.loaded_abspath
+        assert projected.loaded_abspath.is_symlink()
+        result = subprocess.run(
+            [str(resolved_brew), "--prefix"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert Path(result.stdout.strip()) == resolved_brew.parent.parent
+
     def test_install_timeout_is_enforced_for_custom_operation_runs(
         self,
         test_machine,

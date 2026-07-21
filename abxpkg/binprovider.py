@@ -459,6 +459,7 @@ class BinProvider(BaseModel):
     )  # e.g.  '/opt/homebrew/bin:/opt/archivebox/bin'
     INSTALLER_BIN: BinName = "env"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
+    EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
 
     euid: int | None = None
     install_root: Path | None = None
@@ -538,11 +539,13 @@ class BinProvider(BaseModel):
         *,
         base_env: Mapping[str, str] | None = None,
         extra_env: Mapping[str, str] | None = None,
+        include_exec_only_env: bool = True,
     ) -> dict[str, str]:
         return build_exec_env(
             providers=providers,
             base_env=base_env,
             extra_env=extra_env,
+            include_exec_only_env=include_exec_only_env,
         )
 
     @staticmethod

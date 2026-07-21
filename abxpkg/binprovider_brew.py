@@ -43,6 +43,12 @@ class BrewProvider(BinProvider):
     _log_emoji = "🍺"
     INSTALLER_BIN: BinName = "brew"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
+    # These variables control Homebrew itself. They belong on subprocesses
+    # executed by this provider, but must not leak into a combined dependency
+    # environment where `brew` may be a host binary selected by EnvProvider.
+    EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"HOMEBREW_PREFIX", "HOMEBREW_CELLAR"},
+    )
 
     PATH: PATHStr = f"{DEFAULT_LINUX_DIR}:{NEW_MACOS_DIR}:{OLD_MACOS_DIR}"  # Seeded with common brew bin roots; setup_PATH() lazily normalizes it to the resolved brew/runtime bin dirs.
     postinstall_scripts: bool | None = Field(
