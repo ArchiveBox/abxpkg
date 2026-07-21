@@ -22,6 +22,21 @@ class TestYarnProvider:
             assert berry_alias is not None, (
                 "Could not resolve the globally installed yarn-berry alias on PATH"
             )
+            # The CI dependency resolver exposes every selected binary through
+            # LIB_DIR/env/bin. Peel only that EnvProvider projection before
+            # inspecting npm's logical yarn-berry alias; the alias itself then
+            # points at the real `yarn` launcher directory YarnProvider needs.
+            if (
+                berry_alias.is_symlink()
+                and berry_alias.parent.name == "bin"
+                and berry_alias.parent.parent.name == "env"
+            ):
+                projection_target = berry_alias.readlink()
+                berry_alias = (
+                    projection_target
+                    if projection_target.is_absolute()
+                    else berry_alias.parent / projection_target
+                ).absolute()
             berry_link = berry_alias.readlink() if berry_alias.is_symlink() else None
             berry_bin_dir = (
                 (berry_alias.parent / berry_link).parent
