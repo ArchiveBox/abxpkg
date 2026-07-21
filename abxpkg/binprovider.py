@@ -3634,6 +3634,13 @@ class EnvProvider(BinProvider):
         bin_name: BinName,
         projected_abspath: HostBinPath,
     ) -> SemVer | None:
+        if str(bin_name) == "brew":
+            return self.get_version(
+                bin_name,
+                abspath=projected_abspath,
+                quiet=True,
+                no_cache=True,
+            )
         projected_path = Path(projected_abspath).absolute()
         token = ENV_PROJECTED_VERSION_PATH.set(projected_path)
         try:
