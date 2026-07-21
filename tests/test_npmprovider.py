@@ -6,8 +6,6 @@ import pytest
 
 from abxpkg import (
     Binary,
-    BrewProvider,
-    EnvProvider,
     NpmProvider,
     PnpmProvider,
     PuppeteerProvider,
@@ -16,20 +14,9 @@ from abxpkg import (
 
 
 class TestNpmProvider:
-    def test_installer_binary_respects_abxpkg_binproviders(self, monkeypatch):
-        monkeypatch.setenv("ABXPKG_BINPROVIDERS", "brew,env")
-        expected = Binary(
-            name="npm",
-            binproviders=[BrewProvider(), EnvProvider(install_root=None, bin_dir=None)],
-        ).load(no_cache=True)
+    def test_installer_binary_uses_host_first_provider_order(self, test_machine):
         installer = NpmProvider().INSTALLER_BINARY(no_cache=True)
-        assert expected is not None
-        assert expected.loaded_binprovider is not None
-        assert installer.loaded_binprovider is not None
-        assert installer.loaded_binprovider.name in {"brew", "env"}
-
-        monkeypatch.setenv("ABXPKG_BINPROVIDERS", "env")
-        installer = NpmProvider().INSTALLER_BINARY(no_cache=True)
+        test_machine.assert_shallow_binary_loaded(installer)
         assert installer.loaded_binprovider is not None
         assert installer.loaded_binprovider.name == "env"
 
@@ -194,7 +181,7 @@ class TestNpmProvider:
         self,
         test_machine,
     ):
-        test_machine.require_tool("node")
+        node = test_machine.require_tool("node")
         test_machine.require_tool("npm")
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -226,7 +213,7 @@ class TestNpmProvider:
             ).exists()
             before_proc = subprocess.run(
                 [
-                    "node",
+                    node,
                     "-e",
                     "require(require.resolve('puppeteer', {paths: [process.argv[1]]}));",
                     str(pnpm_root / "node_modules"),
@@ -283,7 +270,7 @@ class TestNpmProvider:
 
             proc = subprocess.run(
                 [
-                    "node",
+                    node,
                     "-e",
                     "require(require.resolve('puppeteer', {paths: [process.argv[1]]}));",
                     str(pnpm_root / "node_modules"),
