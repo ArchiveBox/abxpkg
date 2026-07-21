@@ -10,9 +10,52 @@ if [[ "$#" -eq 0 ]]; then
   exit 2
 fi
 
+# Homebrew installs can replace shared libraries used by already-discovered
+# Homebrew binaries. Resolve every system toolchain first, then discover and
+# project host language runtimes from the final host state. This keeps host
+# binaries first when they remain compatible and lets abxpkg select the managed
+# provider when a package-manager mutation invalidated one.
+requested_sections=("$@")
+section_priority=(
+  manager_binaries
+  linux_binaries
+  go_binaries
+  cargo_binaries
+  gem_binaries
+  python_cli_binaries
+  node_npm_binaries
+  pnpm_binaries
+  yarn_binaries
+  bun_binaries
+  deno_binaries
+  host_utility_binaries
+  docker_binaries
+)
+ordered_sections=()
+for priority_section in "${section_priority[@]}"; do
+  for requested_section in "${requested_sections[@]}"; do
+    if [[ "$requested_section" == "$priority_section" ]]; then
+      ordered_sections+=("$requested_section")
+      break
+    fi
+  done
+done
+for requested_section in "${requested_sections[@]}"; do
+  section_ordered=false
+  for ordered_section in "${ordered_sections[@]}"; do
+    if [[ "$requested_section" == "$ordered_section" ]]; then
+      section_ordered=true
+      break
+    fi
+  done
+  if [[ "$section_ordered" == false ]]; then
+    ordered_sections+=("$requested_section")
+  fi
+done
+
 env_json="$(
   args=()
-  for section in "$@"; do
+  for section in "${ordered_sections[@]}"; do
     args+=("--deps-from=$CONFIG_PATH:$section")
   done
   uv run --project "$REPO_ROOT" abxpkg env --install --json "${args[@]}"
