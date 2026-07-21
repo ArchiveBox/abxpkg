@@ -1,0 +1,31 @@
+.github/workflows/deploy-pages.yml
+  s_f8414d52051f83::t_38e0f7f3f3febf 14
+  s_f8414d52051f83::t_368e555fb3ec1d 15
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_368e555fb3ec1d 17-18
+  s_f8414d52051f83::t_23910d6b70e8cc 93,98-102,104-106,109,136,180,190-193,211
+  s_f8414d52051f83::t_184cb2f1636308 170-171,173-177,179,181-189,212-219,330
+.github/ci_standard_test_shards.py
+  s_f8414d52051f83::t_23910d6b70e8cc 1-57,59-75,79-83,85-91
+  s_f8414d52051f83::t_184cb2f1636308 58,76-78,84
+bin/setup_monorepo.sh
+  s_f8414d52051f83::t_0e1628ad0f64ee 36-160,274-275
+pyproject.toml
+  s_f8414d52051f83::t_8c0be5adf1762d 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.14",
+  "base_commit_sha": "d8c60ba7aa83fdf22ea2c831ea027c9e0c5f4052",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
