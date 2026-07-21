@@ -127,14 +127,15 @@ require_clean_exact_checkout() {
 require_successful_workflows() {
     local slug="$1"
     local release_sha="$2"
-    local workflow_spec workflow_file workflow_name runs state conclusion run_id attempts
+    local workflow_spec workflow_file workflow_name runs state run_id attempts
 
     for workflow_spec in "${REQUIRED_WORKFLOWS[@]}"; do
         workflow_file="${workflow_spec%%|*}"
         workflow_name="${workflow_spec#*|}"
         attempts=0
 
-        while :; do
+        run_id=""
+        while [[ "${attempts}" -lt 12 ]]; do
             runs="$(env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run list \
                 --repo "${slug}" \
                 --workflow "${workflow_file}" \
@@ -145,7 +146,7 @@ require_successful_workflows() {
             state="$(jq -r --arg name "${workflow_name}" --arg sha "${release_sha}" '
                 [.[] | select(.workflowName == $name and .headSha == $sha and .event == "push")]
                 | if length == 1
-                  then (.[0] | [.databaseId, .status, (.conclusion // "")] | @tsv)
+                  then (.[0].databaseId | tostring)
                   elif length == 0 then "missing"
                   else "ambiguous"
                   end
@@ -153,32 +154,34 @@ require_successful_workflows() {
 
             case "${state}" in
                 missing)
+                    attempts=$((attempts + 1))
+                    if [[ "${attempts}" -lt 12 ]]; then
+                        sleep 5
+                    fi
+                    continue
                     ;;
                 ambiguous)
                     echo "Found multiple ${workflow_name} push runs for ${release_sha}; refusing an ambiguous release gate" >&2
                     return 1
                     ;;
                 *)
-                    IFS=$'\t' read -r run_id state conclusion <<<"${state}"
-                    if [[ "${state}" == "completed" ]]; then
-                        if [[ "${conclusion}" != "success" ]]; then
-                            echo "Required workflow ${workflow_name} concluded ${conclusion} for ${release_sha}" >&2
-                            gh run view "${run_id}" --repo "${slug}"
-                            return 1
-                        fi
-                        echo "Required workflow passed: ${workflow_name} (${run_id})"
-                        break
-                    fi
+                    run_id="${state}"
+                    break
                     ;;
             esac
-
-            attempts=$((attempts + 1))
-            if [[ "${attempts}" -ge 180 ]]; then
-                echo "Timed out waiting for required workflow ${workflow_name} on ${release_sha}" >&2
-                return 1
-            fi
-            sleep 10
         done
+
+        if [[ -z "${run_id}" ]]; then
+            echo "Required workflow ${workflow_name} was not discovered for ${release_sha} after 12 attempts" >&2
+            return 1
+        fi
+
+        echo "Watching required workflow: ${workflow_name} (${run_id})"
+        env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run watch \
+            "${run_id}" \
+            --repo "${slug}" \
+            --exit-status
+        echo "Required workflow passed: ${workflow_name} (${run_id})"
     done
 }
 

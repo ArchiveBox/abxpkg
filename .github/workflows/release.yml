@@ -27,7 +27,6 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     environment: pypi
-    timeout-minutes: 40
     env:
       RELEASE_SHA: ${{ github.event_name == 'push' && github.sha || inputs.release_sha }}
       RELEASE_BRANCH: main
