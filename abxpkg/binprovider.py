@@ -3496,20 +3496,7 @@ class EnvProvider(BinProvider):
         # managed link hop so host launchers retain their original argv[0],
         # and a second env/bin hop would become argv[0] instead. Preserve the
         # final host/package-manager symlink; only peel abxpkg env/bin links.
-        seen_projection_paths: set[Path] = set()
-        while (
-            source_path.is_symlink()
-            and source_path.parent.name == "bin"
-            and source_path.parent.parent.name == "env"
-            and source_path not in seen_projection_paths
-        ):
-            seen_projection_paths.add(source_path)
-            projected_target = source_path.readlink()
-            source_path = (
-                projected_target
-                if projected_target.is_absolute()
-                else source_path.parent / projected_target
-            ).absolute()
+        source_path = self._host_projection_target(source_path)
         target = self._pnpm_launcher_target(source_path) or source_path
 
         link_name = Path(str(bin_name)).name
@@ -3555,6 +3542,24 @@ class EnvProvider(BinProvider):
             if temp_link.exists() or temp_link.is_symlink():
                 temp_link.unlink()
         return TypeAdapter(HostBinPath).validate_python(link_path)
+
+    @staticmethod
+    def _host_projection_target(source_path: Path) -> Path:
+        seen_projection_paths: set[Path] = set()
+        while (
+            source_path.is_symlink()
+            and source_path.parent.name == "bin"
+            and source_path.parent.parent.name == "env"
+            and source_path not in seen_projection_paths
+        ):
+            seen_projection_paths.add(source_path)
+            projected_target = source_path.readlink()
+            source_path = (
+                projected_target
+                if projected_target.is_absolute()
+                else source_path.parent / projected_target
+            ).absolute()
+        return source_path
 
     @staticmethod
     def _pnpm_launcher_target(source_path: Path) -> Path | None:
@@ -3836,6 +3841,10 @@ class EnvProvider(BinProvider):
                 candidates.append(abspath)
 
         for abspath in candidates:
+            if bin_name_str == "brew":
+                abspath = TypeAdapter(HostBinPath).validate_python(
+                    self._host_projection_target(Path(abspath)),
+                )
             version = self.get_version(
                 bin_name_str,
                 abspath=abspath,
