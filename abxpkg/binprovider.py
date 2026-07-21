@@ -3580,16 +3580,8 @@ class EnvProvider(BinProvider):
             return False
 
         absolute_abspath = Path(abspath).expanduser().absolute()
-        if self.bin_dir is not None and absolute_abspath.parent == self.bin_dir:
-            derived_env_path = self.derived_env_path
-            if derived_env_path and derived_env_path.is_file():
-                for record in load_derived_cache(derived_env_path).values():
-                    if (
-                        isinstance(record, dict)
-                        and record.get("provider_name") == self.name
-                        and record.get("abspath") == str(absolute_abspath)
-                    ):
-                        return False
+        if self._projection_cache_record(absolute_abspath) is not None:
+            return False
 
         lib_dir = self.install_root.parent
         if not lib_dir.is_dir():
@@ -3606,6 +3598,73 @@ class EnvProvider(BinProvider):
             return True
 
         return False
+
+    def _projection_cache_record(
+        self,
+        abspath: HostBinPath | Path,
+        bin_name: BinName | None = None,
+    ) -> dict[str, Any] | None:
+        absolute_abspath = Path(abspath).expanduser().absolute()
+        if self.bin_dir is None or absolute_abspath.parent != self.bin_dir:
+            return None
+        derived_env_path = self.derived_env_path
+        if not derived_env_path or not derived_env_path.is_file():
+            return None
+        for record in load_derived_cache(derived_env_path).values():
+            if (
+                isinstance(record, dict)
+                and record.get("provider_name") == self.name
+                and record.get("cache_kind") == "projection"
+                and record.get("abspath") == str(absolute_abspath)
+                and (bin_name is None or record.get("bin_name") == str(bin_name))
+            ):
+                return record
+        return None
+
+    def _try_load_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool = True,
+        no_cache: bool = False,
+    ) -> ShallowBinary | None:
+        projection_record = self._projection_cache_record(
+            installed_abspath,
+            bin_name,
+        )
+        result = super()._try_load_at_abspath(
+            bin_name,
+            installed_abspath,
+            quiet=quiet,
+            no_cache=no_cache,
+        )
+        if result is None or projection_record is None:
+            return result
+
+        resolved_provider = self._resolved_provider_from_cache_record(
+            projection_record,
+        )
+        if (
+            no_cache
+            and result.loaded_version is not None
+            and result.loaded_sha256 is not None
+        ):
+            self.write_cached_binary(
+                bin_name,
+                installed_abspath,
+                result.loaded_version,
+                result.loaded_sha256,
+                resolved_provider_name=resolved_provider.name,
+                resolved_provider=resolved_provider,
+                cache_kind="projection",
+            )
+        return result.model_copy(
+            update={
+                "loaded_binprovider": resolved_provider,
+                "binproviders": [resolved_provider],
+            },
+        )
 
     def python_abspath_handler(
         self,
@@ -3646,6 +3705,15 @@ class EnvProvider(BinProvider):
             # location so package-manager launchers that resolve files relative
             # to argv[0] keep working.
             return TypeAdapter(HostBinPath).validate_python(explicit_path)
+
+        if self.bin_dir is not None:
+            projected_abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
+            if (
+                projected_abspath is not None
+                and self._projection_cache_record(projected_abspath, str(bin_name))
+                is not None
+            ):
+                return projected_abspath
 
         search_paths = []
         for entry in str(self.PATH or "").split(os.pathsep):

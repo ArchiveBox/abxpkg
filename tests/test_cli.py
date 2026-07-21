@@ -247,6 +247,22 @@ def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
     assert projected.is_symlink()
     assert projected.resolve().is_relative_to(package_root / "node_modules" / "pnpm")
     assert payload["PATH"].split(os.pathsep)[0] == str(projected.parent)
+    projection_records = [
+        record
+        for record in load_derived_cache(lib_dir / "env" / "derived.env").values()
+        if record.get("bin_name") == "pnpm" and record.get("cache_kind") == "projection"
+    ]
+    assert len(projection_records) == 1
+    assert projection_records[0]["provider_name"] == "env"
+    assert projection_records[0]["resolved_provider_name"] == "npm"
+    loaded_projection = EnvProvider(install_root=lib_dir / "env").load(
+        "pnpm",
+        no_cache=True,
+    )
+    assert loaded_projection is not None
+    assert loaded_projection.loaded_abspath == projected
+    assert loaded_projection.loaded_binprovider is not None
+    assert loaded_projection.loaded_binprovider.name == "npm"
 
     version = _run_abxpkg_cli(
         f"--lib={lib_dir}",

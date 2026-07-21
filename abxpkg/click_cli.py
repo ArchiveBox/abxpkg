@@ -1395,13 +1395,15 @@ def build_deps_from_exec_env(
                 projected_abspath,
             )
             if binary.loaded_version is not None and binary.loaded_sha256 is not None:
+                assert binary.loaded_binprovider is not None
                 projection_provider.write_cached_binary(
                     Path(dep_name).name,
                     projected_abspath,
                     binary.loaded_version,
                     binary.loaded_sha256,
-                    resolved_provider_name="env",
-                    resolved_provider=projection_provider,
+                    resolved_provider_name=binary.loaded_binprovider.name,
+                    resolved_provider=binary.loaded_binprovider,
+                    cache_kind="projection",
                 )
             env_provider = projection_provider
         env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
