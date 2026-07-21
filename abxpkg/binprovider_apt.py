@@ -183,8 +183,6 @@ class AptProvider(BinProvider):
                 f"{self.__class__.__name__}.INSTALLER_BIN is not available on this host: {self.INSTALLER_BIN}",
             )
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
-
         with self.apt_lock():
             if (
                 not _LAST_UPDATE_CHECK

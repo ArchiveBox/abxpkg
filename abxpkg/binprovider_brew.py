@@ -322,8 +322,6 @@ class BrewProvider(BinProvider):
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {self.INSTALLER_BIN} install {install_args}')
-
         assert postinstall_scripts is not None
         if (
             not _LAST_UPDATE_CHECK
@@ -613,40 +611,6 @@ class BrewProvider(BinProvider):
             except Exception:
                 pass
 
-        # This code works but there's no need, the method above is much faster:
-
-        # # try checking filesystem or using brew list to get the Cellar bin path (faster than brew info)
-        # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
-        #     try:
-        #         paths = self.exec(bin_name=self._require_installer_bin(), cmd=[
-        #             'list',
-        #             '--formulae',
-        #             package,
-        #         ], timeout=self.version_timeout, quiet=True).stdout.strip().split('\n')
-        #         # /opt/homebrew/Cellar/curl/8.10.1/bin/curl
-        #         # /opt/homebrew/Cellar/curl/8.10.1/bin/curl-config
-        #         # /opt/homebrew/Cellar/curl/8.10.1/include/curl/ (12 files)
-        #         return [line for line in paths if '/Cellar/' in line and line.endswith(f'/bin/{bin_name}')][0].strip()
-        #     except Exception:
-        #         pass
-
-        # # fallback to using brew info to get the Cellar bin path
-        # for package in (self.get_install_args(str(bin_name)) or [str(bin_name)]):
-        #     try:
-        #         info_lines = self.exec(bin_name=self._require_installer_bin(), cmd=[
-        #             'info',
-        #             '--quiet',
-        #             package,
-        #         ], timeout=self.version_timeout, quiet=True).stdout.strip().split('\n')
-        #         # /opt/homebrew/Cellar/curl/8.10.0 (530 files, 4MB)
-        #         cellar_path = [line for line in info_lines if '/Cellar/' in line][0].rsplit(' (', 1)[0]
-        #         abspath = bin_abspath(bin_name, PATH=f'{cellar_path}/bin')
-        #         if abspath:
-        #             return abspath
-        #     except Exception:
-        #         pass
-        # return None
-
     def default_version_handler(
         self,
         bin_name: BinName,
@@ -655,8 +619,6 @@ class BrewProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> SemVer | None:
-        # print(f'[*] {self.__class__.__name__}: Getting version for {bin_name}...')
-
         # shortcut: if we already have the Cellar abspath, extract the version from it
         if abspath and "/Cellar/" in str(abspath):
             # /opt/homebrew/Cellar/curl/8.10.1/bin/curl -> 8.10.1

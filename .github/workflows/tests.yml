@@ -131,13 +131,22 @@ jobs:
         target:
         - os: ubuntu-24.04
           os_name: linux
-          python_version: '3.12'
+          python_version: '3.12.13'
         - os: ubuntu-24.04
           os_name: linux
-          python_version: '3.13'
+          python_version: '3.13.14'
+        - os: ubuntu-24.04
+          os_name: linux
+          python_version: '3.14.6'
         - os: macOS-15
           os_name: macOS
-          python_version: '3.14'
+          python_version: '3.12.10'
+        - os: macOS-15
+          os_name: macOS
+          python_version: '3.13.13'
+        - os: macOS-15
+          os_name: macOS
+          python_version: '3.14.6'
         test: ${{ fromJson(needs.discover-standard-tests.outputs.test-files) }}
 
     steps:

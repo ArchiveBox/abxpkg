@@ -70,8 +70,6 @@ class SemVer(SemVerTuple):
         '2024.04.09'                               -> (2024, 4, 9)
 
         """
-        # print('INITIAL_VALUE', type(version_stdout).__name__, version_stdout)
-
         if isinstance(version_stdout, (tuple, list)):
             version_stdout = ".".join(str(chunk) for chunk in version_stdout)
         elif isinstance(version_stdout, bytes):
@@ -81,7 +79,6 @@ class SemVer(SemVerTuple):
 
         # no text to work with, return None immediately
         if not version_stdout.strip():
-            # raise Exception('Tried to parse semver from empty version output (is binary installed and available?)')
             return None
 
         def just_numbers(col):
@@ -119,23 +116,7 @@ class SemVer(SemVerTuple):
     def __str__(self):
         return ".".join(str(chunk) for chunk in self)
 
-    # Not needed as long as we dont stray any further from a basic NamedTuple
-    # if we start overloading more methods or it becomes a fully custom type, then we probably need this:
-    # @classmethod
-    # def __get_pydantic_core_schema__(cls, source: Type[Any], handler: GetCoreSchemaHandler) -> core_schema.CoreSchema:
-    #     default_schema = handler(source)
-    #     return core_schema.no_info_after_validator_function(
-    #         cls.parse,
-    #         default_schema,
-    #         serialization=core_schema.plain_serializer_function_ser_schema(
-    #             lambda semver: str(semver),
-    #             info_arg=False,
-    #             return_schema=core_schema.str_schema(),
-    #         ),
-    #     )
 
-
-# @validate_call
 def bin_version(bin_path: HostBinPath, args=("--version",)) -> SemVer | None:
     return SemVer(
         subprocess.run(

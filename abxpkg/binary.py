@@ -85,9 +85,6 @@ class Binary(ShallowBinary):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        # assert self.name, 'Binary.name must not be empty'
-        # self.description = self.description or self.name
-
         assert self.binproviders, f"No providers were given for package {self.name}"
 
         # pull in any overrides from the binproviders
@@ -157,7 +154,6 @@ class Binary(ShallowBinary):
         )
         for binprovider in self.binproviders:
             if not binprovider.PATH:
-                # print('skipping provider', binprovider.name, binprovider.PATH)
                 continue
             for abspath in bin_abspaths(self.name, PATH=binprovider.PATH):
                 existing = all_bin_abspaths.get(binprovider.name, [])
@@ -204,7 +200,6 @@ class Binary(ShallowBinary):
         return True
 
     @log_method_call()
-    # @validate_call
     def get_binprovider(
         self,
         binprovider_name: BinProviderName,
@@ -303,7 +298,6 @@ class Binary(ShallowBinary):
             )
             return self
 
-        # logger.info("Installing %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         binary_postinstall_scripts = (
@@ -337,7 +331,6 @@ class Binary(ShallowBinary):
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
-                    # print('INSTALLED', self.name, installed_bin)
                     return self._validated_loaded_copy(
                         provider,
                         abspath=installed_bin.loaded_abspath,
@@ -379,7 +372,6 @@ class Binary(ShallowBinary):
             )
             return self
 
-        # logger.info("Loading %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         for binprovider in self._binprovider_order(binproviders):
@@ -391,7 +383,6 @@ class Binary(ShallowBinary):
                 )
                 installed_bin = provider.load(self.name, no_cache=no_cache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
-                    # print('LOADED', binprovider, self.name, installed_bin)
                     return self._validated_loaded_copy(
                         provider,
                         abspath=installed_bin.loaded_abspath,
@@ -432,7 +423,6 @@ class Binary(ShallowBinary):
             )
             return self
 
-        # logger.info("Updating %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         binary_postinstall_scripts = (
@@ -498,7 +488,6 @@ class Binary(ShallowBinary):
             )
             return self
 
-        # logger.info("Uninstalling %s binary", self.name)
         inner_exc: Exception | None = None
         errors = {}
         binary_postinstall_scripts = (

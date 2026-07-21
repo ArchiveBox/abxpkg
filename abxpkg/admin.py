@@ -34,12 +34,3 @@ def register_admin_views(admin_site: admin.AdminSite):
 
 
 register_admin_views(admin.site)
-
-# if you've implemented a custom admin site, you should call this function on your site
-
-# class YourSiteAdmin(admin.AdminSite):
-#     ...
-#
-# custom_site = YourSiteAdmin()
-#
-# register_admin_views(custom_site)

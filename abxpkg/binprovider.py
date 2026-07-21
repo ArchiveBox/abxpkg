@@ -215,7 +215,6 @@ def binprovider_cache(binprovider_method):
                 else:
                     return cached_value
             else:
-                # print('USING CACHED VALUE:', f'{self.__class__.__name__}.{method_name}({bin_name}, {kwargs}) -> {method_cache[bin_name]}')
                 return cached_value
 
         return_value = binprovider_method(self, bin_name, **kwargs)
@@ -401,7 +400,6 @@ class ShallowBinary(BaseModel):
                 return url
         return None
 
-    # @validate_call
     @log_method_call(include_result=True)
     def exec(
         self,
@@ -1552,7 +1550,6 @@ class BinProvider(BaseModel):
 
         return updated_binprovider
 
-    # @validate_call
     @log_method_call(include_result=True)
     def _get_handler_keys(
         self,
@@ -1584,7 +1581,6 @@ class BinProvider(BaseModel):
                     break
             if handler:
                 break
-        # print('getting handler for action', bin_name, handler_type, handler_func)
         assert handler, (
             f"🚫 BinProvider(name={self.name}) has no {handler_type} handler implemented for Binary(name={bin_name})"
         )
@@ -1612,7 +1608,6 @@ class BinProvider(BaseModel):
 
         return literal_handler
 
-    # @validate_call
     @log_method_call(include_result=True)
     def _get_compatible_kwargs(
         self,
@@ -1644,12 +1639,6 @@ class BinProvider(BaseModel):
             handler_type=handler_type,  # e.g. abspath, version, install_args, install
         )
 
-        # def timeout_handler(signum, frame):
-        # raise TimeoutError(f'{self.__class__.__name__} Timeout while running {handler_type} for Binary {bin_name}')
-
-        # signal ONLY WORKS IN MAIN THREAD, not a viable solution for timeout enforcement! breaks in prod
-        # signal.signal(signal.SIGALRM, handler=timeout_handler)
-        # signal.alarm(timeout)
         try:
             if not func_takes_args_or_kwargs(handler_func):
                 # if it's a pure argless lambda/func, dont pass bin_path and other **kwargs
@@ -1668,12 +1657,9 @@ class BinProvider(BaseModel):
                 return handler_func(self, bin_name, **compatible_kwargs)
         except TimeoutError:
             raise
-        # finally:
-        #     signal.alarm(0)
 
     # DEFAULT HANDLERS, override these in subclasses as needed:
 
-    # @validate_call
     def default_abspath_handler(
         self,
         bin_name: BinName | HostBinPath,
@@ -1698,7 +1684,6 @@ class BinProvider(BaseModel):
 
         return bin_abspath(bin_name, PATH=self.PATH)
 
-    # @validate_call
     def default_version_handler(
         self,
         bin_name: BinName,
@@ -1713,17 +1698,13 @@ class BinProvider(BaseModel):
             timeout=timeout,
         )
 
-    # @validate_call
     def default_install_args_handler(
         self,
         bin_name: BinName,
         **context,
     ) -> "InstallArgsFuncReturnValue":  # aka List[str] aka InstallArgs
-        # print(f'[*] {self.__class__.__name__}: Getting install command for {bin_name}')
-        # ... install command calculation logic here
         return [bin_name]
 
-    # @validate_call
     def default_docs_url_handler(
         self,
         bin_name: BinName,
@@ -1786,7 +1767,6 @@ class BinProvider(BaseModel):
     ) -> "InstallArgsFuncReturnValue":
         return self.default_install_args_handler(bin_name, **context)
 
-    # @validate_call
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(
         self,
@@ -1807,19 +1787,8 @@ class BinProvider(BaseModel):
         install_args = install_args or self.get_install_args(bin_name)
         self.INSTALLER_BINARY(no_cache=no_cache)
 
-        # print(f'[*] {self.__class__.__name__}: Installing {bin_name}: {install_args}')
-
-        # ... override the default install logic here ...
-
-        # installer_binary = self.INSTALLER_BINARY(no_cache=no_cache); assert installer_binary; proc = self.exec(bin_name=installer_binary.loaded_abspath, cmd=['install', *install_args], timeout=self.install_timeout)
-        # if not proc.returncode == 0:
-        #     print(proc.stdout.strip())
-        #     print(proc.stderr.strip())
-        #     raise Exception(f'{self.name} Failed to install {bin_name}: {proc.stderr.strip()}\n{proc.stdout.strip()}')
-
         return f"🚫 {self.name} BinProvider does not implement any .install() method"
 
-    # @validate_call
     @remap_kwargs({"packages": "install_args"})
     def default_update_handler(
         self,
@@ -1834,7 +1803,6 @@ class BinProvider(BaseModel):
         self.INSTALLER_BINARY(no_cache=no_cache)
         return f"🚫 {self.name} BinProvider does not implement any .update() method"
 
-    # @validate_call
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
         self,
@@ -2232,7 +2200,6 @@ class BinProvider(BaseModel):
     def _is_managed_by_other_provider(self, abspath: HostBinPath | Path) -> bool:
         return False
 
-    # @validate_call
     def exec(
         self,
         bin_name: BinName | HostBinPath,
@@ -2455,7 +2422,6 @@ class BinProvider(BaseModel):
 
     @final
     @binprovider_cache
-    # @validate_call
     @log_method_call(include_result=True)
     def get_abspaths(
         self,
@@ -2476,7 +2442,6 @@ class BinProvider(BaseModel):
 
     @final
     @binprovider_cache
-    # @validate_call
     @log_method_call(include_result=True)
     def get_sha256(
         self,
@@ -2498,7 +2463,6 @@ class BinProvider(BaseModel):
 
     @final
     @binprovider_cache
-    # @validate_call
     @log_method_call(include_result=True)
     def get_abspath(
         self,
@@ -2518,12 +2482,6 @@ class BinProvider(BaseModel):
                 ),
             )
         except Exception:
-            # logger.warning(
-            #     "Provider %s failed to resolve abspath for %s: %s",
-            #     self.name,
-            #     bin_name,
-            #     err,
-            # )
             if not quiet:
                 raise
         if not abspath:
@@ -2533,7 +2491,6 @@ class BinProvider(BaseModel):
 
     @final
     @binprovider_cache
-    # @validate_call
     @log_method_call(include_result=True)
     def get_version(
         self,
@@ -2595,7 +2552,6 @@ class BinProvider(BaseModel):
 
     @final
     @binprovider_cache
-    # @validate_call
     @log_method_call(include_result=True)
     def get_install_args(
         self,
@@ -2613,12 +2569,6 @@ class BinProvider(BaseModel):
                 ),
             )
         except Exception:
-            # logger.warning(
-            #     "Provider %s failed to resolve install args for %s: %s",
-            #     self.name,
-            #     bin_name,
-            #     err,
-            # )
             if not quiet:
                 raise
 

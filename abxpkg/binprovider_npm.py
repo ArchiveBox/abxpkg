@@ -684,8 +684,6 @@ class NpmProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
-        # print(self.__class__.__name__, 'on_get_abspath', bin_name)
-
         # try searching for the bin_name in BinProvider.PATH first (fastest)
         try:
             abspath = super().default_abspath_handler(bin_name, **context)

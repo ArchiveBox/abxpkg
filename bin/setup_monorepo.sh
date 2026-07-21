@@ -68,12 +68,7 @@ ensure_ldap_build_deps() {
 }
 
 sync_workspace() {
-    if uv sync --all-packages --all-extras --no-cache --active; then
-        return
-    fi
-
-    warn "'uv sync --all-packages --all-extras --no-cache --active' failed; retrying without --all-extras"
-    uv sync --all-packages --no-cache --active
+    uv sync --all-packages --all-extras --no-cache --active
 }
 
 ensure_setup_link() {

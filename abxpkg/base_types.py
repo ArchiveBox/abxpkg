@@ -125,7 +125,6 @@ def func_takes_args_or_kwargs(lambda_func: Callable[..., Any]) -> bool:
     )
 
 
-# @validate_call
 def bin_name(bin_path_or_name: str | Path) -> str:
     """
     - wget -> wget
@@ -168,14 +167,12 @@ def bin_name(bin_path_or_name: str | Path) -> str:
     assert name.replace("@", "")[0].isalpha(), (
         "Binary names must start with a letter or @"
     )
-    # print('PARSING BIN NAME', bin_path_or_name, '->', name)
     return name
 
 
 BinName = Annotated[str, AfterValidator(bin_name)]
 
 
-# @validate_call
 def path_is_file(path: Path | str) -> Path:
     path = Path(path) if isinstance(path, str) else path
     assert os.path.isfile(path) and os.access(path, os.R_OK), (
@@ -187,7 +184,6 @@ def path_is_file(path: Path | str) -> Path:
 HostExistsPath = Annotated[Path, AfterValidator(path_is_file)]
 
 
-# @validate_call
 def path_is_executable(path: HostExistsPath) -> HostExistsPath:
     assert os.path.isfile(path) and os.access(path, os.X_OK), (
         f"Path is not executable (fix by running chmod +x {path})"
@@ -195,7 +191,6 @@ def path_is_executable(path: HostExistsPath) -> HostExistsPath:
     return path
 
 
-# @validate_call
 def path_is_script(path: HostExistsPath) -> HostExistsPath:
     SCRIPT_EXTENSIONS = (".py", ".js", ".sh")
     assert path.suffix.lower() in SCRIPT_EXTENSIONS, (
@@ -207,7 +202,6 @@ def path_is_script(path: HostExistsPath) -> HostExistsPath:
 HostExecutablePath = Annotated[HostExistsPath, AfterValidator(path_is_executable)]
 
 
-# @validate_call
 def path_is_abspath(path: Path) -> Path:
     path = path.expanduser().absolute()  # resolve ~/ -> /home/<username/ and ../../
     assert (
@@ -224,7 +218,6 @@ HostBinPath = Annotated[
 # not all bins need to be executable to be bins, some are scripts
 
 
-# @validate_call
 def bin_abspath(
     bin_path_or_name: str | BinName | Path,
     PATH: PATHStr | None = None,
@@ -247,29 +240,23 @@ def bin_abspath(
     else:
         # not a path yet, get path using shutil.which
         binpath = shutil.which(bin_path_or_name, mode=os.X_OK, path=PATH)
-        # print(bin_path_or_name, PATH.split(':'), binpath, 'GOPINGNGN')
         if not binpath:
             # some bins dont show up with shutil.which (e.g. django-admin.py)
             for path in PATH.split(os.pathsep):
                 if is_forbidden_convenience_lib_bin(path):
                     continue
                 bin_dir = Path(path)
-                # print('BIN_DIR', bin_dir, bin_dir.is_dir())
                 if not (os.path.isdir(bin_dir) and os.access(bin_dir, os.R_OK)):
-                    # raise Exception(f'Found invalid dir in $PATH: {bin_dir}')
                     continue
                 bin_file = bin_dir / bin_path_or_name
-                # print(bin_file, path, bin_file.exists(), bin_file.is_file(), bin_file.is_symlink())
                 if os.path.isfile(bin_file) and os.access(bin_file, os.R_OK):
                     return bin_file
 
             return None
-        # print(binpath, PATH)
         if (
             is_forbidden_convenience_lib_bin(Path(binpath).parent)
             or str(Path(binpath).parent) not in PATH
         ):
-            # print('WARNING, found bin but not in PATH', binpath, PATH)
             # found bin but it was outside our search $PATH
             return None
         abspath = Path(binpath).expanduser().absolute()
@@ -280,7 +267,6 @@ def bin_abspath(
         return None
 
 
-# @validate_call
 def bin_abspaths(
     bin_path_or_name: BinName | Path,
     PATH: PATHStr | None = None,
