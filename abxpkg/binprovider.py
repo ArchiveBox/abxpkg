@@ -865,8 +865,8 @@ class BinProvider(BaseModel):
         # Direct cache readers (list/version/installer discovery) do not pass
         # through load(), so normalize the provider before comparing context or
         # every valid record looks stale in a fresh process. Installer discovery
-        # already supplies the stored context and skips setup here because setup
-        # may itself need the installer binary.
+        # skips setup here because setup may itself need the installer binary;
+        # its cache context is derived from the current pre-setup provider state.
         if setup_path:
             self.setup_PATH()
         derived_env_path = self.derived_env_path
@@ -1304,19 +1304,10 @@ class BinProvider(BaseModel):
                 cached_abspath = cached_record.get("abspath")
                 if not isinstance(cached_abspath, str):
                     continue
-                cached_context = cached_record.get("cache_context")
-                cached_context_hash = cached_record.get("cache_context_hash")
-                if not isinstance(cached_context, str) or not isinstance(
-                    cached_context_hash,
-                    str,
-                ):
-                    continue
                 loaded = self.load_cached_binary(
                     self.INSTALLER_BIN,
                     Path(cached_abspath),
                     cache=cache,
-                    cache_context=cached_context,
-                    cache_context_hash=cached_context_hash,
                     setup_path=False,
                 )
                 if loaded and loaded.loaded_abspath:
