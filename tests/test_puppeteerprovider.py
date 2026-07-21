@@ -1,13 +1,37 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from abxpkg import Binary, PuppeteerProvider
+from abxpkg.exceptions import BinaryInstallError
 
 
 PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 
 class TestPuppeteerProvider:
+    def test_min_release_age_is_enforced_during_cli_bootstrap(self, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "puppeteer-root"
+            provider = PuppeteerProvider(
+                install_root=root,
+                postinstall_scripts=True,
+                min_release_age=36500,
+            )
+
+            assert provider.supports_min_release_age("install") is True
+            with pytest.raises(BinaryInstallError) as exc_info:
+                provider.install("chromedriver")
+
+            assert "ERR_PNPM_NO_MATCHING_VERSION" in str(exc_info.value)
+            assert not (
+                root / "pnpm" / "node_modules" / "@puppeteer" / "browsers"
+            ).exists()
+
     def test_chromium_defaults_to_latest_channel(self):
         provider = PuppeteerProvider()
 

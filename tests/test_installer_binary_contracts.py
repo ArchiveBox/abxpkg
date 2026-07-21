@@ -50,6 +50,15 @@ class TestInstallerBinaryContracts:
         for provider_cls in (PlaywrightProvider, PuppeteerProvider):
             assert "super().INSTALLER_BINARY" not in _installer_source(provider_cls)
 
+    def test_puppeteer_release_age_support_matches_its_pnpm_bootstrap(self):
+        puppeteer = PuppeteerProvider(postinstall_scripts=True, min_release_age=3)
+        pnpm = PnpmProvider(postinstall_scripts=True, min_release_age=3)
+
+        assert pnpm.supports_min_release_age("install") is True
+        assert puppeteer.supports_min_release_age("install") is True
+        assert puppeteer.supports_min_release_age("update") is True
+        assert puppeteer.supports_min_release_age("uninstall") is False
+
     def test_browser_providers_check_shared_lib_dir_then_raise_for_setup_bootstrap(
         self,
     ):

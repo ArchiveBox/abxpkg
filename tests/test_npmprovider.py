@@ -209,12 +209,12 @@ class TestNpmProvider:
                         install_root=puppeteer_root,
                         install_timeout=900,
                         postinstall_scripts=True,
-                        min_release_age=3,
+                        min_release_age=0,
                     ),
                 ],
                 min_version=expected_version,
                 postinstall_scripts=True,
-                min_release_age=3,
+                min_release_age=0,
             ).install()
 
             test_machine.assert_shallow_binary_loaded(browser)
@@ -244,7 +244,7 @@ class TestNpmProvider:
                         install_root=pnpm_root,
                         install_timeout=900,
                         postinstall_scripts=False,
-                        min_release_age=3,
+                        min_release_age=0,
                     ),
                 ],
                 overrides={
@@ -253,7 +253,7 @@ class TestNpmProvider:
                     },
                 },
                 postinstall_scripts=False,
-                min_release_age=3,
+                min_release_age=0,
             )
 
             loaded = binary.load()

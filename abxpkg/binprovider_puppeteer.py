@@ -100,6 +100,12 @@ class PuppeteerProvider(BinProvider):
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return action in ("install", "update")
 
+    def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
+        """Report the capability of the pnpm install used to bootstrap our CLI."""
+        if action not in ("install", "update"):
+            return False
+        return PnpmProvider().supports_min_release_age(action, no_cache=no_cache)
+
     @model_validator(mode="after")
     def detect_euid_to_use(self) -> Self:
         if self.bin_dir is None and self.install_root is not None:
