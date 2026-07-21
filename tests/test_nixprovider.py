@@ -246,7 +246,14 @@ class TestNixProvider:
             names = [r.name for r in results]
             assert "hello" in names
             match = next(r for r in results if r.name == "hello")
-            assert match.overrides == {"nix": {"install_args": ["nixpkgs#hello"]}}
+            assert match.overrides == {
+                "nix": {
+                    "install_args": [
+                        "https://channels.nixos.org/nixpkgs-unstable/"
+                        "nixexprs.tar.xz#hello",
+                    ],
+                },
+            }
             assert match.loaded_abspath is None
             assert match.loaded_version is None
             installed = match.install()

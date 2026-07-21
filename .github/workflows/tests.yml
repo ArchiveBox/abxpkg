@@ -91,6 +91,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       test-shards: ${{ steps.set-matrix.outputs.test-shards }}
+      playwright-test: ${{ steps.set-matrix.outputs.playwright-test }}
 
     steps:
     - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -217,6 +218,92 @@ jobs:
           [[ -z "$test_path" ]] || test_paths+=("$test_path")
         done < <(uv run --no-project python -c 'import json, os; print(*json.loads(os.environ["TEST_PATHS_JSON"]), sep="\n")')
         uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${test_paths[@]}"
+
+  playwright:
+    name: ${{ matrix.target.os_name }} py${{ matrix.target.python_version }} playwrightprovider
+    needs: discover-standard-tests
+    runs-on: ${{ matrix.target.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        target:
+        - os: ubuntu-24.04
+          os_name: linux
+          python_version: '3.12.13'
+        - os: ubuntu-24.04
+          os_name: linux
+          python_version: '3.13.14'
+        - os: ubuntu-24.04
+          os_name: linux
+          python_version: '3.14.6'
+        - os: macOS-15
+          os_name: macOS
+          python_version: '3.12.10'
+        - os: macOS-15
+          os_name: macOS
+          python_version: '3.13.13'
+        - os: macOS-15
+          os_name: macOS
+          python_version: '3.14.6'
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+    - name: Setup Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: ${{ matrix.target.python_version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      with:
+        version: "0.10.6"
+        enable-cache: true
+        cache-dependency-glob: "pyproject.toml"
+
+    - name: Install Nix
+      if: runner.os == 'Linux'
+      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      with:
+        start-daemon: true
+
+    - name: Install Nix
+      if: runner.os != 'Linux'
+      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+    - name: Setup venv and install pip dependencies
+      run: |
+        uv venv --python "${{ matrix.target.python_version }}"
+        uv sync --all-extras
+        uv pip install pip
+
+    - name: Resolve Playwright test runtimes with abxpkg
+      run: |
+        sections=()
+        while IFS= read -r section; do
+          [[ -z "$section" ]] || sections+=("$section")
+        done < <(.github/ci_test_sections.sh "${{ needs.discover-standard-tests.outputs.playwright-test }}" "${{ runner.os }}")
+        if [[ "${#sections[@]}" -gt 0 ]]; then
+          .github/resolve_ci_binaries.sh "${sections[@]}"
+        fi
+
+    - name: Environment diagnostic
+      run: |
+        [[ -z "${CI_BREW_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
+        [[ -z "${CI_NIX_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
+        [[ -z "${CI_NODE_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
+        [[ -z "${CI_NPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
+        [[ -z "${CI_PNPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
+        [[ -z "${CI_YARN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
+        [[ -z "${CI_YARN_BERRY_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
+        [[ -z "${CI_BUN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
+        [[ -z "${CI_DENO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
+        [[ -z "${CI_GO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
+
+    - name: Run Playwright provider tests
+      run: uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ needs.discover-standard-tests.outputs.playwright-test }}"
 
   discover-live-tests:
     runs-on: ubuntu-24.04

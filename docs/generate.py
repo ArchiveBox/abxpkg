@@ -238,7 +238,8 @@ PROVIDER_METADATA: dict[str, dict[str, Any]] = {
         "summary": (
             "Installs packages via nix profile install using flakes. Set "
             "nix_profile for a custom profile, nix_state_dir for isolated "
-            "state/cache. Default install arg is nixpkgs#<bin_name>."
+            "state/cache. Search results use the explicit official "
+            "nixpkgs-unstable channel archive instead of the host registry."
         ),
         "tags": ["nix", "flakes", "hermetic-support"],
         "source_file": "abxpkg/binprovider_nix.py",

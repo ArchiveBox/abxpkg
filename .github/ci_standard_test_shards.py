@@ -8,6 +8,7 @@ from pathlib import Path
 
 SHARD_COUNT = 8
 PRIVILEGED_MARKER = re.compile(r"@pytest\.mark\.(root_required|docker_required)")
+PLAYWRIGHT_TEST = Path("tests/test_playwrightprovider.py")
 
 # Relative weights are based on successful Linux matrix runtimes. The greedy
 # assignment keeps the slow provider files apart while still giving every
@@ -16,7 +17,6 @@ TEST_WEIGHTS = {
     "test_cli.py": 256,
     "test_cargoprovider.py": 210,
     "test_pipprovider.py": 210,
-    "test_playwrightprovider.py": 176,
     "test_npmprovider.py": 170,
     "test_brewprovider.py": 166,
     "test_central_lib_dir.py": 159,
@@ -88,4 +88,29 @@ def build_shards(test_paths: list[Path]) -> list[dict[str, object]]:
 
 
 if __name__ == "__main__":
-    print(f"test-shards={json.dumps(build_shards(discover_standard_tests()))}")
+    standard_tests = discover_standard_tests()
+    if PLAYWRIGHT_TEST not in standard_tests:
+        raise SystemExit(
+            f"Dedicated Playwright test was not discovered: {PLAYWRIGHT_TEST}",
+        )
+
+    ordinary_tests = [
+        test_path for test_path in standard_tests if test_path != PLAYWRIGHT_TEST
+    ]
+    test_shards = build_shards(ordinary_tests)
+    assigned: Counter[Path] = Counter()
+    for shard in test_shards:
+        shard_paths = shard["paths"]
+        if not isinstance(shard_paths, list):
+            raise SystemExit(f"Invalid shard path list: {shard!r}")
+        assigned.update(Path(str(test_path)) for test_path in shard_paths)
+    assigned[PLAYWRIGHT_TEST] += 1
+    expected = Counter(standard_tests)
+    if assigned != expected:
+        raise SystemExit(
+            "Ordinary shards plus the dedicated Playwright test must contain "
+            "every standard test file exactly once",
+        )
+
+    print(f"test-shards={json.dumps(test_shards)}")
+    print(f"playwright-test={PLAYWRIGHT_TEST}")

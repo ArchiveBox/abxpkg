@@ -1161,7 +1161,7 @@ install_root = Path(os.environ.get("ABXPKG_NIX_PROFILE", "~/.nix-profile")).expa
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
-- Overrides: `install_args` is passed to `nix profile install ...`; default is `["nixpkgs#<bin_name>"]`.
+- Overrides: `install_args` is passed to `nix profile install ...`; search results use the explicit official `nixpkgs-unstable` channel archive instead of the host's Nix registry.
 - Notes: update/uninstall operate on the resolved profile element name rather than reusing the full flake ref.
 
 </details>
