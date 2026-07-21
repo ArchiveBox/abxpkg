@@ -135,7 +135,7 @@ require_successful_workflows() {
         attempts=0
 
         while :; do
-            runs="$(GH_FORCE_TTY=0 GH_PROMPT_DISABLED=1 GH_PAGER=cat gh run list \
+            runs="$(env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run list \
                 --repo "${slug}" \
                 --workflow "${workflow_file}" \
                 --event push \
