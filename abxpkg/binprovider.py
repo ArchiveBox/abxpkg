@@ -3351,7 +3351,6 @@ class EnvProvider(BinProvider):
         if self.bin_dir is None and self.install_root is not None:
             self.bin_dir = self.install_root / "bin"
         if self.bin_dir is not None:
-            self.bin_dir.mkdir(parents=True, exist_ok=True)
             self.PATH = self._merge_PATH(
                 self.bin_dir,
                 PATH=self.PATH,
@@ -3439,6 +3438,7 @@ class EnvProvider(BinProvider):
             return TypeAdapter(HostBinPath).validate_python(source_path)
         if self.bin_dir is None:
             return TypeAdapter(HostBinPath).validate_python(source_path)
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
         # A caller may create a fresh lib root while an earlier abxpkg
         # ``env/bin`` projection is first on PATH (notably the isolated CLI
         # tests in CI). Do not stack projections: EnvProvider executes one
@@ -3654,7 +3654,6 @@ class EnvProvider(BinProvider):
             if abspath not in candidates:
                 candidates.append(abspath)
 
-        versioned_candidates: list[tuple[SemVer, HostBinPath]] = []
         for abspath in candidates:
             version = self.get_version(
                 bin_name_str,
@@ -3663,11 +3662,7 @@ class EnvProvider(BinProvider):
                 no_cache=True,
             )
             if version is not None:
-                versioned_candidates.append((version, abspath))
-
-        if versioned_candidates:
-            _version, abspath = max(versioned_candidates, key=lambda item: item[0])
-            return self._link_loaded_binary(bin_name_str, abspath)
+                return self._link_loaded_binary(bin_name_str, abspath)
 
         managed_abspath = None
         if self.bin_dir is not None:

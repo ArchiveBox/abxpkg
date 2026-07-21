@@ -1621,6 +1621,49 @@ def test_version_report_includes_provider_local_cached_binary_list(tmp_path):
     assert proc.stderr == ""
 
 
+def test_version_report_does_not_install_provider_dependencies(tmp_path):
+    proc = _run_abxpkg_cli(
+        "version",
+        f"--lib={tmp_path}",
+        "--binproviders=pnpm",
+        env_overrides={"PATH": ""},
+        timeout=15,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert "PnpmProvider (pnpm)" in proc.stdout
+    assert "INSTALLER_BINARY=None" in proc.stdout
+    assert not (tmp_path / "pnpm").exists()
+    assert proc.stderr == ""
+
+
+def test_version_report_projects_existing_host_installer_through_env(tmp_path):
+    npm_abspath = shutil.which("npm")
+    node_abspath = shutil.which("node")
+    assert npm_abspath
+    assert node_abspath
+    host_path = os.pathsep.join(
+        dict.fromkeys((str(Path(npm_abspath).parent), str(Path(node_abspath).parent))),
+    )
+
+    proc = _run_abxpkg_cli(
+        "version",
+        f"--lib={tmp_path}",
+        "--binproviders=npm",
+        env_overrides={"PATH": host_path},
+        timeout=15,
+    )
+
+    projected_npm = tmp_path / "env" / "bin" / "npm"
+    assert proc.returncode == 0, proc.stderr
+    assert projected_npm.is_symlink()
+    assert projected_npm.resolve() == Path(npm_abspath).resolve()
+    assert str(projected_npm) in proc.stdout
+    assert "(npm) env" in proc.stdout
+    assert not (tmp_path / "npm").exists()
+    assert proc.stderr == ""
+
+
 def test_list_command_filters_by_binary_name_and_provider_name(tmp_path):
     env_provider = EnvProvider(
         install_root=tmp_path / "env",

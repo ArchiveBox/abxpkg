@@ -409,13 +409,22 @@ class BinaryService:
         existing = await self._find_binary_event(event)
         if existing is not None:
             return existing
-        return await asyncio.to_thread(
+        installed = await asyncio.to_thread(
             self._binary_for_event(event).install,
             no_cache=self._no_cache_for_event(event),
             dry_run=self._dry_run_for_event(event),
             postinstall_scripts=self._postinstall_scripts_for_event(event),
             min_release_age=self._min_release_age_for_event(event),
         )
+        provider_names = self._provider_names(event.binproviders)
+        installed_provider = installed.loaded_binprovider
+        if (
+            not self._dry_run_for_event(event)
+            and installed_provider is not None
+            and installed_provider.name != provider_names[0]
+        ):
+            return await asyncio.to_thread(self._load, event)
+        return installed
 
     def _install_semaphore_name(self, event: BinaryRequestEvent) -> str:
         roots: list[str] = []

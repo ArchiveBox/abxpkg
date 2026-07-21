@@ -9,6 +9,7 @@ from threading import Barrier
 import pytest
 
 from abxpkg import Binary, BrewProvider, EnvProvider, PipProvider, PnpmProvider, SemVer
+from abxpkg.base_types import bin_abspaths
 from abxpkg.config import load_derived_cache, save_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
 
@@ -55,6 +56,45 @@ class TestEnvProvider:
 
         assert provider.uninstall("python") is False
         test_machine.assert_shallow_binary_loaded(provider.load("python"))
+
+    def test_provider_projects_first_valid_host_git_from_path(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        test_machine.require_tool("git")
+        host_path = os.pathsep.join(
+            entry
+            for entry in os.environ.get("PATH", "").split(os.pathsep)
+            if entry
+            and not (Path(entry).name == "bin" and Path(entry).parent.name == "env")
+        )
+        provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            PATH=host_path,
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        first_valid_git = next(
+            candidate
+            for candidate in bin_abspaths("git", PATH=host_path)
+            if provider.get_version(
+                "git",
+                abspath=candidate,
+                quiet=True,
+                no_cache=True,
+            )
+            is not None
+        )
+
+        loaded = provider.load("git", no_cache=True)
+
+        assert loaded is not None
+        assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "git"
+        assert loaded.loaded_abspath.is_symlink()
+        assert loaded.loaded_abspath.readlink() == first_valid_git
+        result = loaded.exec(cmd=("--version",))
+        assert result.returncode == 0, result.stderr
 
     def test_provider_projects_host_python_atomically_under_concurrency(self, tmp_path):
         """Parallel hook launches must all reuse the same host Python link."""

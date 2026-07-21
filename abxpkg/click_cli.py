@@ -802,7 +802,7 @@ def list_cached_binaries(
 
 
 def version_report(options: CliOptions):
-    from . import ALL_PROVIDER_NAMES
+    from . import ALL_PROVIDER_NAMES, EnvProvider
     from .binprovider import DEFAULT_ENV_PATH, BinProvider
 
     highlighter = ReprHighlighter()
@@ -817,6 +817,18 @@ def version_report(options: CliOptions):
     )
     install_timeout = all_providers[0].install_timeout if all_providers else 120
     version_timeout = all_providers[0].version_timeout if all_providers else 10
+    env_provider = cast(
+        EnvProvider,
+        build_providers(
+            ["env"],
+            dry_run=False,
+            install_root=options.install_root,
+            bin_dir=options.bin_dir,
+            euid=options.euid,
+            install_timeout=options.install_timeout,
+            version_timeout=options.version_timeout,
+        )[0],
+    )
 
     def render_env_value(value: Any) -> str:
         if isinstance(value, Path):
@@ -875,21 +887,34 @@ def version_report(options: CliOptions):
         install_timeout=options.install_timeout,
         version_timeout=options.version_timeout,
     ):
-        try:
-            provider.setup_PATH(no_cache=options.no_cache)
-        except Exception:
-            pass
+        upstream_binaries = provider.depends_on_binaries()
+        installed_binaries = provider.installed_binaries()
         emoji = (
             type(provider).__private_attributes__["_log_emoji"].default
             or BinProvider.__private_attributes__["_log_emoji"].default
         )
-        installer_binary = None
         try:
-            installer_binary = provider.INSTALLER_BINARY(no_cache=options.no_cache)
+            installer_binary = env_provider.load(
+                provider.INSTALLER_BIN,
+                no_cache=options.no_cache,
+            )
         except Exception:
             installer_binary = None
-
-        status = "✅" if provider.is_valid else "❌"
+        installer_binary = installer_binary or next(
+            (
+                binary
+                for binary in upstream_binaries
+                if binary.name == provider.INSTALLER_BIN
+            ),
+            None,
+        )
+        if (
+            installer_binary is None
+            and provider._INSTALLER_BINARY is not None
+            and provider._INSTALLER_BINARY.is_valid
+        ):
+            installer_binary = provider._INSTALLER_BINARY
+        status = "✅" if installer_binary is not None or provider.is_valid else "❌"
         yield ""
         heading = Text()
         heading.append(f"{emoji} ", style="bold")
@@ -966,7 +991,7 @@ def version_report(options: CliOptions):
                 ),
                 binary.name,
             )
-            for binary in provider.depends_on_binaries()
+            for binary in upstream_binaries
             if binary.loaded_abspath is not None and binary.loaded_version is not None
         ]
         installed_binary_lines = [
@@ -980,7 +1005,7 @@ def version_report(options: CliOptions):
                 ),
                 binary.name,
             )
-            for binary in provider.installed_binaries()
+            for binary in installed_binaries
             if binary.loaded_abspath is not None and binary.loaded_version is not None
         ]
 
