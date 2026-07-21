@@ -69,15 +69,46 @@ class TestEnvProvider:
             if entry
             and not (Path(entry).name == "bin" and Path(entry).parent.name == "env")
         )
+        probe = tmp_path / "projection-probe" / "git"
+        probe.parent.mkdir()
+        projectability = {}
+        for candidate in bin_abspaths("git", PATH=host_path):
+            probe.unlink(missing_ok=True)
+            probe.symlink_to(candidate)
+            result = subprocess.run(
+                [str(probe), "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            projectability[Path(candidate)] = result.returncode == 0
+
+        unprojectable_git = next(
+            (
+                candidate
+                for candidate, is_projectable in projectability.items()
+                if not is_projectable
+            ),
+            None,
+        )
+        host_entries = host_path.split(os.pathsep)
+        if unprojectable_git is not None:
+            unprojectable_parent = str(unprojectable_git.parent)
+            host_entries = [
+                unprojectable_parent,
+                *(entry for entry in host_entries if entry != unprojectable_parent),
+            ]
+        ordered_host_path = os.pathsep.join(host_entries)
+
         provider = EnvProvider(
             install_root=tmp_path / "lib" / "env",
-            PATH=host_path,
+            PATH=ordered_host_path,
             postinstall_scripts=True,
             min_release_age=0,
         )
-        first_valid_git = next(
+        valid_host_gits = [
             candidate
-            for candidate in bin_abspaths("git", PATH=host_path)
+            for candidate in bin_abspaths("git", PATH=ordered_host_path)
             if provider.get_version(
                 "git",
                 abspath=candidate,
@@ -85,15 +116,29 @@ class TestEnvProvider:
                 no_cache=True,
             )
             is not None
+        ]
+        first_projectable_git = next(
+            (
+                candidate
+                for candidate in valid_host_gits
+                if projectability[Path(candidate)]
+            ),
+            None,
         )
+        assert first_projectable_git is not None
 
         loaded = provider.load("git", no_cache=True)
 
         assert loaded is not None
         assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "git"
         assert loaded.loaded_abspath.is_symlink()
-        assert loaded.loaded_abspath.readlink() == first_valid_git
-        result = loaded.exec(cmd=("--version",))
+        assert loaded.loaded_abspath.readlink() == first_projectable_git
+        result = subprocess.run(
+            [str(loaded.loaded_abspath), "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         assert result.returncode == 0, result.stderr
 
     def test_provider_projects_host_python_atomically_under_concurrency(self, tmp_path):

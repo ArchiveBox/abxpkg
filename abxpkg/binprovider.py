@@ -130,6 +130,10 @@ MUTATION_LOCK_CONTENDED: ContextVar[bool] = ContextVar(
     "abxpkg_mutation_lock_contended",
     default=False,
 )
+ENV_PROJECTED_VERSION_PATH: ContextVar[Path | None] = ContextVar(
+    "abxpkg_env_projected_version_path",
+    default=None,
+)
 _MUTATION_LOCK_STATE = threading.local()
 
 
@@ -3610,6 +3614,12 @@ class EnvProvider(BinProvider):
         # Dereference only the managed link itself: run the binary EnvProvider
         # discovered, but do not chase any further symlink chain owned by the OS
         # or package manager.
+        projected_version_path = ENV_PROJECTED_VERSION_PATH.get()
+        if (
+            projected_version_path is not None
+            and bin_abspath.absolute() == projected_version_path
+        ):
+            return bin_abspath
         if (
             self.bin_dir is None
             or bin_abspath.parent != self.bin_dir
@@ -3618,6 +3628,23 @@ class EnvProvider(BinProvider):
             return bin_abspath
         linked_to = bin_abspath.readlink()
         return linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to
+
+    def _get_projected_version(
+        self,
+        bin_name: BinName,
+        projected_abspath: HostBinPath,
+    ) -> SemVer | None:
+        projected_path = Path(projected_abspath).absolute()
+        token = ENV_PROJECTED_VERSION_PATH.set(projected_path)
+        try:
+            return self.get_version(
+                bin_name,
+                abspath=projected_abspath,
+                quiet=True,
+                no_cache=True,
+            )
+        finally:
+            ENV_PROJECTED_VERSION_PATH.reset(token)
 
     def _is_managed_by_other_provider(
         self,
@@ -3756,7 +3783,27 @@ class EnvProvider(BinProvider):
                 and self._projection_cache_record(projected_abspath, str(bin_name))
                 is not None
             ):
-                return projected_abspath
+                projected_path = Path(projected_abspath)
+                with self.mutation_lock():
+                    projected_target = (
+                        projected_path.readlink()
+                        if projected_path.is_symlink()
+                        else None
+                    )
+                    if (
+                        self._get_projected_version(
+                            bin_name_str,
+                            projected_abspath,
+                        )
+                        is not None
+                    ):
+                        return projected_abspath
+                    if (
+                        projected_target is not None
+                        and projected_path.is_symlink()
+                        and projected_path.readlink() == projected_target
+                    ):
+                        projected_path.unlink()
 
         search_paths = []
         for entry in str(self.PATH or "").split(os.pathsep):
@@ -3789,7 +3836,34 @@ class EnvProvider(BinProvider):
                 no_cache=True,
             )
             if version is not None:
-                return self._link_loaded_binary(bin_name_str, abspath)
+                if self.bin_dir is None:
+                    return abspath
+                link_path = self.bin_dir / Path(bin_name_str).name
+                with self.mutation_lock():
+                    projected_abspath = self._link_loaded_binary(
+                        bin_name_str,
+                        abspath,
+                    )
+                    projected_path = Path(projected_abspath)
+                    projected_target = (
+                        link_path.readlink()
+                        if projected_path == link_path and link_path.is_symlink()
+                        else None
+                    )
+                    if (
+                        self._get_projected_version(
+                            bin_name_str,
+                            projected_abspath,
+                        )
+                        is not None
+                    ):
+                        return projected_abspath
+                    if (
+                        projected_target is not None
+                        and link_path.is_symlink()
+                        and link_path.readlink() == projected_target
+                    ):
+                        link_path.unlink()
 
         managed_abspath = None
         if self.bin_dir is not None:
@@ -3800,11 +3874,26 @@ class EnvProvider(BinProvider):
                 if managed_path.is_symlink() and managed_path.parent == self.bin_dir:
                     managed_path.unlink(missing_ok=True)
                 return None
-            return managed_abspath
-
-        if not candidates:
-            return None
-        return self._link_loaded_binary(bin_name_str, candidates[0])
+            managed_path = Path(managed_abspath)
+            with self.mutation_lock():
+                managed_target = (
+                    managed_path.readlink() if managed_path.is_symlink() else None
+                )
+                if (
+                    self._get_projected_version(
+                        bin_name_str,
+                        managed_abspath,
+                    )
+                    is not None
+                ):
+                    return managed_abspath
+                if (
+                    managed_target is not None
+                    and managed_path.is_symlink()
+                    and managed_path.readlink() == managed_target
+                ):
+                    managed_path.unlink()
+        return None
 
     def supports_min_release_age(
         self,
