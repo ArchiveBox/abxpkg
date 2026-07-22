@@ -3170,8 +3170,10 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     lib = tmp_path / "lib"
     first = _abxpkg_executable()
     second = Path(sys.executable)
-    first_display = str(first).replace(str(Path.home()), "~")
-    second_display = str(second).replace(str(Path.home()), "~")
+
+    def loaded_path(proc: subprocess.CompletedProcess[str]) -> Path:
+        displayed_path = Path(proc.stdout.split()[1]).expanduser()
+        return displayed_path.resolve()
 
     first_proc = _run_abxpkg_cli(
         f"--lib={lib}",
@@ -3185,7 +3187,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_proc.returncode == 0, first_proc.stderr
     assert "1.0.0" in first_proc.stdout
-    assert first_display in first_proc.stdout
+    assert loaded_path(first_proc).samefile(first)
     flag_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
 
     first_json_proc = _run_abxpkg_cli(
@@ -3197,7 +3199,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_json_proc.returncode == 0, first_json_proc.stderr
     assert "1.0.0" in first_json_proc.stdout
-    assert first_display in first_json_proc.stdout
+    assert loaded_path(first_json_proc).samefile(first)
     assert set(load_derived_cache(lib / "env" / "derived.env")) == flag_cache_keys
 
     second_proc = _run_abxpkg_cli(
@@ -3209,8 +3211,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert second_proc.returncode == 0, second_proc.stderr
     assert "2.0.0" in second_proc.stdout
-    assert second_display in second_proc.stdout
-    assert first_display not in second_proc.stdout
+    assert loaded_path(second_proc).samefile(second)
     second_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
     assert second_cache_keys != flag_cache_keys
 
@@ -3223,8 +3224,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_again_proc.returncode == 0, first_again_proc.stderr
     assert "1.0.0" in first_again_proc.stdout
-    assert first_display in first_again_proc.stdout
-    assert second_display not in first_again_proc.stdout
+    assert loaded_path(first_again_proc).samefile(first)
 
 
 def test_run_script_without_declared_dependency_keeps_target_runtime_env_clean(

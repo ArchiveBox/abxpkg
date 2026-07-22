@@ -43,6 +43,16 @@ def _pick_formula_for_live_cycle() -> str:
     )
 
 
+def _brew_formula_is_installed(provider: BrewProvider, formula: str) -> bool:
+    brew_bin = provider.INSTALLER_BINARY(no_cache=True).loaded_abspath
+    assert brew_bin
+    proc = provider.exec(
+        bin_name=brew_bin,
+        cmd=["list", "--formula", formula],
+    )
+    return proc.returncode == 0
+
+
 class TestBrewProvider:
     def test_install_root_alias_symlinks_formula_into_requested_bin_dir(
         self,
@@ -178,6 +188,15 @@ class TestBrewProvider:
         primary = "hello"
         extra = "fzy"
 
+        cleanup_provider = BrewProvider(
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+        for pkg in (primary, extra):
+            if _brew_formula_is_installed(cleanup_provider, pkg):
+                assert cleanup_provider.uninstall(pkg, no_cache=True) is True
+            assert not _brew_formula_is_installed(cleanup_provider, pkg)
+
         provider = BrewProvider(
             postinstall_scripts=True,
             min_release_age=3,
@@ -185,19 +204,15 @@ class TestBrewProvider:
             overrides={primary: {"install_args": [primary, extra]}},
         )
 
-        for pkg in (primary, extra):
-            if provider.load(pkg, quiet=True, no_cache=True) is not None:
-                assert provider.uninstall(pkg, no_cache=True) is True
-            assert provider.load(pkg, quiet=True, no_cache=True) is None
-
         installed = provider.install(primary, no_cache=True)
         test_machine.assert_shallow_binary_loaded(installed)
 
-        assert provider.load(extra, quiet=True, no_cache=True) is not None
+        assert _brew_formula_is_installed(provider, primary)
+        assert _brew_formula_is_installed(provider, extra)
 
-        for pkg in (primary, extra):
-            assert provider.uninstall(pkg, no_cache=True) is True
-            assert provider.load(pkg, quiet=True, no_cache=True) is None
+        assert provider.uninstall(primary, no_cache=True) is True
+        assert not _brew_formula_is_installed(provider, primary)
+        assert not _brew_formula_is_installed(provider, extra)
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")
