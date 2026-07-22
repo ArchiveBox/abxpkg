@@ -1,10 +1,9 @@
-import shutil
 import subprocess
 import logging
 
 import pytest
 
-from abxpkg import Binary, SemVer
+from abxpkg import Binary, EnvProvider, SemVer
 from abxpkg.binprovider import BinProvider
 from abxpkg.binprovider_ansible import (
     AnsibleProvider,
@@ -16,7 +15,11 @@ from typing import cast
 
 def _ansible_provider_for_host(test_machine):
     test_machine.require_tool("ansible")
-    if not shutil.which("apt-get"):
+    apt_get = EnvProvider(install_root=None, bin_dir=None).load(
+        "apt-get",
+        no_cache=True,
+    )
+    if apt_get is None:
         test_machine.require_tool("brew")
     provider = AnsibleProvider(
         postinstall_scripts=True,
@@ -34,7 +37,7 @@ def _ansible_provider_for_host(test_machine):
             "ranger",
             "mc",
         )
-        if shutil.which("apt-get")
+        if apt_get is not None
         else (
             "hello",
             "jq",

@@ -318,7 +318,7 @@ class PlaywrightProvider(BinProvider):
         # ``sudo`` strips most env vars by default (``env_reset`` in
         # sudoers), so simply setting ``env["PLAYWRIGHT_BROWSERS_PATH"]``
         # would be silently dropped before reaching the child. Wrap the
-        # whole command with ``/usr/bin/env KEY=VAL -- <cmd>`` instead:
+        # whole command with the abxpkg-resolved ``env KEY=VAL <cmd>`` instead:
         # ``env`` is a trusted utility that sudo executes happily, and
         # the assignments are CLI args (not env vars) so sudo's filter
         # never sees them. ``env`` then sets the vars and execs the
@@ -341,7 +341,7 @@ class PlaywrightProvider(BinProvider):
         # browser downloads in sandboxes whose egress proxy NO_PROXY
         # blocks ``cdn.playwright.dev`` / ``storage.googleapis.com``.
         # They must also survive sudo's ``env_reset``, so forward them
-        # through the ``/usr/bin/env KEY=VAL -- ...`` wrapper below.
+        # through the abxpkg-resolved ``env KEY=VAL <cmd>`` wrapper below.
         for proxy_key in ("NO_PROXY", "no_proxy"):
             proxy_value = env.get(proxy_key)
             if proxy_value:
@@ -350,12 +350,17 @@ class PlaywrightProvider(BinProvider):
         if env_assignments and needs_sudo_env_wrapper:
             resolved_bin = bin_name
             if not os.path.isabs(str(bin_name)):
-                resolved_bin = bin_abspath(str(bin_name), PATH=self.PATH) or bin_name
+                resolved_bin = bin_abspath(str(bin_name), PATH=self.PATH)
+                if resolved_bin is None:
+                    raise RuntimeError(f"abxpkg could not resolve {bin_name}")
             # POSIX ``env``: first non-assignment positional arg is the
             # utility to exec; no ``--`` separator (older coreutils
             # don't support it).
             cmd = [*env_assignments, str(resolved_bin), *cmd]
-            bin_name = "/usr/bin/env"
+            env_binary = EnvProvider().load("env", no_cache=True)
+            if not env_binary or not env_binary.loaded_abspath:
+                raise RuntimeError("abxpkg could not resolve env")
+            bin_name = env_binary.loaded_abspath
         cwd_candidates: list[Path | str | None] = [
             cwd,
             self.install_root,

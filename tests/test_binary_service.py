@@ -159,26 +159,6 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     }
 
 
-class _MemoryBinaryCacheBackend:
-    def __init__(self, binary: Binary | None = None):
-        self.binary = binary
-        self.gets: list[Any] = []
-        self.sets: list[tuple[Any, Binary]] = []
-        self.invalidations: list[tuple[Any, Binary, str]] = []
-
-    async def get(self, request: Any) -> Binary | None:
-        self.gets.append(request)
-        return self.binary
-
-    async def set(self, request: Any, binary: Binary) -> None:
-        self.sets.append((request, binary.model_copy(deep=True)))
-        self.binary = binary.model_copy(deep=True)
-
-    async def invalidate(self, request: Any, binary: Binary, reason: str) -> None:
-        self.invalidations.append((request, binary, reason))
-        self.binary = None
-
-
 def _real_python_binary(lib_dir: Path) -> Binary:
     provider = EnvProvider(install_root=lib_dir / "env")
     binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
@@ -192,6 +172,7 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
     from abxpkg.binary_service import (
         BinaryCacheService,
         BinaryEvent,
+        JSONFileBinaryCacheBackend,
         BinaryRequestEvent,
     )
 
@@ -199,7 +180,8 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
     cached_path = cached_binary.loaded_abspath
     assert cached_path is not None
     cached_binary.env = {"CACHED_ENV": "1"}
-    backend = _MemoryBinaryCacheBackend(cached_binary)
+    backend = JSONFileBinaryCacheBackend(tmp_path / "binary-cache.json")
+    backend.set(BinaryRequestEvent(name="python"), cached_binary)
 
     async def run() -> tuple[Any, BinaryEvent, list[Any]]:
         from abxpkg.binary_service import BinaryService
@@ -239,21 +221,21 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
     assert event.env == {"CACHED_ENV": "1"}
     assert event.extra_context == request.extra_context
     assert event.extra_context is not request.extra_context
-    assert backend.invalidations == []
-    assert len(backend.gets) == 1
-    assert len(backend.sets) == 1
-    assert backend.sets[0][0] is request
-    assert backend.sets[0][1].loaded_abspath == cached_path
+    persisted = backend.get(request)
+    assert persisted is not None
+    assert persisted.loaded_abspath == cached_path
+    assert backend.path.is_file()
 
 
-def test_binary_cache_service_stores_resolved_binary_event() -> None:
+def test_binary_cache_service_stores_resolved_binary_event(tmp_path: Path) -> None:
     from abxpkg.binary_service import (
         BinaryCacheService,
+        JSONFileBinaryCacheBackend,
         BinaryRequestEvent,
         BinaryService,
     )
 
-    backend = _MemoryBinaryCacheBackend()
+    backend = JSONFileBinaryCacheBackend(tmp_path / "binary-cache.json")
 
     async def run() -> tuple[Any, Binary]:
         bus = abxbus.EventBus(name="test_binary_cache_service_stores_event")
@@ -267,13 +249,12 @@ def test_binary_cache_service_stores_resolved_binary_event() -> None:
             ),
         ).now()
         await request.event_results_list()
-        assert backend.binary is not None
-        return request, backend.binary
+        cached = backend.get(request)
+        assert cached is not None
+        return request, cached
 
     request, cached = asyncio.run(run())
 
-    assert len(backend.sets) == 1
-    assert backend.sets[0][0] is request
     assert cached.name == "python"
     assert cached.loaded_abspath is not None
     assert cached.loaded_version is not None
@@ -286,12 +267,18 @@ def test_binary_cache_service_stores_resolved_binary_event() -> None:
 
 
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:
-    from abxpkg.binary_service import BinaryCacheService, BinaryRequestEvent
+    from abxpkg.binary_service import (
+        BinaryCacheService,
+        JSONFileBinaryCacheBackend,
+        BinaryRequestEvent,
+    )
 
     stale_binary = _real_python_binary(tmp_path)
     missing_path = stale_binary.loaded_abspath
     assert missing_path is not None
-    backend = _MemoryBinaryCacheBackend(stale_binary)
+    backend = JSONFileBinaryCacheBackend(tmp_path / "binary-cache.json")
+    cache_request = BinaryRequestEvent(name="python")
+    backend.set(cache_request, stale_binary)
     missing_path.unlink()
 
     async def run() -> list[Any]:
@@ -309,35 +296,16 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
     results = asyncio.run(run())
 
     assert results == []
-    assert len(backend.invalidations) == 1
-    assert "does not exist" in backend.invalidations[0][2]
+    assert backend.get(cache_request) is None
 
 
-def test_binary_service_trusts_injected_binary_event_for_same_request(
+def test_binary_service_emits_resolved_event_for_same_request(
     tmp_path: Path,
 ) -> None:
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
-    injected_binary = _real_python_binary(tmp_path / "injected")
-    injected_path = injected_binary.loaded_abspath
-    assert injected_path is not None
-
     async def run() -> tuple[BinaryRequestEvent, BinaryEvent, list[Any]]:
-        bus = abxbus.EventBus(name="test_binary_service_trusts_injected_event")
-
-        async def inject_binary(event: BinaryRequestEvent) -> None:
-            await event.emit(
-                BinaryEvent(
-                    name=event.name,
-                    abspath=str(injected_path),
-                    version=str(injected_binary.loaded_version),
-                    sha256=injected_binary.loaded_sha256,
-                    binproviders="env",
-                    binprovider="env",
-                ),
-            ).now()
-
-        bus.on(BinaryRequestEvent, inject_binary)
+        bus = abxbus.EventBus(name="test_binary_service_same_request_event")
         BinaryService(bus, auto_install=False, lib_dir=tmp_path / "service")
 
         request = await bus.emit(
@@ -358,79 +326,61 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
 
     request, event, results = asyncio.run(run())
 
-    assert event.abspath == str(injected_path)
+    assert Path(event.abspath).exists()
     assert event.event_parent_id == request.event_id
-    assert results == [str(injected_path)]
+    assert results == [event.abspath]
 
 
-def test_binary_service_ignores_binary_events_from_other_requests(
+def test_binary_service_scopes_events_to_their_real_requests(
     tmp_path: Path,
 ) -> None:
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
-    injected_binary = _real_python_binary(tmp_path / "stale")
-    stale_path = injected_binary.loaded_abspath
-    assert stale_path is not None
-
-    async def run() -> tuple[BinaryEvent, BinaryEvent]:
-        bus = abxbus.EventBus(name="test_binary_service_ignores_other_requests")
-        seeded = False
-
-        async def seed_first_request(event: BinaryRequestEvent) -> None:
-            nonlocal seeded
-            if seeded:
-                return
-            seeded = True
-            await event.emit(
-                BinaryEvent(
-                    name=event.name,
-                    abspath=str(stale_path),
-                    version=str(injected_binary.loaded_version),
-                    sha256=injected_binary.loaded_sha256,
-                    binproviders="env",
-                    binprovider="env",
-                ),
-            ).now()
-
-        bus.on(BinaryRequestEvent, seed_first_request)
-
-        seed_request = await bus.emit(
-            BinaryRequestEvent(
-                name="python",
-                binproviders="env",
-            ),
-        ).now()
-        stale_event = await bus.find(
-            BinaryEvent,
-            child_of=seed_request,
-            past=True,
-            future=False,
-            name="python",
-        )
-        assert isinstance(stale_event, BinaryEvent)
-
+    async def run() -> tuple[
+        BinaryRequestEvent,
+        BinaryEvent,
+        BinaryRequestEvent,
+        BinaryEvent,
+    ]:
+        bus = abxbus.EventBus(name="test_binary_service_request_scoping")
         BinaryService(bus, auto_install=False, lib_dir=tmp_path / "resolved")
-        request = await bus.emit(
+        first_request = await bus.emit(
             BinaryRequestEvent(
                 name="python",
                 binproviders="env",
             ),
         ).now()
-        event = await bus.find(
+        first_event = await bus.find(
             BinaryEvent,
-            child_of=request,
+            child_of=first_request,
             past=True,
             future=False,
             name="python",
         )
-        assert isinstance(event, BinaryEvent)
-        return stale_event, event
+        assert isinstance(first_event, BinaryEvent)
+        second_request = await bus.emit(
+            BinaryRequestEvent(
+                name="python3",
+                binproviders="env",
+            ),
+        ).now()
+        second_event = await bus.find(
+            BinaryEvent,
+            child_of=second_request,
+            past=True,
+            future=False,
+            name="python3",
+        )
+        assert isinstance(second_event, BinaryEvent)
+        return first_request, first_event, second_request, second_event
 
-    stale_event, event = asyncio.run(run())
+    first_request, first_event, second_request, second_event = asyncio.run(run())
 
-    assert stale_event.abspath == str(stale_path)
-    assert event.abspath != stale_event.abspath
-    assert Path(event.abspath).exists()
+    assert first_event.event_parent_id == first_request.event_id
+    assert second_event.event_parent_id == second_request.event_id
+    assert first_event.event_parent_id != second_event.event_parent_id
+    assert Path(first_event.abspath).exists()
+    assert Path(second_event.abspath).exists()
 
 
 def test_binary_service_allows_parallel_installs_for_different_provider_roots(

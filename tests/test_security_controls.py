@@ -1,4 +1,7 @@
 import logging
+import json
+import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -6,7 +9,6 @@ import pytest
 
 from abxpkg import (
     Binary,
-    BashProvider,
     BrewProvider,
     EnvProvider,
     NpmProvider,
@@ -17,18 +19,39 @@ from abxpkg.exceptions import BinaryInstallError, BinaryLoadError
 
 
 class TestSecurityControls:
-    def test_env_defaults_only_apply_to_supported_providers(self, monkeypatch):
-        monkeypatch.setenv("ABXPKG_MIN_RELEASE_AGE", "13")
-        monkeypatch.setenv("ABXPKG_POSTINSTALL_SCRIPTS", "true")
-
-        assert PipProvider().min_release_age == 13
-        assert PipProvider().postinstall_scripts is True
-        assert NpmProvider().min_release_age == 13
-        assert NpmProvider().postinstall_scripts is True
-        assert EnvProvider().min_release_age is None
-        assert EnvProvider().postinstall_scripts is None
-        assert BashProvider().min_release_age is None
-        assert BashProvider().postinstall_scripts is None
+    def test_env_defaults_only_apply_to_supported_providers(self, test_machine):
+        uv = test_machine.require_tool("uv")
+        env = {
+            **os.environ,
+            "ABXPKG_MIN_RELEASE_AGE": "13",
+            "ABXPKG_POSTINSTALL_SCRIPTS": "true",
+        }
+        proc = subprocess.run(
+            [
+                uv,
+                "run",
+                "python",
+                "-c",
+                (
+                    "import json; from abxpkg import BashProvider, EnvProvider, "
+                    "NpmProvider, PipProvider; print(json.dumps(["
+                    "[PipProvider().min_release_age, PipProvider().postinstall_scripts],"
+                    "[NpmProvider().min_release_age, NpmProvider().postinstall_scripts],"
+                    "[EnvProvider().min_release_age, EnvProvider().postinstall_scripts],"
+                    "[BashProvider().min_release_age, BashProvider().postinstall_scripts]]))"
+                ),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert json.loads(proc.stdout) == [
+            [13, True],
+            [13, True],
+            [None, None],
+            [None, None],
+        ]
 
     def test_env_provider_defaults_do_not_fail_closed(self, test_machine):
         installed = EnvProvider().install("python")

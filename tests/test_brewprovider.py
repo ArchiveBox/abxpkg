@@ -27,10 +27,7 @@ def _pick_formula_for_live_cycle() -> str:
         ):
             return formula
     for formula in candidates:
-        try:
-            probe.uninstall(formula, quiet=True, no_cache=True)
-        except Exception:
-            continue
+        probe.uninstall(formula, no_cache=True)
         proc = subprocess.run(
             [str(brew_bin), "list", "--formula", formula],
             capture_output=True,
@@ -189,10 +186,9 @@ class TestBrewProvider:
         )
 
         for pkg in (primary, extra):
-            try:
-                provider.uninstall(pkg, quiet=True, no_cache=True)
-            except Exception:
-                pass
+            if provider.load(pkg, quiet=True, no_cache=True) is not None:
+                assert provider.uninstall(pkg, no_cache=True) is True
+            assert provider.load(pkg, quiet=True, no_cache=True) is None
 
         installed = provider.install(primary, no_cache=True)
         test_machine.assert_shallow_binary_loaded(installed)
@@ -200,10 +196,8 @@ class TestBrewProvider:
         assert provider.load(extra, quiet=True, no_cache=True) is not None
 
         for pkg in (primary, extra):
-            try:
-                provider.uninstall(pkg, quiet=True, no_cache=True)
-            except Exception:
-                pass
+            assert provider.uninstall(pkg, no_cache=True) is True
+            assert provider.load(pkg, quiet=True, no_cache=True) is None
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")

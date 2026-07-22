@@ -42,6 +42,15 @@ class NixProvider(BinProvider):
     _log_emoji = "❄️"
     INSTALLER_BIN: BinName = "nix"
 
+    @staticmethod
+    def _systemctl_abspath() -> str | None:
+        systemctl = EnvProvider().load("systemctl", no_cache=True)
+        return (
+            str(systemctl.loaded_abspath)
+            if systemctl and systemctl.loaded_abspath
+            else None
+        )
+
     PATH: PATHStr = (
         ""  # Starts empty; setup_PATH() lazily replaces it with install_root/bin only.
     )
@@ -403,14 +412,7 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
-        systemctl_bin = next(
-            (
-                str(path)
-                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
-                if path.is_file()
-            ),
-            None,
-        )
+        systemctl_bin = self._systemctl_abspath()
         if (
             proc.returncode != 0
             and os.uname().sysname == "Linux"
@@ -556,14 +558,7 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
-        systemctl_bin = next(
-            (
-                str(path)
-                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
-                if path.is_file()
-            ),
-            None,
-        )
+        systemctl_bin = self._systemctl_abspath()
         if (
             proc.returncode != 0
             and os.uname().sysname == "Linux"
@@ -709,14 +704,7 @@ class NixProvider(BinProvider):
             timeout=timeout,
         )
         proc_output = format_subprocess_output(proc.stdout, proc.stderr)
-        systemctl_bin = next(
-            (
-                str(path)
-                for path in (Path("/usr/bin/systemctl"), Path("/bin/systemctl"))
-                if path.is_file()
-            ),
-            None,
-        )
+        systemctl_bin = self._systemctl_abspath()
         if (
             proc.returncode not in (0, 1)
             and os.uname().sysname == "Linux"

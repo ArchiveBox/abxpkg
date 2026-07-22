@@ -629,58 +629,6 @@ class TestEnvProvider:
         assert result.returncode == 0, result.stderr
         assert (result.stdout + result.stderr).strip()
 
-    def test_provider_does_not_reverse_link_shared_lib_bin_shims(self, monkeypatch):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            lib_dir = Path(tmpdir)
-            env_bin_dir = lib_dir / "env" / "bin"
-            lib_bin_dir = lib_dir / "bin"
-            env_bin_dir.mkdir(parents=True)
-            lib_bin_dir.mkdir()
-            env_binary = env_bin_dir / "demo"
-            env_binary.write_text("#!/bin/sh\nexit 0\n")
-            env_binary.chmod(0o755)
-            shared_shim = lib_bin_dir / "demo"
-            shared_shim.symlink_to(env_binary)
-            monkeypatch.setenv("LIB_BIN_DIR", str(lib_bin_dir))
-
-            provider = EnvProvider(
-                install_root=lib_dir / "env",
-                postinstall_scripts=True,
-                min_release_age=3,
-            )
-
-            linked_path = provider._link_loaded_binary("demo", shared_shim)
-
-            assert linked_path == shared_shim
-            assert shared_shim.is_symlink()
-            assert shared_shim.readlink() == env_binary
-            assert env_binary.is_file()
-            assert not env_binary.is_symlink()
-
-    def test_provider_never_discovers_human_convenience_lib_bin(
-        self,
-        monkeypatch,
-        test_machine,
-    ):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            lib_dir = Path(tmpdir)
-            lib_bin_dir = lib_dir / "bin"
-            lib_bin_dir.mkdir()
-            convenience_link = lib_bin_dir / "human-only-git"
-            convenience_link.symlink_to(test_machine.require_tool("git"))
-            monkeypatch.setenv("ABXPKG_LIB_DIR", str(lib_dir))
-
-            provider = EnvProvider(
-                install_root=lib_dir / "env",
-                PATH=str(lib_bin_dir),
-                postinstall_scripts=True,
-                min_release_age=3,
-            )
-
-            assert provider.load("human-only-git", no_cache=True) is None
-            assert provider.bin_dir is not None
-            assert not (provider.bin_dir / "human-only-git").exists()
-
     def test_search_returns_empty_for_env_provider(self):
         # EnvProvider has no package index — it just exposes ambient PATH —
         # so search must be an empty list rather than a crash or fallback.

@@ -347,6 +347,11 @@ class ChromeWebstoreProvider(BinProvider):
         extension_name = self._extension_name(bin_name, install_args)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
+        from .binary import Binary
+
+        unzip = Binary(name="unzip").install(no_cache=no_cache)
+        if not unzip.loaded_abspath:
+            raise RuntimeError("abxpkg could not resolve or install unzip")
         install_root = self.install_root
         bin_dir = self.bin_dir
         assert install_root is not None
@@ -360,6 +365,7 @@ class ChromeWebstoreProvider(BinProvider):
                 webstore_id,
                 extension_name,
                 str(bin_dir),
+                str(unzip.loaded_abspath),
                 *(["--no-cache"] if no_cache else []),
             ],
             cwd=install_root,

@@ -26,22 +26,18 @@ def _abxpkg_executable() -> Path:
     """Locate the installed abxpkg console script for subprocess-based tests."""
 
     candidate = Path(sys.executable).parent / "abxpkg"
-    if candidate.exists():
-        return candidate
-    resolved = shutil.which("abxpkg")
-    assert resolved, "abxpkg console script must be installed in the active venv"
-    return Path(resolved)
+    assert candidate.exists(), (
+        "abxpkg console script must be installed in the active venv"
+    )
+    return candidate
 
 
 def _abx_executable() -> Path:
     """Locate the installed `abx` console script for subprocess-based tests."""
 
     candidate = Path(sys.executable).parent / "abx"
-    if candidate.exists():
-        return candidate
-    resolved = shutil.which("abx")
-    assert resolved, "abx console script must be installed in the active venv"
-    return Path(resolved)
+    assert candidate.exists(), "abx console script must be installed in the active venv"
+    return candidate
 
 
 def _run_cli(
@@ -1598,11 +1594,12 @@ def test_version_report_does_not_install_provider_dependencies(tmp_path):
     assert proc.stderr == ""
 
 
-def test_version_report_projects_existing_host_installer_through_env(tmp_path):
-    npm_abspath = shutil.which("npm")
-    node_abspath = shutil.which("node")
-    assert npm_abspath
-    assert node_abspath
+def test_version_report_projects_existing_host_installer_through_env(
+    tmp_path,
+    test_machine,
+):
+    npm_abspath = test_machine.require_tool("npm")
+    node_abspath = test_machine.require_tool("node")
     host_path = os.pathsep.join(
         dict.fromkeys((str(Path(npm_abspath).parent), str(Path(node_abspath).parent))),
     )
@@ -2922,12 +2919,12 @@ def test_run_script_applies_install_args_to_side_dependency(tmp_path):
         '# install_args = ["black==24.2.0"]\n'
         f'# install_root = "{install_root}"\n'
         "# ///\n"
-        "import shutil\n"
-        "import subprocess\n"
+        "from abxpkg import Binary\n"
         "import sys\n"
-        "black = shutil.which('black')\n"
-        "print(f'black_path={black}')\n"
-        "proc = subprocess.run(['black', '--version'], capture_output=True, text=True)\n"
+        "black = Binary(name='black').load(no_cache=True)\n"
+        "assert black.loaded_abspath is not None\n"
+        "print(f'black_path={black.loaded_abspath}')\n"
+        "proc = black.exec(cmd=('--version',), quiet=True)\n"
         "sys.stdout.write(proc.stdout or proc.stderr)\n"
         "sys.exit(proc.returncode)\n",
     )
@@ -2946,7 +2943,11 @@ def test_run_script_applies_install_args_to_side_dependency(tmp_path):
     )
 
     assert proc.returncode == 0, proc.stderr
-    assert f"black_path={install_root / 'venv' / 'bin' / 'black'}" in proc.stdout
+    projected_black = lib / "env" / "bin" / "black"
+    installed_black = install_root / "venv" / "bin" / "black"
+    assert f"black_path={projected_black}" in proc.stdout
+    assert projected_black.is_symlink()
+    assert projected_black.samefile(installed_black)
     assert "24.2.0" in proc.stdout
 
 

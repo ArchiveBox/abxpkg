@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from copy import deepcopy
 from inspect import isawaitable
 from collections.abc import Awaitable, Mapping
@@ -94,6 +95,80 @@ class BinaryCacheBackend(Protocol):
         request: BinaryRequestEvent | None,
         binary: Binary,
     ) -> None | Awaitable[None]: ...
+
+
+class JSONFileBinaryCacheBackend:
+    """Persistent binary cache backend backed by one real JSON file."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def _read(self) -> dict[str, Any]:
+        if not self.path.exists():
+            return {}
+        contents = json.loads(self.path.read_text(encoding="utf-8"))
+        if not isinstance(contents, dict):
+            raise ValueError(f"Invalid binary cache at {self.path}")
+        return contents
+
+    def _write(self, contents: Mapping[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        pending_path = self.path.with_name(f".{self.path.name}.pending")
+        pending_path.write_text(
+            json.dumps(dict(contents), indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        pending_path.replace(self.path)
+
+    def get(self, request: BinaryRequestEvent) -> Binary | None:
+        cached = self._read().get(request.name)
+        if cached is None:
+            return None
+        provider_names = _provider_names(cached.pop("binproviders", "env"))
+        loaded_provider_name = cached.pop("loaded_binprovider", "")
+        return Binary.model_validate(
+            {
+                **cached,
+                "binproviders": [
+                    PROVIDER_CLASS_BY_NAME[name]() for name in provider_names
+                ],
+                "loaded_binprovider": (
+                    PROVIDER_CLASS_BY_NAME[loaded_provider_name]()
+                    if loaded_provider_name in PROVIDER_CLASS_BY_NAME
+                    else None
+                ),
+            },
+        )
+
+    def set(
+        self,
+        request: BinaryRequestEvent | None,
+        binary: Binary,
+    ) -> None:
+        contents = self._read()
+        cached = binary.model_dump(
+            mode="json",
+            exclude={"binproviders", "loaded_binprovider"},
+        )
+        cached["binproviders"] = ",".join(
+            str(provider.name) for provider in binary.binproviders
+        )
+        cached["loaded_binprovider"] = (
+            str(binary.loaded_binprovider.name) if binary.loaded_binprovider else ""
+        )
+        contents[request.name if request is not None else binary.name] = cached
+        self._write(contents)
+
+    def invalidate(
+        self,
+        request: BinaryRequestEvent,
+        binary: Binary,
+        reason: str,
+    ) -> None:
+        del binary, reason
+        contents = self._read()
+        contents.pop(request.name, None)
+        self._write(contents)
 
 
 async def _maybe_await(value: Any) -> Any:

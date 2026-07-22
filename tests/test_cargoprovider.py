@@ -1,7 +1,6 @@
 import tempfile
 from pathlib import Path
 import logging
-import shutil
 from typing import cast
 
 
@@ -11,9 +10,8 @@ from abxpkg.binprovider import BinProvider
 
 class TestCargoProvider:
     def test_projected_host_cargo_initializes_real_sibling_rustc(self, test_machine):
-        test_machine.require_tool("cargo")
+        cargo_abspath = Path(test_machine.require_tool("cargo")).resolve()
         test_machine.require_tool("rustc")
-        cargo_abspath = Path(cast(str, shutil.which("cargo"))).resolve()
         assert cargo_abspath.with_name("rustc").is_file()
 
         with tempfile.TemporaryDirectory() as temp_dir:

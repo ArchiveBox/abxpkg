@@ -1,12 +1,11 @@
 import logging
 import os
-import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, SemVer, UvProvider
+from abxpkg import Binary, EnvProvider, SemVer, UvProvider
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
@@ -18,7 +17,17 @@ class TestUvProvider:
             old_path = os.environ.get("PATH", "")
             os.environ["PATH"] = "/usr/bin:/bin"
             try:
-                assert shutil.which("uv", path=os.environ["PATH"]) is None
+                assert (
+                    EnvProvider(
+                        PATH=os.environ["PATH"],
+                        install_root=None,
+                        bin_dir=None,
+                    ).load(
+                        "uv",
+                        no_cache=True,
+                    )
+                    is None
+                )
                 provider = UvProvider(
                     install_root=install_root,
                     postinstall_scripts=True,

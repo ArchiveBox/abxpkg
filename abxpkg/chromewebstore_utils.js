@@ -15,19 +15,6 @@ const { finished } = require('stream/promises');
 
 const execFileAsync = promisify(execFile);
 
-function getEnvInt(name, defaultValue) {
-    const value = process.env[name];
-    if (value === undefined || value === null || value === '') {
-        return defaultValue;
-    }
-    const parsed = parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : defaultValue;
-}
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function makeTreeWritable(targetPath) {
     if (!fs.existsSync(targetPath)) return;
 
@@ -75,7 +62,10 @@ async function sanitizeUnpackedExtension(unpackedPath) {
 }
 
 async function installExtension(extension, options = {}) {
-    const { forceInstall = false } = options;
+    const { forceInstall = false, unzipPath } = options;
+    if (!unzipPath) {
+        throw new Error('unzip_path is required');
+    }
     const manifestPath = path.join(extension.unpacked_path, 'manifest.json');
 
     if (forceInstall || (!fs.existsSync(manifestPath) && !fs.existsSync(extension.crx_path))) {
@@ -84,44 +74,22 @@ async function installExtension(extension, options = {}) {
         const crxDir = path.dirname(extension.crx_path);
         await fs.promises.mkdir(crxDir, { recursive: true });
 
-        const maxDownloadAttempts = Math.max(1, getEnvInt('CHROME_EXTENSION_DOWNLOAD_ATTEMPTS', 3));
-        let lastDownloadError = null;
-
-        for (let attempt = 1; attempt <= maxDownloadAttempts; attempt++) {
-            try {
-                const response = await fetch(extension.crx_url);
-
-                if (!response.ok) {
-                    console.warn(`[⚠️] Failed to download extension ${extension.name}: HTTP ${response.status}`);
-                    return false;
-                }
-
-                if (!response.body) {
-                    console.warn(`[⚠️] Failed to download extension ${extension.name}: No response body`);
-                    return false;
-                }
-
-                const crxFile = fs.createWriteStream(extension.crx_path);
-                const crxStream = Readable.fromWeb(response.body);
-                await finished(crxStream.pipe(crxFile));
-                lastDownloadError = null;
-                break;
-            } catch (err) {
-                lastDownloadError = err;
-                try {
-                    fs.rmSync(extension.crx_path, { force: true });
-                } catch (_) {}
-
-                if (attempt < maxDownloadAttempts) {
-                    const delayMs = Math.min(1000 * attempt, 5000);
-                    console.warn(`[⚠️] Failed to download extension ${extension.name} on attempt ${attempt}/${maxDownloadAttempts}: ${err?.message || err}. Retrying in ${delayMs}ms...`);
-                    await sleep(delayMs);
-                }
+        try {
+            const response = await fetch(extension.crx_url);
+            if (!response.ok) {
+                console.warn(`[⚠️] Failed to download extension ${extension.name}: HTTP ${response.status}`);
+                return false;
             }
-        }
-
-        if (lastDownloadError) {
-            console.error(`[❌] Failed to download extension ${extension.name}:`, lastDownloadError);
+            if (!response.body) {
+                console.warn(`[⚠️] Failed to download extension ${extension.name}: No response body`);
+                return false;
+            }
+            const crxFile = fs.createWriteStream(extension.crx_path);
+            const crxStream = Readable.fromWeb(response.body);
+            await finished(crxStream.pipe(crxFile));
+        } catch (err) {
+            fs.rmSync(extension.crx_path, { force: true });
+            console.error(`[❌] Failed to download extension ${extension.name}:`, err);
             return false;
         }
     }
@@ -130,7 +98,7 @@ async function installExtension(extension, options = {}) {
     await fs.promises.mkdir(extension.unpacked_path, { recursive: true });
 
     try {
-        await execFileAsync('/usr/bin/unzip', [
+        await execFileAsync(unzipPath, [
             '-q',
             '-o',
             extension.crx_path,
@@ -155,7 +123,7 @@ async function installExtension(extension, options = {}) {
     return true;
 }
 
-async function loadOrInstallExtension(ext, extensionsDir, forceInstall = false) {
+async function loadOrInstallExtension(ext, extensionsDir, unzipPath, forceInstall = false) {
     if (!(ext.webstore_id || ext.unpacked_path)) {
         throw new Error('Extension must have either {webstore_id} or {unpacked_path}');
     }
@@ -175,7 +143,7 @@ async function loadOrInstallExtension(ext, extensionsDir, forceInstall = false) 
     ext.read_version = () => fs.existsSync(manifestPath) && ext.read_manifest()?.version || null;
 
     if (forceInstall || !ext.read_version()) {
-        await installExtension(ext, { forceInstall });
+        await installExtension(ext, { forceInstall, unzipPath });
     }
     await sanitizeUnpackedExtension(ext.unpacked_path);
 
@@ -197,12 +165,16 @@ async function loadOrInstallExtension(ext, extensionsDir, forceInstall = false) 
 async function installExtensionWithCache(extension, options = {}) {
     const {
         extensionsDir,
+        unzipPath,
         quiet = false,
         noCache = false,
     } = options;
 
     if (!extensionsDir) {
         throw new Error('extensions_dir is required');
+    }
+    if (!unzipPath) {
+        throw new Error('unzip_path is required');
     }
 
     const cacheFile = path.join(extensionsDir, `${extension.name}.extension.json`);
@@ -228,7 +200,7 @@ async function installExtensionWithCache(extension, options = {}) {
         console.log(`[*] Installing ${extension.name} extension...`);
     }
 
-    const installedExt = await loadOrInstallExtension(extension, extensionsDir, noCache);
+    const installedExt = await loadOrInstallExtension(extension, extensionsDir, unzipPath, noCache);
 
     if (!installedExt?.version) {
         console.error(`[❌] Failed to install ${extension.name} extension`);
@@ -261,18 +233,15 @@ async function main() {
         }
 
         case 'installExtensionWithCache': {
-            const [webstoreId, name, maybeExtensionsDir, maybeNoCache] = args;
+            const [webstoreId, name, extensionsDir, unzipPath, maybeNoCache] = args;
             if (!webstoreId || !name) {
-                console.error('Usage: installExtensionWithCache <webstore_id> <name> [extensions_dir] [--no-cache]');
+                console.error('Usage: installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--no-cache]');
                 process.exit(1);
             }
-            const extensionsDir = maybeExtensionsDir && maybeExtensionsDir !== '--no-cache'
-                ? maybeExtensionsDir
-                : undefined;
-            const noCache = maybeExtensionsDir === '--no-cache' || maybeNoCache === '--no-cache';
+            const noCache = maybeNoCache === '--no-cache';
             const ext = await installExtensionWithCache(
                 { webstore_id: webstoreId, name },
-                { extensionsDir, noCache },
+                { extensionsDir, unzipPath, noCache },
             );
             if (ext) {
                 console.log(JSON.stringify(ext, null, 2));
@@ -285,7 +254,7 @@ async function main() {
         default:
             console.error('Usage: chromewebstore_utils.js <command> [args...]');
             console.error('  getExtensionId <path>');
-            console.error('  installExtensionWithCache <webstore_id> <name> [extensions_dir] [--no-cache]');
+            console.error('  installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--no-cache]');
             process.exit(1);
     }
 }
