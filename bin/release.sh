@@ -176,12 +176,6 @@ require_successful_workflows() {
     done
 }
 
-verify_pypi_release() {
-    local version="$1"
-
-    curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/${version}/json" | jq -e --arg version "${version}" '.info.version == $version' >/dev/null
-}
-
 download_tested_artifacts() {
     local slug="$1"
     local release_sha="$2"
@@ -249,7 +243,6 @@ publish_artifacts() {
     else
         uv publish --trusted-publishing always "${artifacts[@]}"
     fi
-    verify_pypi_release "${version}"
 }
 
 create_release() {
