@@ -1,12 +1,70 @@
 import logging
+import os
+import shlex
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from abxpkg import AptProvider, Binary
+from abxpkg import AptProvider, Binary, EnvProvider
 
 
 @pytest.mark.root_required
 class TestAptProvider:
+    def test_env_command_projects_new_host_binary_into_env(
+        self,
+        test_machine,
+        tmp_path,
+    ):
+        test_machine.require_tool("apt-get")
+        package = test_machine.pick_missing_apt_package()
+        projected = tmp_path / "env" / "bin" / package
+        executable = Path(sys.executable).parent / "abxpkg"
+        assert executable.is_file()
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith("ABXPKG_")
+        }
+
+        try:
+            proc = subprocess.run(
+                [
+                    str(executable),
+                    f"--lib={tmp_path}",
+                    "--binproviders=env,apt",
+                    "--no-cache=True",
+                    "env",
+                    "--install",
+                    package,
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=600,
+            )
+
+            assert proc.returncode == 0, proc.stderr
+            assert projected.is_symlink()
+            assert projected.resolve().is_file()
+            assert not projected.resolve().is_relative_to(tmp_path)
+            path_line = next(
+                line for line in proc.stdout.splitlines() if line.startswith("PATH=")
+            )
+            resolved_path = shlex.split(path_line.removeprefix("PATH="))[0]
+            assert resolved_path.split(os.pathsep)[0] == str(projected.parent)
+
+            reloaded = EnvProvider(install_root=tmp_path / "env").load(
+                package,
+                no_cache=True,
+            )
+            assert reloaded.loaded_binprovider is not None
+            assert reloaded.loaded_binprovider.name == "env"
+            assert reloaded.loaded_abspath == projected
+        finally:
+            AptProvider().uninstall(package, quiet=True, no_cache=True)
+
     def test_fresh_provider_loads_cached_installer_before_setting_up_path(
         self,
         test_machine,

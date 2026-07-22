@@ -308,10 +308,8 @@ class Binary(ShallowBinary):
         binary_min_release_age = (
             self.min_release_age if min_release_age is None else min_release_age
         )
-        for binprovider in self.binproviders:
-            if binproviders and (binprovider.name not in binproviders):
-                continue
-
+        selected_providers = self._binprovider_order(binproviders)
+        for binprovider in selected_providers:
             provider = binprovider
             try:
                 provider = self.get_binprovider(
@@ -331,7 +329,7 @@ class Binary(ShallowBinary):
                     min_version=self.min_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
-                    return self._validated_loaded_copy(
+                    installed = self._validated_loaded_copy(
                         provider,
                         abspath=installed_bin.loaded_abspath,
                         version=installed_bin.loaded_version,
@@ -339,6 +337,17 @@ class Binary(ShallowBinary):
                         mtime=installed_bin.loaded_mtime,
                         euid=installed_bin.loaded_euid,
                     )
+                    if (
+                        not provider.dry_run
+                        and selected_providers
+                        and provider.name != selected_providers[0].name
+                    ):
+                        return self.load(
+                            binproviders=binproviders,
+                            no_cache=no_cache,
+                            **extra_overrides,
+                        )
+                    return installed
             except Exception as err:
                 inner_exc = err
                 errors[binprovider.name] = format_exception_with_output(err)
