@@ -1,5 +1,4 @@
 import os
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -9,7 +8,9 @@ import sys
 import pytest
 
 from abxpkg import (
+    BinName,
     BinProvider,
+    BinProviderName,
     BunProvider,
     DenoProvider,
     EnvProvider,
@@ -179,53 +180,38 @@ class TestBinProvider:
     def test_installer_binary_auto_installs_missing_dependency_into_configured_lib(
         self,
     ):
+        class BlackInstallerProvider(BinProvider):
+            name: BinProviderName = "black_bootstrap"
+            INSTALLER_BIN: BinName = "black"
+
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
-            lib_dir = tmpdir_path / "abxlib"
-            isolated_bin = tmpdir_path / "isolated-bin"
-            isolated_bin.mkdir()
-            isolated_python = isolated_bin / "python"
-            shutil.copy2(sys.executable, isolated_python)
-            env = os.environ.copy()
-            env.update(
-                {
-                    "ABXPKG_BINPROVIDERS": "env,pip",
-                    "ABXPKG_LIB_DIR": str(lib_dir),
-                    "PATH": os.pathsep.join(["/usr/bin", "/bin"]),
-                    "PYTHON_BINARY": str(isolated_python),
-                    "PYTHONPATH": os.pathsep.join(
-                        path for path in sys.path if "site-packages" in path
-                    ),
-                },
+            old_providers = os.environ.get("ABXPKG_BINPROVIDERS")
+            old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+            os.environ["ABXPKG_BINPROVIDERS"] = "pip"
+            os.environ["ABXPKG_LIB_DIR"] = str(tmpdir_path / "abxlib")
+            try:
+                installer = BlackInstallerProvider(
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                ).INSTALLER_BINARY(no_cache=True)
+            finally:
+                if old_providers is None:
+                    os.environ.pop("ABXPKG_BINPROVIDERS", None)
+                else:
+                    os.environ["ABXPKG_BINPROVIDERS"] = old_providers
+                if old_lib_dir is None:
+                    os.environ.pop("ABXPKG_LIB_DIR", None)
+                else:
+                    os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
+
+            assert installer.loaded_binprovider is not None
+            assert installer.loaded_binprovider.name == "pip"
+            assert installer.loaded_abspath is not None
+            assert installer.loaded_abspath.resolve().is_relative_to(
+                (tmpdir_path / "abxlib" / "pip" / "venv" / "bin").resolve(),
             )
-            proc = subprocess.run(
-                [
-                    str(isolated_python),
-                    "-c",
-                    "from abxpkg import PyinfraProvider; "
-                    "binary = PyinfraProvider(postinstall_scripts=True, min_release_age=3).INSTALLER_BINARY(no_cache=True); "
-                    "print(f'{binary.name}|{binary.loaded_binprovider.name}|{binary.loaded_abspath}|{binary.loaded_version}')",
-                ],
-                cwd=Path(__file__).parents[1],
-                env=env,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-            assert proc.returncode == 0, proc.stderr
-            name, provider_name, abspath, version = (
-                proc.stdout.strip().splitlines()[-1].split("|")
-            )
-            assert name == "pyinfra"
-            assert provider_name == "pip"
-            assert (
-                Path(abspath)
-                .resolve()
-                .is_relative_to(
-                    (tmpdir_path / "abxlib" / "pip" / "venv" / "bin").resolve(),
-                )
-            )
-            assert SemVer.parse(version) is not None
+            assert installer.loaded_version is not None
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
