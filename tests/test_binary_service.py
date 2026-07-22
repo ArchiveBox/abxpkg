@@ -529,15 +529,24 @@ def test_binary_service_rechecks_same_request_after_install_semaphore(
     async def run() -> tuple[list[Any], list[Any]]:
         bus = abxbus.EventBus(name="test_binary_service_same_root_race")
         BinaryService(bus, install_root=tmp_path / "shared-root")
-        request_kwargs = {
-            "name": "black",
-            "binproviders": "pip",
-            "postinstall_scripts": True,
-            "min_release_age": 3,
-            "overrides": {"pip": {"install_args": ["black"]}},
-        }
-        first = bus.emit(BinaryRequestEvent(**request_kwargs))
-        second = bus.emit(BinaryRequestEvent(**request_kwargs))
+        first = bus.emit(
+            BinaryRequestEvent(
+                name="black",
+                binproviders="pip",
+                postinstall_scripts=True,
+                min_release_age=3,
+                overrides={"pip": {"install_args": ["black"]}},
+            ),
+        )
+        second = bus.emit(
+            BinaryRequestEvent(
+                name="black",
+                binproviders="pip",
+                postinstall_scripts=True,
+                min_release_age=3,
+                overrides={"pip": {"install_args": ["black"]}},
+            ),
+        )
 
         await asyncio.gather(first.now(), second.now())
         return await first.event_results_list(), await second.event_results_list()
