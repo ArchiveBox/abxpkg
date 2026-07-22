@@ -886,7 +886,7 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
 
-        cache = cache if cache is not None else load_derived_cache(derived_env_path)
+        cache = load_derived_cache(derived_env_path)
         cache_context = (
             cache_context
             if cache_context is not None

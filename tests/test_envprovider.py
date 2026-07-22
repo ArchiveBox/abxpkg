@@ -70,6 +70,51 @@ class TestEnvProvider:
             f"python-cache-{index}" for index in range(worker_count)
         } <= cached_names
 
+    def test_stale_cache_snapshot_cannot_overwrite_new_record(self, tmp_path):
+        provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded_python = provider.load("python")
+        assert loaded_python is not None
+        assert loaded_python.loaded_abspath is not None
+        assert loaded_python.loaded_version is not None
+        assert loaded_python.loaded_sha256 is not None
+
+        provider.write_cached_binary(
+            "first",
+            loaded_python.loaded_abspath,
+            loaded_python.loaded_version,
+            loaded_python.loaded_sha256,
+        )
+        derived_env_path = provider.install_root / "derived.env"
+        stale_cache = load_derived_cache(derived_env_path)
+        first_record = next(
+            record
+            for record in stale_cache.values()
+            if record.get("bin_name") == "first"
+        )
+        first_record.pop("inode")
+
+        provider.write_cached_binary(
+            "second",
+            loaded_python.loaded_abspath,
+            loaded_python.loaded_version,
+            loaded_python.loaded_sha256,
+        )
+        refreshed = provider.load_cached_binary(
+            "first",
+            loaded_python.loaded_abspath,
+            cache=stale_cache,
+        )
+
+        assert refreshed is not None
+        assert {
+            record.get("bin_name")
+            for record in load_derived_cache(derived_env_path).values()
+        } >= {"first", "second"}
+
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
