@@ -436,21 +436,55 @@ class PnpmProvider(BinProvider):
             if loaded is not None:
                 return loaded
 
-        local_installer = (
-            self._installer_provider_root()
-            / "node_modules"
-            / ".bin"
-            / str(
-                self.INSTALLER_BIN,
-            )
-        )
-        if local_installer.is_file() and os.access(local_installer, os.X_OK):
-            loaded = self._load_installer_at(local_installer, no_cache=no_cache)
-            if loaded is not None:
-                return loaded
+        from .binprovider_npm import NpmProvider
 
-        loaded = self._install_installer_binary(no_cache=no_cache)
-        return loaded
+        installer_root = self._installer_provider_root()
+        node_loaded = self._cache_node_dependency(no_cache=no_cache)
+        pnpm_package = self._pnpm_package_for_node(
+            node_loaded.loaded_version if node_loaded is not None else None,
+        )
+        installer_provider = NpmProvider(
+            install_root=installer_root,
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"pnpm": {"install_args": [pnpm_package]}},
+        )
+        with installer_provider.mutation_lock():
+            local_installer = (
+                installer_root
+                / "node_modules"
+                / ".bin"
+                / str(
+                    self.INSTALLER_BIN,
+                )
+            )
+            if local_installer.is_file() and os.access(local_installer, os.X_OK):
+                loaded = installer_provider.load(
+                    self.INSTALLER_BIN,
+                    quiet=True,
+                    no_cache=True,
+                )
+                if loaded and loaded.loaded_abspath:
+                    if loaded.loaded_version and loaded.loaded_sha256:
+                        self.write_cached_binary(
+                            self.INSTALLER_BIN,
+                            loaded.loaded_abspath,
+                            loaded.loaded_version,
+                            loaded.loaded_sha256,
+                            resolved_provider_name=(
+                                loaded.loaded_binprovider.name
+                                if loaded.loaded_binprovider is not None
+                                else self.name
+                            ),
+                            resolved_provider=loaded.loaded_binprovider,
+                            cache_kind="dependency",
+                        )
+                    self._INSTALLER_BINARY = loaded
+                    self._cache_node_dependency(no_cache=no_cache)
+                    return loaded
+
+            return self._install_installer_binary(no_cache=no_cache)
 
     @log_method_call(include_result=True)
     def exec(
