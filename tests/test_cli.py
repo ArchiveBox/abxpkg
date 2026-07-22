@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 import json
-import signal
 import shlex
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +17,7 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abxpkg import BinName, BinProviderName, EnvProvider, SemVer
+from abxpkg import EnvProvider, PnpmProvider
 from abxpkg.config import load_derived_cache
 import abxpkg.cli as cli_module
 
@@ -300,12 +301,19 @@ def restore_abxpkg_logger():
         package_logger.propagate = original_propagate
 
 
-def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
-    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
-    providers = cli_module.build_providers(
-        ["uv", "pip", "pnpm", "cargo", "env"],
-        dry_run=True,
-    )
+def test_build_providers_uses_managed_lib_layout(tmp_path):
+    old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    os.environ["ABXPKG_LIB_DIR"] = str(tmp_path)
+    try:
+        providers = cli_module.build_providers(
+            ["uv", "pip", "pnpm", "cargo", "env"],
+            dry_run=True,
+        )
+    finally:
+        if old_lib_dir is None:
+            os.environ.pop("ABXPKG_LIB_DIR", None)
+        else:
+            os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
 
     assert providers[0].install_root == tmp_path / "uv"
     assert providers[1].install_root == tmp_path / "pip"
@@ -315,106 +323,76 @@ def test_build_providers_uses_managed_lib_layout(tmp_path, monkeypatch):
     assert all(provider.dry_run for provider in providers)
 
 
-def test_parse_provider_names_uses_preferred_default_cli_order(monkeypatch):
-    monkeypatch.delenv("ABXPKG_BINPROVIDERS", raising=False)
+def test_parse_provider_names_uses_preferred_default_cli_order():
+    old_providers = os.environ.pop("ABXPKG_BINPROVIDERS", None)
+    try:
+        assert cli_module.parse_provider_names(None) == list(
+            cli_module.DEFAULT_PROVIDER_NAMES,
+        )
+    finally:
+        if old_providers is not None:
+            os.environ["ABXPKG_BINPROVIDERS"] = old_providers
 
-    assert cli_module.parse_provider_names(None) == list(
-        cli_module.DEFAULT_PROVIDER_NAMES,
+
+def test_default_cli_sets_managed_lib_dir():
+    old_lib_dir = os.environ.pop("ABXPKG_LIB_DIR", None)
+    options = cli_module.build_cli_options(
+        None,
+        lib_dir=None,
+        global_mode=None,
+        binproviders="pip",
+        dry_run=None,
+        debug=None,
+        no_cache=None,
+        min_version=None,
+        postinstall_scripts=None,
+        min_release_age=None,
+        overrides=None,
+        install_root=None,
+        bin_dir=None,
+        euid=None,
+        install_timeout=None,
+        version_timeout=None,
     )
 
+    assert options.lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
+    assert os.environ["ABXPKG_LIB_DIR"] == str(options.lib_dir)
+    assert cli_module.build_providers(["pip"], dry_run=True)[0].install_root == (
+        options.lib_dir / "pip"
+    )
+    if old_lib_dir is None:
+        os.environ.pop("ABXPKG_LIB_DIR", None)
+    else:
+        os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
 
-def test_default_cli_sets_managed_lib_dir(monkeypatch):
-    monkeypatch.delenv("ABXPKG_LIB_DIR", raising=False)
-    captured = {}
 
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
-        captured["install_root"] = cli_module.build_providers(
-            ["pip"],
-            dry_run=True,
-        )[0].install_root
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_cli_lib_none_disables_managed_mode(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
-        ["load", "python"],
+        ["--lib=None", "--binproviders=env", "load", "python"],
+        env={"ABXPKG_LIB_DIR": str(tmp_path)},
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
-    assert captured["env_lib_dir"] == str(cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve())
-    assert (
-        captured["install_root"] == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve() / "pip"
-    )
+    assert "(env) python" in result.output
+    assert not any(tmp_path.iterdir())
 
 
-def test_cli_lib_none_disables_managed_mode(monkeypatch, tmp_path):
-    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
-        captured["install_root"] = cli_module.build_providers(
-            ["pip"],
-            dry_run=True,
-        )[0].install_root
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_cli_global_flag_disables_managed_mode(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
-        ["--lib=None", "load", "python"],
+        ["--global", "--binproviders=env", "load", "python"],
+        env={"ABXPKG_LIB_DIR": str(tmp_path)},
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
-    assert captured["env_lib_dir"] is None
-    assert captured["install_root"] is None
+    assert "(env) python" in result.output
+    assert not any(tmp_path.iterdir())
 
 
-def test_cli_global_flag_disables_managed_mode(monkeypatch, tmp_path):
-    monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmp_path))
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-        captured["env_lib_dir"] = os.environ.get("ABXPKG_LIB_DIR")
-        captured["install_root"] = cli_module.build_providers(
-            ["pip"],
-            dry_run=True,
-        )[0].install_root
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
-    result = CliRunner().invoke(
-        cli_module.cli,
-        ["--global", "load", "python"],
-    )
-
-    assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "load"
-    assert captured["options"].lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
-    assert captured["env_lib_dir"] is None
-    assert captured["install_root"] is None
-
-
-def test_env_lib_none_disables_managed_mode(monkeypatch):
-    monkeypatch.setenv("ABXPKG_LIB_DIR", "None")
-
+def test_env_lib_none_disables_managed_mode():
+    old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    os.environ["ABXPKG_LIB_DIR"] = "None"
     options = cli_module.build_cli_options(
         None,
         lib_dir=None,
@@ -437,18 +415,11 @@ def test_env_lib_none_disables_managed_mode(monkeypatch):
     assert options.lib_dir == cli_module.DEFAULT_ABXPKG_LIB_DIR.resolve()
     assert os.environ.get("ABXPKG_LIB_DIR") is None
     assert cli_module.build_providers(["pip"], dry_run=True)[0].install_root is None
+    if old_lib_dir is not None:
+        os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
 
 
-def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_install_command_uses_env_defaults(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
         ["install", "prettier"],
@@ -460,18 +431,13 @@ def test_install_command_uses_env_defaults(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "prettier"
-    assert captured["action"] == "install"
-    assert captured["options"].lib_dir == tmp_path.resolve()
-    assert captured["options"].provider_names == ["pnpm", "uv"]
-    assert captured["options"].dry_run is True
-    assert captured["options"].debug is False
-    assert captured["options"].no_cache is False
+    assert "Installing prettier via pnpm" in result.output
+    assert f"--dir={tmp_path.resolve() / 'pnpm'}" in result.output
+    assert not (tmp_path / "pnpm" / "node_modules" / "prettier").exists()
 
 
-def test_build_cli_options_exports_resolved_provider_names(monkeypatch):
-    monkeypatch.delenv("ABXPKG_BINPROVIDERS", raising=False)
-
+def test_build_cli_options_exports_resolved_provider_names():
+    old_providers = os.environ.pop("ABXPKG_BINPROVIDERS", None)
     options = cli_module.build_cli_options(
         None,
         lib_dir=None,
@@ -493,21 +459,16 @@ def test_build_cli_options_exports_resolved_provider_names(monkeypatch):
 
     assert options.provider_names == ["brew", "env"]
     assert os.environ["ABXPKG_BINPROVIDERS"] == "brew,env"
+    if old_providers is None:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
+    else:
+        os.environ["ABXPKG_BINPROVIDERS"] = old_providers
 
 
-def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_install_command_uses_debug_env_default(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
-        ["install", "prettier"],
+        ["--binproviders=env", "load", "python"],
         env={
             "ABXPKG_LIB_DIR": str(tmp_path),
             "ABXPKG_DEBUG": "1",
@@ -515,46 +476,24 @@ def test_install_command_uses_debug_env_default(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "prettier"
-    assert captured["action"] == "install"
-    assert captured["options"].debug is True
+    assert "EnvProvider.load('python')" in result.output
 
 
-def test_install_command_uses_debug_flag(monkeypatch, tmp_path):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_install_command_uses_debug_flag(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
-        ["--debug=True", "install", "prettier"],
+        ["--debug=True", "--binproviders=env", "load", "python"],
         env={"ABXPKG_LIB_DIR": str(tmp_path)},
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "prettier"
-    assert captured["action"] == "install"
-    assert captured["options"].debug is True
+    assert "EnvProvider.load('python')" in result.output
 
 
-def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_install_command_uses_no_cache_env_default(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
-        ["install", "prettier"],
+        ["--binproviders=env", "load", "python"],
         env={
             "ABXPKG_LIB_DIR": str(tmp_path),
             "ABXPKG_NO_CACHE": "1",
@@ -562,9 +501,9 @@ def test_install_command_uses_no_cache_env_default(monkeypatch, tmp_path):
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "prettier"
-    assert captured["action"] == "install"
-    assert captured["options"].no_cache is True
+    projected = tmp_path / "env" / "bin" / "python"
+    assert projected.is_symlink()
+    assert Path(result.output.split()[1].strip('"')) == projected
 
 
 def test_clear_command_removes_explicit_lib_dir(tmp_path):
@@ -594,25 +533,15 @@ def test_clear_command_uses_env_lib_dir(tmp_path):
     assert not tmp_path.exists()
 
 
-def test_version_command_with_binary_aliases_load(monkeypatch, tmp_path):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_version_command_with_binary_aliases_load(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
         ["version", f"--lib={tmp_path}", "--binproviders=env", "python3"],
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "python3"
-    assert captured["action"] == "load"
-    assert captured["options"].dry_run is False
+    assert "(env) python3" in result.output
+    assert (tmp_path / "env" / "bin" / "python3").is_symlink()
 
 
 def test_expand_bare_bool_flags_rewrites_debug_before_run():
@@ -654,16 +583,46 @@ def test_run_executes_preinstalled_binary_via_env_provider():
 
 
 def test_run_terminates_child_process_group(tmp_path):
-    marker = tmp_path / "child.pid"
+    socket_dir = Path(tempfile.mkdtemp(prefix="abxpkg-signal-", dir="/tmp"))
+    ready_path = socket_dir / "ready.sock"
+    stopped_path = socket_dir / "stopped.sock"
+    ready_listener = socket.socket(socket.AF_UNIX)
+    stopped_listener = socket.socket(socket.AF_UNIX)
+    ready_listener.bind(str(ready_path))
+    stopped_listener.bind(str(stopped_path))
+    ready_listener.listen(1)
+    stopped_listener.listen(1)
+    ready_listener.settimeout(8)
+    stopped_listener.settimeout(8)
     script = tmp_path / "spawn_child.py"
     script.write_text(
         "\n".join(
             [
+                "import os",
+                "import signal",
+                "import socket",
                 "import subprocess",
-                "import time",
-                "child = subprocess.Popen(['sleep', '30'])",
-                f"open({str(marker)!r}, 'w').write(str(child.pid))",
-                "time.sleep(30)",
+                "import sys",
+                "ready_path = sys.argv[1]",
+                "stopped_path = sys.argv[2]",
+                "child_code = (",
+                "    'import os, signal, socket, sys\\n'",
+                "    'ready_path, stopped_path = sys.argv[1:]\\n'",
+                "    'def stop(*_):\\n'",
+                "    '    with socket.socket(socket.AF_UNIX) as client:\\n'",
+                "    '        client.connect(stopped_path)\\n'",
+                "    '        client.sendall(b\\\"stopped\\\\n\\\")\\n'",
+                "    '    raise SystemExit(0)\\n'",
+                "    'signal.signal(signal.SIGTERM, stop)\\n'",
+                "    'with socket.socket(socket.AF_UNIX) as client:\\n'",
+                "    '    client.connect(ready_path)\\n'",
+                "    '    client.sendall(f\\\"{os.getpid()}\\\\n\\\".encode())\\n'",
+                "    'signal.pause()\\n'",
+                ")",
+                "child = subprocess.Popen(",
+                "    [sys.executable, '-c', child_code, ready_path, stopped_path],",
+                ")",
+                "signal.pause()",
             ],
         ),
     )
@@ -678,37 +637,43 @@ def test_run_terminates_child_process_group(tmp_path):
             "run",
             "python3",
             str(script),
+            str(ready_path),
+            str(stopped_path),
         ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         env=env,
     )
-
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline and not marker.exists() and proc.poll() is None:
-        time.sleep(0.1)
-
-    assert marker.exists(), f"child marker was not written; rc={proc.poll()}"
-    child_pid = int(marker.read_text())
-    proc.terminate()
-    stdout, stderr = proc.communicate(timeout=8)
-
-    child_alive = True
-    for _ in range(20):
+    try:
         try:
-            os.kill(child_pid, 0)
-        except ProcessLookupError:
-            child_alive = False
-            break
-        time.sleep(0.1)
-    if child_alive:
-        os.kill(child_pid, signal.SIGKILL)
-
-    assert not child_alive, (
-        f"child process {child_pid} survived wrapper termination; "
-        f"stdout={stdout!r} stderr={stderr!r}"
-    )
+            ready_connection, _ = ready_listener.accept()
+        except TimeoutError:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            raise AssertionError(
+                f"child did not report readiness; rc={proc.returncode} "
+                f"stdout={stdout!r} stderr={stderr!r}",
+            ) from None
+        with ready_connection:
+            child_pid = int(ready_connection.recv(64))
+        proc.terminate()
+        stopped_connection, _ = stopped_listener.accept()
+        with stopped_connection:
+            assert stopped_connection.recv(64) == b"stopped\n", (
+                f"child process {child_pid} did not receive wrapper termination"
+            )
+        stdout, stderr = proc.communicate(timeout=8)
+        assert proc.returncode is not None, (
+            f"wrapper did not terminate; stdout={stdout!r} stderr={stderr!r}"
+        )
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+        ready_listener.close()
+        stopped_listener.close()
+        shutil.rmtree(socket_dir)
 
 
 def test_run_accepts_update_flag_after_subcommand_for_env_provider():
@@ -797,97 +762,35 @@ def test_run_propagates_nonzero_exit_code_from_underlying_binary():
     assert "boom" in proc.stderr
 
 
-def test_run_update_skips_env_for_the_update_step(monkeypatch, tmp_path):
-    calls: list[tuple[str, object]] = []
-
-    class FakeLoadedProvider:
-        def __init__(self, name: str):
-            self.name = name
-
-        def exec(self, bin_name, cmd=(), capture_output=False, **kwargs):
-            calls.append(
-                ("exec", (self.name, str(bin_name), tuple(cmd), capture_output)),
-            )
-            return subprocess.CompletedProcess(
-                [str(bin_name), *cmd],
-                0,
-                "",
-                "",
-            )
-
-    class FakeRunBinary:
-        def __init__(self):
-            self.loaded_abspath = Path("/tmp/fake-bin")
-            self.loaded_version = SemVer("1.2.3")
-            self.loaded_binprovider = FakeLoadedProvider("env")
-            self.binproviders = []
-            self.is_valid = True
-
-        def load(self, no_cache=None):
-            calls.append(("load", (no_cache,)))
-            return self
-
-        def install(self, dry_run=None, no_cache=None):
-            calls.append(("install", (dry_run, no_cache)))
-            return self
-
-        def update(self, binproviders=None, dry_run=None, no_cache=None):
-            calls.append(("update", (tuple(binproviders or ()), dry_run, no_cache)))
-            self.loaded_binprovider = FakeLoadedProvider("brew")
-            return self
-
-    monkeypatch.setattr(
-        cli_module,
-        "build_binary",
-        lambda *args, **kwargs: FakeRunBinary(),
-    )
-
+def test_run_update_skips_env_for_the_update_step(tmp_path):
     result = CliRunner().invoke(
         cli_module.cli,
         [
             f"--lib={tmp_path}",
             "--binproviders=env,brew",
+            "--dry-run=True",
             "run",
             "--update",
-            "python3",
+            "shellcheck",
             "--version",
         ],
     )
 
     assert result.exit_code == 0
-    assert calls == [
-        ("load", (False,)),
-        ("update", (("brew",), False, False)),
-        ("exec", ("brew", "/tmp/fake-bin", ("--version",), False)),
-    ]
+    assert "Updating shellcheck via brew" in result.output
+    assert "via env" not in result.output
 
 
-def test_run_stdout_stderr_are_separated_and_not_buffered(tmp_path):
+def test_run_stdout_stderr_are_separated_and_not_buffered():
     """stdout and stderr from the underlying binary must stream separately."""
 
-    # Drop a tiny shim script into a fresh PATH directory that the env
-    # provider will pick up. The script must respond to --version so
-    # EnvProvider can .load() it, then return a non-zero exit code with
-    # output split across stdout/stderr.
-    script = tmp_path / "abxpkg-run-shim"
-    script.write_text(
-        "#!/bin/sh\n"
-        'if [ "$1" = "--version" ]; then\n'
-        '  echo "abxpkg-run-shim 1.2.3"\n'
-        "  exit 0\n"
-        "fi\n"
-        "echo 'this goes to stdout'\n"
-        "echo 'this goes to stderr' >&2\n"
-        "exit 7\n",
-    )
-    script.chmod(0o755)
-
-    # Use an ad-hoc PATH that exposes the custom script as a "binary".
     proc = _run_abxpkg_cli(
         "--binproviders=env",
         "run",
-        script.name,
-        env_overrides={"PATH": f"{tmp_path}:{os.environ['PATH']}"},
+        "python3",
+        "-c",
+        "import sys; print('this goes to stdout', flush=True); "
+        "print('this goes to stderr', file=sys.stderr, flush=True); sys.exit(7)",
     )
 
     assert proc.returncode == 7, proc.stderr
@@ -1327,79 +1230,43 @@ def test_parse_activate_shell_rejects_multiple_modes():
 
 
 def test_build_command_exec_env_without_names_includes_installers_and_cached_binaries(
-    monkeypatch,
     tmp_path,
 ):
-    class ExtraEnvProvider(EnvProvider):
-        name: BinProviderName = "extra_env"
-        INSTALLER_BIN: BinName = "python3"
+    lib_dir = tmp_path / "abxlib"
+    old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+    try:
+        provider = PnpmProvider(
+            install_root=lib_dir / "pnpm",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+        installed = provider.install("zx")
+        assert installed is not None
+        assert installed.loaded_abspath is not None
 
-        @property
-        def ENV(self) -> dict[str, str]:
-            return {"EXTRA_ENV": str(tmp_path / "extra")}
+        options = cli_module.CliOptions(
+            lib_dir=lib_dir,
+            provider_names=["pnpm"],
+            dry_run=False,
+            debug=False,
+            no_cache=False,
+        )
+        final_env = cli_module.build_command_exec_env(
+            (),
+            options=options,
+            base_env={},
+        )
+    finally:
+        if old_lib_dir is None:
+            os.environ.pop("ABXPKG_LIB_DIR", None)
+        else:
+            os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
 
-    class InstallerEnvProvider(EnvProvider):
-        name: BinProviderName = "installer_env"
-        INSTALLER_BIN: BinName = "python3"
-
-        @property
-        def ENV(self) -> dict[str, str]:
-            return {"INSTALLER_ENV": str(tmp_path / "installer")}
-
-    class CacheOwnerProvider(EnvProvider):
-        name: BinProviderName = "cache_owner"
-        INSTALLER_BIN: BinName = "python3"
-
-    installer_provider = InstallerEnvProvider(
-        install_root=tmp_path / "installer-provider",
-        postinstall_scripts=True,
-        min_release_age=3,
-    )
-    installed_provider = ExtraEnvProvider(
-        install_root=tmp_path / "installed-provider",
-        postinstall_scripts=True,
-        min_release_age=3,
-    )
-    cache_owner = CacheOwnerProvider(
-        install_root=tmp_path / "cache-owner",
-        postinstall_scripts=True,
-        min_release_age=3,
-    )
-
-    installer_binary = installer_provider.load("python3")
-    installed_binary = installed_provider.load("python3")
-    assert installer_binary is not None
-    assert installer_binary.loaded_binprovider is not None
-    assert installed_binary is not None
-    assert installed_binary.loaded_binprovider is not None
-
-    monkeypatch.setattr(
-        CacheOwnerProvider,
-        "INSTALLER_BINARY",
-        lambda self, no_cache=False: installer_binary,
-    )
-    monkeypatch.setattr(
-        CacheOwnerProvider,
-        "installed_binaries",
-        lambda self: [installed_binary],
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "build_providers",
-        lambda *args, **kwargs: [cache_owner],
-    )
-
-    options = cli_module.CliOptions(
-        lib_dir=tmp_path / "abxlib",
-        provider_names=["cache_owner"],
-        dry_run=False,
-        debug=False,
-        no_cache=False,
-    )
-    final_env = cli_module.build_command_exec_env((), options=options, base_env={})
-
-    assert final_env["INSTALLER_ENV"] == str(tmp_path / "installer")
-    assert final_env["EXTRA_ENV"] == str(tmp_path / "extra")
+    path_entries = final_env["PATH"].split(os.pathsep)
+    assert str(lib_dir / "env" / "bin") in path_entries
+    assert str(provider.bin_dir) in path_entries
+    assert final_env["NODE_MODULES_DIR"] == str(lib_dir / "pnpm" / "node_modules")
 
 
 def test_activate_command_can_be_evaled_for_installable_pip_binary(tmp_path):
@@ -2283,24 +2150,14 @@ def test_build_cli_options_explicit_overrides_deepmerge_over_flag_defaults(tmp_p
     }
 
 
-def test_upgrade_command_dispatches_to_update(monkeypatch):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_upgrade_command_dispatches_to_update():
     result = CliRunner().invoke(
         cli_module.cli,
         ["upgrade", "--binproviders=env", "python"],
     )
 
-    assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "update"
+    assert result.exit_code != 0
+    assert "Unable to update binary python via providers env" in result.output
 
 
 @pytest.mark.parametrize(
@@ -2347,44 +2204,24 @@ def test_upgrade_command_accepts_binary_override_flags(tmp_path, argv, lib_subdi
     )
 
 
-def test_add_command_dispatches_to_install(monkeypatch):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_add_command_dispatches_to_install():
     result = CliRunner().invoke(
         cli_module.cli,
         ["add", "--binproviders=env", "python"],
     )
 
     assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "install"
+    assert "(env) python" in result.output
 
 
-def test_remove_command_dispatches_to_uninstall(monkeypatch):
-    captured = {}
-
-    def fake_run_binary_command(binary_name, *, action, options):
-        captured["binary_name"] = binary_name
-        captured["action"] = action
-        captured["options"] = options
-
-    monkeypatch.setattr(cli_module, "run_binary_command", fake_run_binary_command)
-
+def test_remove_command_dispatches_to_uninstall():
     result = CliRunner().invoke(
         cli_module.cli,
         ["remove", "--binproviders=env", "python"],
     )
 
-    assert result.exit_code == 0
-    assert captured["binary_name"] == "python"
-    assert captured["action"] == "uninstall"
+    assert result.exit_code != 0
+    assert "Unable to uninstall binary python via providers env" in result.output
 
 
 def test_help_command_matches_root_help_output():
@@ -3330,11 +3167,10 @@ def test_run_with_apt_fallback_is_instant_on_non_linux(tmp_path):
 
 def test_load_cache_context_includes_binary_overrides(tmp_path):
     lib = tmp_path / "lib"
-    first = tmp_path / "demo-first"
-    second = tmp_path / "demo-second"
-    for script, label in ((first, "first"), (second, "second")):
-        script.write_text(f"#!/bin/sh\nprintf '%s\\n' '{label}'\n")
-        script.chmod(0o755)
+    first = _abxpkg_executable()
+    second = Path(sys.executable)
+    first_display = str(first).replace(str(Path.home()), "~")
+    second_display = str(second).replace(str(Path.home()), "~")
 
     first_proc = _run_abxpkg_cli(
         f"--lib={lib}",
@@ -3348,7 +3184,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_proc.returncode == 0, first_proc.stderr
     assert "1.0.0" in first_proc.stdout
-    assert str(first) in first_proc.stdout
+    assert first_display in first_proc.stdout
     flag_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
 
     first_json_proc = _run_abxpkg_cli(
@@ -3360,7 +3196,7 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_json_proc.returncode == 0, first_json_proc.stderr
     assert "1.0.0" in first_json_proc.stdout
-    assert str(first) in first_json_proc.stdout
+    assert first_display in first_json_proc.stdout
     assert set(load_derived_cache(lib / "env" / "derived.env")) == flag_cache_keys
 
     second_proc = _run_abxpkg_cli(
@@ -3372,8 +3208,8 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert second_proc.returncode == 0, second_proc.stderr
     assert "2.0.0" in second_proc.stdout
-    assert str(second) in second_proc.stdout
-    assert str(first) not in second_proc.stdout
+    assert second_display in second_proc.stdout
+    assert first_display not in second_proc.stdout
     second_cache_keys = set(load_derived_cache(lib / "env" / "derived.env"))
     assert second_cache_keys != flag_cache_keys
 
@@ -3386,8 +3222,8 @@ def test_load_cache_context_includes_binary_overrides(tmp_path):
     )
     assert first_again_proc.returncode == 0, first_again_proc.stderr
     assert "1.0.0" in first_again_proc.stdout
-    assert str(first) in first_again_proc.stdout
-    assert str(second) not in first_again_proc.stdout
+    assert first_display in first_again_proc.stdout
+    assert second_display not in first_again_proc.stdout
 
 
 def test_run_script_without_declared_dependency_keeps_target_runtime_env_clean(

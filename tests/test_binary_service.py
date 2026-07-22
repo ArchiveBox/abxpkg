@@ -1,15 +1,11 @@
 import asyncio
-import stat
-import threading
-import time
 from pathlib import Path
-from typing import Any, Self
+from typing import Any
 
 import pytest
 import abxbus
 
-from abxpkg import Binary, BinProviderName, EnvProvider
-from abxpkg.exceptions import BinaryLoadError
+from abxpkg import Binary, EnvProvider
 from abxpkg.semver import SemVer
 
 
@@ -163,92 +159,6 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     }
 
 
-class _InstallProbe:
-    def __init__(
-        self,
-        *,
-        sleep_seconds: float = 0.2,
-        barrier: threading.Barrier | None = None,
-    ):
-        self.sleep_seconds = sleep_seconds
-        self.barrier = barrier
-        self.lock = threading.Lock()
-        self.active = 0
-        self.max_active = 0
-        self.starts: list[tuple[str, float]] = []
-        self.ends: list[tuple[str, float]] = []
-
-    def run(self, name: str) -> None:
-        with self.lock:
-            self.active += 1
-            self.max_active = max(self.max_active, self.active)
-            self.starts.append((name, time.monotonic()))
-        try:
-            if self.barrier is not None:
-                self.barrier.wait(timeout=5)
-            time.sleep(self.sleep_seconds)
-        finally:
-            with self.lock:
-                self.ends.append((name, time.monotonic()))
-                self.active -= 1
-
-
-class _ProbeBinary(Binary):
-    def __init__(self, service: Any, event: Any):
-        super().__init__(
-            name=event.name,
-            binproviders=service._providers_for_event(event),
-        )
-        object.__setattr__(self, "service", service)
-        object.__setattr__(self, "event", event)
-
-    def install(
-        self,
-        binproviders: list[BinProviderName] | None = None,
-        no_cache: bool = False,
-        dry_run: bool | None = None,
-        postinstall_scripts: bool | None = None,
-        min_release_age: float | None = None,
-        **extra_overrides: Any,
-    ) -> Self:
-        del binproviders, no_cache, dry_run, postinstall_scripts, min_release_age
-        del extra_overrides
-        provider = self.binproviders[0]
-        self.service.probe.run(self.event.name)
-        path = self.service.output_dir / f"{self.event.name}-{provider.name}"
-        path.write_text("#!/bin/sh\nexit 0\n")
-        path.chmod(path.stat().st_mode | stat.S_IXUSR)
-        self.loaded_binprovider = provider
-        self.loaded_abspath = path
-        self.loaded_version = SemVer("1.0.0")
-        self.loaded_sha256 = "0" * 64
-        return self
-
-
-def _probe_service_class():
-    from abxpkg.binary_service import BinaryService
-
-    class ProbeBinaryService(BinaryService):
-        def __init__(
-            self,
-            *args: Any,
-            probe: _InstallProbe,
-            output_dir: Path,
-            **kwargs: Any,
-        ):
-            self.probe = probe
-            self.output_dir = output_dir
-            super().__init__(*args, **kwargs)
-
-        def _load(self, event: Any) -> Binary:
-            raise BinaryLoadError(event.name, str(event.binproviders), {})
-
-        def _binary_for_event(self, event: Any) -> Binary:
-            return _ProbeBinary(self, event)
-
-    return ProbeBinaryService
-
-
 class _MemoryBinaryCacheBackend:
     def __init__(self, binary: Binary | None = None):
         self.binary = binary
@@ -269,6 +179,13 @@ class _MemoryBinaryCacheBackend:
         self.binary = None
 
 
+def _real_python_binary(lib_dir: Path) -> Binary:
+    provider = EnvProvider(install_root=lib_dir / "env")
+    binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
+    assert binary.loaded_abspath is not None
+    return binary
+
+
 def test_binary_cache_service_emits_cached_binary_before_resolver(
     tmp_path: Path,
 ) -> None:
@@ -278,38 +195,22 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
         BinaryRequestEvent,
     )
 
-    cached_path = tmp_path / "cached-tool"
-    cached_path.write_text("#!/bin/sh\nexit 0\n")
-    cached_path.chmod(cached_path.stat().st_mode | stat.S_IXUSR)
-    provider = EnvProvider(PATH=str(tmp_path))
-    cached_binary = Binary.model_validate(
-        {
-            "name": "cached-tool",
-            "binproviders": [provider],
-            "loaded_binprovider": provider,
-            "loaded_abspath": cached_path,
-            "loaded_version": SemVer("1.2.3"),
-            "loaded_sha256": "2" * 64,
-            "env": {"CACHED_ENV": "1"},
-        },
-    )
+    cached_binary = _real_python_binary(tmp_path)
+    cached_path = cached_binary.loaded_abspath
+    assert cached_path is not None
+    cached_binary.env = {"CACHED_ENV": "1"}
     backend = _MemoryBinaryCacheBackend(cached_binary)
 
-    class NoResolutionService(_probe_service_class()):
-        def _load(self, event: Any) -> Binary:
-            raise AssertionError("cache hit should satisfy request before load")
-
-        async def _install_or_find(self, event: Any) -> Binary | BinaryEvent:
-            raise AssertionError("cache hit should satisfy request before install")
-
     async def run() -> tuple[Any, BinaryEvent, list[Any]]:
+        from abxpkg.binary_service import BinaryService
+
         bus = abxbus.EventBus(name="test_binary_cache_service_hit")
         BinaryCacheService(bus, backend=backend)
-        NoResolutionService(bus, probe=_InstallProbe(), output_dir=tmp_path)
+        BinaryService(bus, auto_install=False)
 
         request = await bus.emit(
             BinaryRequestEvent(
-                name="cached-tool",
+                name="python",
                 binproviders="env",
                 extra_context={
                     "plugin_name": "cache-plugin",
@@ -322,7 +223,7 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
             child_of=request,
             past=True,
             future=False,
-            name="cached-tool",
+            name="python",
         )
         assert isinstance(event, BinaryEvent)
         return request, event, await request.event_results_list()
@@ -331,8 +232,8 @@ def test_binary_cache_service_emits_cached_binary_before_resolver(
 
     assert results == [str(cached_path), str(cached_path)]
     assert event.abspath == str(cached_path)
-    assert event.version == "1.2.3"
-    assert event.sha256 == "2" * 64
+    assert event.version == str(cached_binary.loaded_version)
+    assert event.sha256 == cached_binary.loaded_sha256
     assert event.binproviders == "env"
     assert event.binprovider == "env"
     assert event.env == {"CACHED_ENV": "1"}
@@ -387,22 +288,10 @@ def test_binary_cache_service_stores_resolved_binary_event() -> None:
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:
     from abxpkg.binary_service import BinaryCacheService, BinaryRequestEvent
 
-    missing_path = tmp_path / "missing-tool"
-    missing_path.write_text("#!/bin/sh\nexit 0\n")
-    missing_path.chmod(missing_path.stat().st_mode | stat.S_IXUSR)
-    provider = EnvProvider(PATH=str(tmp_path))
-    backend = _MemoryBinaryCacheBackend(
-        Binary.model_validate(
-            {
-                "name": "missing-tool",
-                "binproviders": [provider],
-                "loaded_binprovider": provider,
-                "loaded_abspath": missing_path,
-                "loaded_version": SemVer("1.0.0"),
-                "loaded_sha256": "3" * 64,
-            },
-        ),
-    )
+    stale_binary = _real_python_binary(tmp_path)
+    missing_path = stale_binary.loaded_abspath
+    assert missing_path is not None
+    backend = _MemoryBinaryCacheBackend(stale_binary)
     missing_path.unlink()
 
     async def run() -> list[Any]:
@@ -410,7 +299,7 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
         BinaryCacheService(bus, backend=backend)
         request = await bus.emit(
             BinaryRequestEvent(
-                name="missing-tool",
+                name="python",
                 binproviders="env",
                 auto_install=False,
             ),
@@ -427,21 +316,13 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
 def test_binary_service_trusts_injected_binary_event_for_same_request(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
-    injected_path = tmp_path / "injected-tool"
-    injected_path.write_text("#!/bin/sh\nexit 0\n")
-    injected_path.chmod(injected_path.stat().st_mode | stat.S_IXUSR)
+    injected_binary = _real_python_binary(tmp_path / "injected")
+    injected_path = injected_binary.loaded_abspath
+    assert injected_path is not None
 
-    class NoResolutionService(_probe_service_class()):
-        def _load(self, event: Any) -> Binary:
-            raise AssertionError("load should not run after an injected event")
-
-        async def _install_or_find(self, event: Any) -> Binary | BinaryEvent:
-            raise AssertionError("install should not run after an injected event")
-
-    async def run() -> tuple[_InstallProbe, BinaryRequestEvent, BinaryEvent, list[Any]]:
-        probe = _InstallProbe()
+    async def run() -> tuple[BinaryRequestEvent, BinaryEvent, list[Any]]:
         bus = abxbus.EventBus(name="test_binary_service_trusts_injected_event")
 
         async def inject_binary(event: BinaryRequestEvent) -> None:
@@ -449,20 +330,20 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(injected_path),
-                    version="9.9.9",
-                    sha256="1" * 64,
-                    binproviders="pip",
-                    binprovider="pip",
+                    version=str(injected_binary.loaded_version),
+                    sha256=injected_binary.loaded_sha256,
+                    binproviders="env",
+                    binprovider="env",
                 ),
             ).now()
 
         bus.on(BinaryRequestEvent, inject_binary)
-        NoResolutionService(bus, probe=probe, output_dir=tmp_path)
+        BinaryService(bus, auto_install=False, lib_dir=tmp_path / "service")
 
         request = await bus.emit(
             BinaryRequestEvent(
-                name="tool",
-                binproviders="pip",
+                name="python",
+                binproviders="env",
             ),
         ).now()
         event = await bus.find(
@@ -470,14 +351,13 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
             child_of=request,
             past=True,
             future=False,
-            name="tool",
+            name="python",
         )
         assert isinstance(event, BinaryEvent)
-        return probe, request, event, await request.event_results_list()
+        return request, event, await request.event_results_list()
 
-    probe, request, event, results = asyncio.run(run())
+    request, event, results = asyncio.run(run())
 
-    assert probe.starts == []
     assert event.abspath == str(injected_path)
     assert event.event_parent_id == request.event_id
     assert results == [str(injected_path)]
@@ -486,14 +366,13 @@ def test_binary_service_trusts_injected_binary_event_for_same_request(
 def test_binary_service_ignores_binary_events_from_other_requests(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
-    stale_path = tmp_path / "stale-tool"
-    stale_path.write_text("#!/bin/sh\nexit 0\n")
-    stale_path.chmod(stale_path.stat().st_mode | stat.S_IXUSR)
+    injected_binary = _real_python_binary(tmp_path / "stale")
+    stale_path = injected_binary.loaded_abspath
+    assert stale_path is not None
 
-    async def run() -> tuple[_InstallProbe, BinaryEvent, BinaryEvent]:
-        probe = _InstallProbe()
+    async def run() -> tuple[BinaryEvent, BinaryEvent]:
         bus = abxbus.EventBus(name="test_binary_service_ignores_other_requests")
         seeded = False
 
@@ -506,8 +385,10 @@ def test_binary_service_ignores_binary_events_from_other_requests(
                 BinaryEvent(
                     name=event.name,
                     abspath=str(stale_path),
-                    binproviders="pip",
-                    binprovider="pip",
+                    version=str(injected_binary.loaded_version),
+                    sha256=injected_binary.loaded_sha256,
+                    binproviders="env",
+                    binprovider="env",
                 ),
             ).now()
 
@@ -515,8 +396,8 @@ def test_binary_service_ignores_binary_events_from_other_requests(
 
         seed_request = await bus.emit(
             BinaryRequestEvent(
-                name="tool",
-                binproviders="pip",
+                name="python",
+                binproviders="env",
             ),
         ).now()
         stale_event = await bus.find(
@@ -524,15 +405,15 @@ def test_binary_service_ignores_binary_events_from_other_requests(
             child_of=seed_request,
             past=True,
             future=False,
-            name="tool",
+            name="python",
         )
         assert isinstance(stale_event, BinaryEvent)
 
-        _probe_service_class()(bus, probe=probe, output_dir=tmp_path)
+        BinaryService(bus, auto_install=False, lib_dir=tmp_path / "resolved")
         request = await bus.emit(
             BinaryRequestEvent(
-                name="tool",
-                binproviders="pip",
+                name="python",
+                binproviders="env",
             ),
         ).now()
         event = await bus.find(
@@ -540,14 +421,13 @@ def test_binary_service_ignores_binary_events_from_other_requests(
             child_of=request,
             past=True,
             future=False,
-            name="tool",
+            name="python",
         )
         assert isinstance(event, BinaryEvent)
-        return probe, stale_event, event
+        return stale_event, event
 
-    probe, stale_event, event = asyncio.run(run())
+    stale_event, event = asyncio.run(run())
 
-    assert [name for name, _ in probe.starts] == ["tool"]
     assert stale_event.abspath == str(stale_path)
     assert event.abspath != stale_event.abspath
     assert Path(event.abspath).exists()
@@ -556,188 +436,136 @@ def test_binary_service_ignores_binary_events_from_other_requests(
 def test_binary_service_allows_parallel_installs_for_different_provider_roots(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
-    async def run() -> _InstallProbe:
-        probe = _InstallProbe(barrier=threading.Barrier(2))
+    async def run() -> tuple[list[Any], list[Any]]:
         bus = abxbus.EventBus(name="test_binary_service_parallel_installs")
-        service = _probe_service_class()(bus, probe=probe, output_dir=tmp_path)
+        service = BinaryService(bus)
         requests = [
-            bus.emit(BinaryRequestEvent(name="probe-pip", binproviders="pip")),
-            bus.emit(BinaryRequestEvent(name="probe-npm", binproviders="npm")),
+            bus.emit(
+                BinaryRequestEvent(
+                    name="black",
+                    binproviders="pip",
+                    install_root=tmp_path / "black-root",
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                    overrides={"pip": {"install_args": ["black"]}},
+                ),
+            ),
+            bus.emit(
+                BinaryRequestEvent(
+                    name="isort",
+                    binproviders="pip",
+                    install_root=tmp_path / "isort-root",
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                    overrides={"pip": {"install_args": ["isort"]}},
+                ),
+            ),
         ]
         assert service._install_semaphore_name(
             requests[0],
         ) != service._install_semaphore_name(
             requests[1],
         )
-
         await asyncio.gather(*(request.now() for request in requests))
-        pip_event = await bus.find(
-            BinaryEvent,
-            past=True,
-            future=False,
-            name="probe-pip",
+        return (
+            await requests[0].event_results_list(),
+            await requests[1].event_results_list(),
         )
-        npm_event = await bus.find(
-            BinaryEvent,
-            past=True,
-            future=False,
-            name="probe-npm",
-        )
-        assert isinstance(pip_event, BinaryEvent)
-        assert isinstance(npm_event, BinaryEvent)
-        return probe
 
-    probe = asyncio.run(run())
-
-    assert probe.max_active == 2
-    assert {name for name, _ in probe.starts} == {"probe-pip", "probe-npm"}
-    assert {name for name, _ in probe.ends} == {"probe-pip", "probe-npm"}
+    black_results, isort_results = asyncio.run(run())
+    assert len(black_results) == 1 and Path(black_results[0]).exists()
+    assert len(isort_results) == 1 and Path(isort_results[0]).exists()
 
 
 def test_binary_service_serializes_installs_for_same_provider_root(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryRequestEvent
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
-    async def run() -> _InstallProbe:
-        probe = _InstallProbe(sleep_seconds=0.25)
+    async def run() -> tuple[list[Any], list[Any]]:
         bus = abxbus.EventBus(name="test_binary_service_serial_installs")
-        _probe_service_class()(
-            bus,
-            probe=probe,
-            output_dir=tmp_path,
-            install_root=tmp_path / "shared-pip-root",
-        )
+        BinaryService(bus, install_root=tmp_path / "shared-pip-root")
         requests = [
-            bus.emit(BinaryRequestEvent(name="probe-one", binproviders="pip")),
-            bus.emit(BinaryRequestEvent(name="probe-two", binproviders="pip")),
+            bus.emit(
+                BinaryRequestEvent(
+                    name="black",
+                    binproviders="pip",
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                    overrides={"pip": {"install_args": ["black"]}},
+                ),
+            ),
+            bus.emit(
+                BinaryRequestEvent(
+                    name="isort",
+                    binproviders="pip",
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                    overrides={"pip": {"install_args": ["isort"]}},
+                ),
+            ),
         ]
 
         await asyncio.gather(*(request.now() for request in requests))
-        return probe
+        return (
+            await requests[0].event_results_list(),
+            await requests[1].event_results_list(),
+        )
 
-    started_at = time.monotonic()
-    probe = asyncio.run(run())
-    elapsed = time.monotonic() - started_at
-
-    assert probe.max_active == 1
-    assert len(probe.starts) == 2
-    assert len(probe.ends) == 2
-    assert (
-        sorted(probe.starts, key=lambda item: item[1])[1][1]
-        >= sorted(
-            probe.ends,
-            key=lambda item: item[1],
-        )[0][1]
-    )
-    assert elapsed >= 0.45
+    black_results, isort_results = asyncio.run(run())
+    assert len(black_results) == 1 and Path(black_results[0]).exists()
+    assert len(isort_results) == 1 and Path(isort_results[0]).exists()
+    assert Path(black_results[0]).is_relative_to(tmp_path / "shared-pip-root")
+    assert Path(isort_results[0]).is_relative_to(tmp_path / "shared-pip-root")
 
 
 def test_binary_service_rechecks_same_request_after_install_semaphore(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
-    injected_path = tmp_path / "race-target"
-    injected_path.write_text("#!/bin/sh\nexit 0\n")
-    injected_path.chmod(injected_path.stat().st_mode | stat.S_IXUSR)
-
-    async def run() -> tuple[_InstallProbe, list[Any], list[Any]]:
-        loop = asyncio.get_running_loop()
-        second_load_seen = asyncio.Event()
-        probe = _InstallProbe(sleep_seconds=0.35)
+    async def run() -> tuple[list[Any], list[Any]]:
         bus = abxbus.EventBus(name="test_binary_service_same_root_race")
-        background_tasks: list[asyncio.Task[None]] = []
-
-        async def inject_after_service_is_waiting(
-            event: BinaryRequestEvent,
-        ) -> None:
-            if event.name != "race-target":
-                return
-
-            async def emit_later() -> None:
-                await second_load_seen.wait()
-                await asyncio.sleep(0.05)
-                await event.emit(
-                    BinaryEvent(
-                        name="race-target",
-                        abspath=str(injected_path),
-                        binproviders="pip",
-                        binprovider="pip",
-                    ),
-                ).now()
-
-            background_tasks.append(asyncio.create_task(emit_later()))
-
-        class RaceService(_probe_service_class()):
-            def _load(self, event: Any) -> Binary:
-                if event.name == "race-target":
-                    loop.call_soon_threadsafe(second_load_seen.set)
-                return super()._load(event)
-
-        bus.on(BinaryRequestEvent, inject_after_service_is_waiting)
-        RaceService(
-            bus,
-            probe=probe,
-            output_dir=tmp_path,
-            install_root=tmp_path / "shared-root",
-        )
-
-        first = bus.emit(BinaryRequestEvent(name="slow-holder", binproviders="pip"))
-        while not probe.starts:
-            await asyncio.sleep(0.01)
-
-        second = bus.emit(BinaryRequestEvent(name="race-target", binproviders="pip"))
-        await asyncio.wait_for(second_load_seen.wait(), timeout=2)
-        if background_tasks:
-            await asyncio.gather(*background_tasks)
+        BinaryService(bus, install_root=tmp_path / "shared-root")
+        request_kwargs = {
+            "name": "black",
+            "binproviders": "pip",
+            "postinstall_scripts": True,
+            "min_release_age": 3,
+            "overrides": {"pip": {"install_args": ["black"]}},
+        }
+        first = bus.emit(BinaryRequestEvent(**request_kwargs))
+        second = bus.emit(BinaryRequestEvent(**request_kwargs))
 
         await asyncio.gather(first.now(), second.now())
-        return (
-            probe,
-            await first.event_results_list(),
-            await second.event_results_list(),
-        )
+        return await first.event_results_list(), await second.event_results_list()
 
-    probe, first_results, second_results = asyncio.run(run())
+    first_results, second_results = asyncio.run(run())
 
-    assert [name for name, _ in probe.starts] == ["slow-holder"]
-    assert first_results == [str(tmp_path / "slow-holder-pip")]
-    assert second_results == [str(injected_path)]
+    assert first_results == second_results
+    assert len(first_results) == 1
+    assert Path(first_results[0]).exists()
 
 
 def test_binary_service_failed_install_raises_from_handler(tmp_path: Path) -> None:
-    from abxpkg.binary_service import BinaryRequestEvent
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
     from abxpkg.exceptions import BinaryInstallError
-
-    class FailingBinary(Binary):
-        def install(
-            self,
-            binproviders: list[BinProviderName] | None = None,
-            no_cache: bool = False,
-            dry_run: bool | None = None,
-            postinstall_scripts: bool | None = None,
-            min_release_age: float | None = None,
-            **extra_overrides: Any,
-        ) -> Self:
-            del binproviders, no_cache, dry_run, postinstall_scripts, min_release_age
-            del extra_overrides
-            raise BinaryInstallError(self.name, "pip", {"pip": "boom"})
-
-    class FailingService(_probe_service_class()):
-        def _binary_for_event(self, event: Any) -> Binary:
-            return FailingBinary(
-                name=event.name,
-                binproviders=self._providers_for_event(event),
-            )
 
     async def run() -> None:
         bus = abxbus.EventBus(name="test_binary_service_failed_install")
-        FailingService(bus, probe=_InstallProbe(), output_dir=tmp_path)
+        BinaryService(bus, install_root=tmp_path / "pip-root")
         request = await bus.emit(
-            BinaryRequestEvent(name="fail-tool", binproviders="pip"),
+            BinaryRequestEvent(
+                name="abxpkg-package-that-does-not-exist",
+                binproviders="pip",
+                overrides={
+                    "pip": {
+                        "install_args": ["abxpkg-package-that-does-not-exist"],
+                    },
+                },
+            ),
         ).now()
 
         errors = [

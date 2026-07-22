@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -8,15 +9,14 @@ import sys
 import pytest
 
 from abxpkg import (
-    BinName,
     BinProvider,
-    BinProviderName,
     BunProvider,
     DenoProvider,
     EnvProvider,
     NpmProvider,
     PipProvider,
     PnpmProvider,
+    PlaywrightProvider,
     SemVer,
     UvProvider,
     YarnProvider,
@@ -178,29 +178,54 @@ class TestBinProvider:
 
     def test_installer_binary_auto_installs_missing_dependency_into_configured_lib(
         self,
-        monkeypatch,
     ):
-        class BlackInstallerProvider(BinProvider):
-            name: BinProviderName = "black_bootstrap"
-            INSTALLER_BIN: BinName = "black"
-
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
-            monkeypatch.setenv("ABXPKG_BINPROVIDERS", "pip")
-            monkeypatch.setenv("ABXPKG_LIB_DIR", str(tmpdir_path / "abxlib"))
-
-            installer = BlackInstallerProvider(
-                postinstall_scripts=True,
-                min_release_age=3,
-            ).INSTALLER_BINARY(no_cache=True)
-
-            assert installer.loaded_binprovider is not None
-            assert installer.loaded_binprovider.name == "pip"
-            assert installer.loaded_abspath is not None
-            assert installer.loaded_abspath.resolve().is_relative_to(
-                (tmpdir_path / "abxlib" / "pip" / "venv" / "bin").resolve(),
+            lib_dir = tmpdir_path / "abxlib"
+            isolated_bin = tmpdir_path / "isolated-bin"
+            isolated_bin.mkdir()
+            isolated_python = isolated_bin / "python"
+            shutil.copy2(sys.executable, isolated_python)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "ABXPKG_BINPROVIDERS": "env,pip",
+                    "ABXPKG_LIB_DIR": str(lib_dir),
+                    "PATH": os.pathsep.join(["/usr/bin", "/bin"]),
+                    "PYTHON_BINARY": str(isolated_python),
+                    "PYTHONPATH": os.pathsep.join(
+                        path for path in sys.path if "site-packages" in path
+                    ),
+                },
             )
-            assert installer.loaded_version is not None
+            proc = subprocess.run(
+                [
+                    str(isolated_python),
+                    "-c",
+                    "from abxpkg import PyinfraProvider; "
+                    "binary = PyinfraProvider(postinstall_scripts=True, min_release_age=3).INSTALLER_BINARY(no_cache=True); "
+                    "print(f'{binary.name}|{binary.loaded_binprovider.name}|{binary.loaded_abspath}|{binary.loaded_version}')",
+                ],
+                cwd=Path(__file__).parents[1],
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            assert proc.returncode == 0, proc.stderr
+            name, provider_name, abspath, version = (
+                proc.stdout.strip().splitlines()[-1].split("|")
+            )
+            assert name == "pyinfra"
+            assert provider_name == "pip"
+            assert (
+                Path(abspath)
+                .resolve()
+                .is_relative_to(
+                    (tmpdir_path / "abxlib" / "pip" / "venv" / "bin").resolve(),
+                )
+            )
+            assert SemVer.parse(version) is not None
 
     def test_base_public_getters_resolve_real_host_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
@@ -221,7 +246,7 @@ class TestBinProvider:
         )
         test_machine.assert_shallow_binary_loaded(loaded_or_installed)
 
-    def test_provider_ENV_includes_runtime_and_installer_context(self, monkeypatch):
+    def test_provider_ENV_includes_runtime_and_installer_context(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
 
@@ -235,7 +260,8 @@ class TestBinProvider:
                 postinstall_scripts=True,
                 min_release_age=3,
             )
-            monkeypatch.setenv("UV_TOOL_DIR", str(tmpdir_path / "uv-tools"))
+            old_uv_tool_dir = os.environ.get("UV_TOOL_DIR")
+            os.environ["UV_TOOL_DIR"] = str(tmpdir_path / "uv-tools")
             uv_tool_provider = UvProvider(
                 install_root=None,
                 bin_dir=tmpdir_path / "uv-bin",
@@ -252,6 +278,10 @@ class TestBinProvider:
                 postinstall_scripts=True,
                 min_release_age=3,
             )
+            if old_uv_tool_dir is None:
+                os.environ.pop("UV_TOOL_DIR", None)
+            else:
+                os.environ["UV_TOOL_DIR"] = old_uv_tool_dir
             bun_provider = BunProvider(
                 install_root=tmpdir_path / "bun",
                 postinstall_scripts=True,
@@ -451,22 +481,33 @@ class TestBinProvider:
     def test_env_runtime_path_uses_projected_bins_before_managed_fallbacks(
         self,
         tmp_path,
+        test_machine,
     ):
-        host_bin = tmp_path / "host" / "bin"
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+        chromium = PlaywrightProvider(
+            install_root=tmp_path / "host-playwright",
+            postinstall_scripts=True,
+            min_release_age=3,
+        ).install("chromium")
+        test_machine.assert_shallow_binary_loaded(
+            chromium,
+            assert_version_command=False,
+        )
+        assert chromium.loaded_abspath is not None
+        host_binary = chromium.loaded_abspath
+        host_bin = host_binary.parent
         env_root = tmp_path / "lib" / "env"
         managed_bin = tmp_path / "lib" / "playwright" / "bin"
-        for path in (host_bin, managed_bin):
-            path.mkdir(parents=True)
-
-        host_binary = host_bin / "chromium"
-        host_binary.write_text("#!/bin/sh\necho 'Chromium 150.0.0'\n")
-        host_binary.chmod(0o755)
+        managed_bin.mkdir(parents=True)
 
         env_provider = EnvProvider(PATH=str(host_bin), install_root=env_root)
         loaded = env_provider.load("chromium", no_cache=True)
         assert loaded is not None
         assert loaded.loaded_abspath == env_root / "bin" / "chromium"
         assert loaded.loaded_abspath.resolve() == host_binary.resolve()
+        version = loaded.exec(cmd=("--version",), quiet=True)
+        assert version.returncode == 0, version.stderr
 
         managed_provider = BinProvider(
             name="playwright",

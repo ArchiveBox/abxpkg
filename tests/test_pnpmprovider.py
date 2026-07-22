@@ -142,16 +142,21 @@ class TestPnpmProvider:
 
         assert provider._store_dir() == expected_store
 
-    def test_refresh_bin_link_preserves_pnpm_shim_basedir_behavior(self):
+    def test_refresh_bin_link_preserves_real_pnpm_shim_behavior(
+        self,
+        test_machine,
+    ):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            package_bin_dir = temp_path / "package" / "node_modules" / ".bin"
             exposed_bin_dir = temp_path / "bin"
-            target = package_bin_dir / "demo"
-            package_bin_dir.mkdir(parents=True)
-            target.write_text('#!/bin/sh\ncat "$(dirname "$0")/payload.txt"\n')
-            target.chmod(0o755)
-            (package_bin_dir / "payload.txt").write_text("ok")
+            package_provider = PnpmProvider(
+                install_root=temp_path / "package",
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            installed = package_provider.install("zx")
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.loaded_abspath is not None
 
             provider = PnpmProvider(
                 install_root=temp_path / "pnpm",
@@ -160,14 +165,14 @@ class TestPnpmProvider:
                 min_release_age=3,
             )
 
-            exposed = provider._refresh_bin_link("demo", target)
+            exposed = provider._refresh_bin_link("zx", installed.loaded_abspath)
             result = subprocess.run(
-                [str(exposed)],
+                [str(exposed), "--version"],
                 check=True,
                 capture_output=True,
                 text=True,
             )
-            assert result.stdout == "ok"
+            assert SemVer.parse(result.stdout) == installed.loaded_version
 
     def test_self_bootstrap_installs_pnpm_when_host_pnpm_is_not_on_path(
         self,
