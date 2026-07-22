@@ -133,7 +133,7 @@ pythonVersion = "3.12"
 pythonPlatform = "Linux"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "README.md", "AGENTS.md", "skills", "docs"]
+testpaths = ["tests", "README.md", "django_example_project/README.md", "AGENTS.md", "skills", "docs"]
 addopts = ["--codeblocks"]
 markers = [
     "root_required: tests that require root privileges and run in the privileged live-integration job",

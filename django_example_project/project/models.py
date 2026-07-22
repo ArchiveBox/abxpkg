@@ -1,10 +1,7 @@
 from django.db import models
 from django_pydantic_field import SchemaField
 
-from abxpkg import BinProvider, EnvProvider, Binary, SemVer
-
-
-DEFAULT_PROVIDER = EnvProvider()
+from abxpkg import BinProvider, Binary, SemVer
 
 
 class Dependency(models.Model):
@@ -12,7 +9,7 @@ class Dependency(models.Model):
 
     label = models.CharField(max_length=63)
 
-    default_binprovider: BinProvider = SchemaField(default=DEFAULT_PROVIDER)
+    default_binprovider: BinProvider = SchemaField(default={"name": "env"})
 
     binaries: list[Binary] = SchemaField(default=[])
 

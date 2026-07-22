@@ -2,7 +2,7 @@
 
 import django.core.serializers.json
 import django_pydantic_field.fields
-import pydantic_pkgr.semver
+import abxpkg.semver
 from django.db import migrations
 
 
@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 config=None,
                 default=[0, 0, 1],
                 encoder=django.core.serializers.json.DjangoJSONEncoder,
-                schema=pydantic_pkgr.semver.SemVer,
+                schema=abxpkg.semver.SemVer,
             ),
         ),
     ]

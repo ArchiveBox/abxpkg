@@ -44,13 +44,13 @@ jobs:
         && uv pip install pip
 
     - name: Resolve documentation runtime with abxpkg
-      run: .github/resolve_ci_binaries.sh docs_binaries
+      run: .github/resolve_ci_binaries.sh docs_binaries python_cli_binaries
 
     - name: Run pre-commit checks
       run: uv run prek run --all-files
 
     - name: Run documentation code blocks
-      run: uv run pytest -vv --tb=long -m "not live_required" README.md AGENTS.md skills docs
+      run: uv run pytest -vv --tb=long -m "not live_required" README.md django_example_project/README.md AGENTS.md skills docs
 
   live-documentation:
     runs-on: ubuntu-24.04
@@ -84,7 +84,7 @@ jobs:
       run: .github/resolve_ci_binaries.sh manager_binaries node_npm_binaries pnpm_binaries yarn_binaries bun_binaries deno_binaries go_binaries cargo_binaries gem_binaries python_cli_binaries host_utility_binaries linux_binaries docker_binaries
 
     - name: Run live documentation code blocks
-      run: uv run pytest -vv --tb=long -m live_required README.md AGENTS.md skills docs
+      run: uv run pytest -vv --tb=long -m live_required README.md django_example_project/README.md AGENTS.md skills docs
 
   discover-standard-tests:
     runs-on: ubuntu-24.04

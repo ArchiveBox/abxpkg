@@ -3,8 +3,8 @@
 import django.core.serializers.json
 import django_pydantic_field.compat.django
 import django_pydantic_field.fields
-import pydantic_pkgr.binary
-import pydantic_pkgr.binprovider
+import abxpkg.binary
+import abxpkg.binprovider
 from django.db import migrations, models
 
 
@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
                         config=None,
                         default={"name": "env"},
                         encoder=django.core.serializers.json.DjangoJSONEncoder,
-                        schema=pydantic_pkgr.binprovider.BinProvider,
+                        schema=abxpkg.binprovider.BinProvider,
                     ),
                 ),
                 (
@@ -44,7 +44,7 @@ class Migration(migrations.Migration):
                         encoder=django.core.serializers.json.DjangoJSONEncoder,
                         schema=django_pydantic_field.compat.django.GenericContainer(
                             list,
-                            (pydantic_pkgr.binary.Binary,),
+                            (abxpkg.binary.Binary,),
                         ),
                     ),
                 ),
