@@ -856,6 +856,7 @@ class BinProvider(BaseModel):
         return fingerprints
 
     @log_method_call(include_result=True)
+    @mutation_locked
     def load_cached_binary(
         self,
         bin_name: BinName,
@@ -1093,6 +1094,7 @@ class BinProvider(BaseModel):
         return None
 
     @log_method_call()
+    @mutation_locked
     def write_cached_binary(
         self,
         bin_name: BinName,
@@ -1838,6 +1840,7 @@ class BinProvider(BaseModel):
         """Default search handler. Providers without a real search backend return []."""
         return []
 
+    @mutation_locked
     @log_method_call()
     def invalidate_cache(self, bin_name: BinName) -> None:
         if self._cache:

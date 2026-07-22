@@ -33,6 +33,43 @@ class TestEnvProvider:
 
         assert load_derived_cache(derived_env_path) == replacement_cache
 
+    def test_concurrent_cache_writes_preserve_every_binary(self, tmp_path):
+        provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded_python = provider.load("python")
+        assert loaded_python is not None
+        assert loaded_python.loaded_abspath is not None
+        assert loaded_python.loaded_version is not None
+        assert loaded_python.loaded_sha256 is not None
+
+        worker_count = 32
+        ready = Barrier(worker_count)
+
+        def cache_binary(index: int) -> None:
+            ready.wait()
+            provider.write_cached_binary(
+                f"python-cache-{index}",
+                loaded_python.loaded_abspath,
+                loaded_python.loaded_version,
+                loaded_python.loaded_sha256,
+            )
+
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            list(pool.map(cache_binary, range(worker_count)))
+
+        cached_names = {
+            record.get("bin_name")
+            for record in load_derived_cache(
+                provider.install_root / "derived.env",
+            ).values()
+        }
+        assert {
+            f"python-cache-{index}" for index in range(worker_count)
+        } <= cached_names
+
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
