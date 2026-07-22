@@ -15,6 +15,24 @@ from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:
+    def test_derived_cache_writes_replace_complete_file(self, tmp_path):
+        derived_env_path = tmp_path / "lib" / "env" / "derived.env"
+        original_cache = {"original": {"bin_name": "original"}}
+        replacement_cache = {"replacement": {"bin_name": "replacement"}}
+        save_derived_cache(derived_env_path, original_cache)
+
+        with derived_env_path.open(encoding="utf-8") as original_file:
+            original_inode = os.fstat(original_file.fileno()).st_ino
+            original_contents = original_file.read()
+
+            save_derived_cache(derived_env_path, replacement_cache)
+
+            original_file.seek(0)
+            assert original_file.read() == original_contents
+            assert derived_env_path.stat().st_ino != original_inode
+
+        assert load_derived_cache(derived_env_path) == replacement_cache
+
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 

@@ -4,6 +4,7 @@ import ast
 import json
 import os
 import shlex
+import tempfile
 from collections.abc import Iterable, Mapping, MutableMapping
 from functools import lru_cache
 from pathlib import Path
@@ -295,13 +296,26 @@ def write_dotenv_values(
         return
 
     dotenv_path.parent.mkdir(parents=True, exist_ok=True)
-    dotenv_path.write_text(
-        "".join(
-            f"{key}={shlex.quote(str(value))}\n"
-            for key, value in sorted(values.items())
-        ),
-        encoding="utf-8",
+    contents = "".join(
+        f"{key}={shlex.quote(str(value))}\n" for key, value in sorted(values.items())
     )
+    file_mode = dotenv_path.stat().st_mode & 0o777 if dotenv_path.exists() else 0o600
+    temp_fd, temp_name = tempfile.mkstemp(
+        dir=dotenv_path.parent,
+        prefix=f".{dotenv_path.name}.",
+        suffix=".tmp",
+    )
+    temp_path = Path(temp_name)
+    try:
+        os.fchmod(temp_fd, file_mode)
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(contents)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, dotenv_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def load_derived_cache(dotenv_path: Path) -> dict[str, dict[str, object]]:
