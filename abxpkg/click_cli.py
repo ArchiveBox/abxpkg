@@ -1390,6 +1390,10 @@ def build_deps_from_exec_env(
                 )[0],
             )
             projection_provider.setup_PATH()
+            if binary.loaded_binprovider is not None:
+                projection_provider.set_projection_providers(
+                    [binary.loaded_binprovider],
+                )
             projected_abspath = projection_provider._link_loaded_binary(
                 Path(dep_name).name,
                 projected_abspath,

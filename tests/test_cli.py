@@ -280,6 +280,58 @@ def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
     assert refreshed_projection_records[0]["resolved_provider_name"] == "npm"
 
 
+def test_env_deps_from_preserves_pnpm_package_launcher_execution(tmp_path):
+    lib_dir = tmp_path / "lib"
+    package_root = lib_dir / "pnpm" / "packages" / "zx"
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "properties": {"ZX_BINARY": {"default": "zx"}},
+                "required_binaries": [
+                    {
+                        "name": "{ZX_BINARY}",
+                        "binproviders": ["env", "pnpm"],
+                        "min_version": "8.8.5",
+                        "min_release_age": 0,
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": str(package_root),
+                                "install_args": ["zx@8.8.5"],
+                                "postinstall_scripts": True,
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config_path}:required_binaries",
+        timeout=120,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    projected = Path(payload["ZX_BINARY"])
+    assert projected == lib_dir / "env" / "bin" / "zx"
+
+    version = subprocess.run(
+        [str(projected), "--version"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert version.returncode == 0, version.stderr
+    assert version.stdout.strip() == "8.8.5"
+
+
 @pytest.fixture(autouse=True)
 def restore_abxpkg_logger():
     package_logger = logging.getLogger("abxpkg")
