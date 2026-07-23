@@ -1321,7 +1321,7 @@ class BinProvider(BaseModel):
                     self._INSTALLER_BINARY = loaded
                     return loaded
 
-        env_provider = EnvProvider(install_root=None, bin_dir=None)
+        env_provider = EnvProvider()
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]

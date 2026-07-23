@@ -129,12 +129,9 @@ class TestBinProvider:
     )
     def test_provider_init_is_lazy_until_setup(
         self,
-        test_machine,
         provider_cls,
         installer_bin,
     ):
-        test_machine.require_tool(installer_bin)
-
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = provider_cls(
                 install_root=Path(tmpdir) / "install-root",
@@ -162,11 +159,9 @@ class TestBinProvider:
     )
     def test_installer_binary_abspath_resolves_without_recursing(
         self,
-        test_machine,
         provider_cls,
         installer_bin,
     ):
-        test_machine.require_tool(installer_bin)
         provider = provider_cls(postinstall_scripts=True, min_release_age=3)
 
         abspath = provider.get_abspath(installer_bin, quiet=True, no_cache=True)
