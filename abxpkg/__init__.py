@@ -16,6 +16,9 @@ os.environ.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
 _PROVIDER_MODULE_NAMES_CACHE = None
 _EXPORT_MODULES_BY_NAME_CACHE = None
 _PROVIDER_CLASS_NAMES_BY_NAME_CACHE = None
+_PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE = None
+_PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE = None
+_PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE = None
 _ALL_PUBLIC_EXPORT_NAMES_CACHE = None
 
 _CORE_EXPORT_MODULES = (
@@ -165,6 +168,100 @@ def _provider_class_names_by_name() -> dict[str, tuple[str, str]]:
     return _PROVIDER_CLASS_NAMES_BY_NAME_CACHE
 
 
+def _provider_default_metadata_by_name() -> dict[
+    str,
+    tuple[bool, tuple[str, ...] | None],
+]:
+    """Read provider default-selection metadata without importing provider modules."""
+    global _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
+    if _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE is not None:
+        return _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
+
+    literal_fields = _provider_class_literal_fields_by_name()
+    _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE = {
+        provider_name: (
+            bool(fields.get("DEFAULT_ENABLED", True)),
+            (
+                None
+                if fields.get("DEFAULT_SUPPORTED_PLATFORMS") is None
+                else tuple(fields["DEFAULT_SUPPORTED_PLATFORMS"])
+            ),
+        )
+        for provider_name, fields in literal_fields.items()
+    }
+    return _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
+
+
+def _provider_class_literal_fields_by_name() -> dict[str, dict[str, Any]]:
+    """Read provider-owned literal class metadata without importing providers."""
+    global _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE
+    if _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE is not None:
+        return _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE
+
+    import ast
+
+    metadata: dict[str, dict[str, Any]] = {}
+    parsed_modules = {}
+    for provider_name, (
+        module_name,
+        class_name,
+    ) in _provider_class_names_by_name().items():
+        provider_metadata: dict[str, Any] = {}
+        if module_name not in parsed_modules:
+            try:
+                with open(_module_path(module_name), encoding="utf-8") as source_file:
+                    parsed_modules[module_name] = ast.parse(source_file.read())
+            except (OSError, SyntaxError):
+                parsed_modules[module_name] = None
+        module = parsed_modules[module_name]
+        if module is None:
+            metadata[provider_name] = provider_metadata
+            continue
+        provider_class = next(
+            (
+                node
+                for node in module.body
+                if isinstance(node, ast.ClassDef) and node.name == class_name
+            ),
+            None,
+        )
+        if provider_class is not None:
+            for statement in provider_class.body:
+                if isinstance(statement, ast.AnnAssign):
+                    target, value = statement.target, statement.value
+                elif isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+                    target, value = statement.targets[0], statement.value
+                else:
+                    continue
+                if not isinstance(target, ast.Name) or value is None:
+                    continue
+                if target.id not in {
+                    "DEFAULT_ENABLED",
+                    "DEFAULT_SUPPORTED_PLATFORMS",
+                    "INSTALLER_BIN",
+                }:
+                    continue
+                try:
+                    provider_metadata[target.id] = ast.literal_eval(value)
+                except (TypeError, ValueError):
+                    continue
+        metadata[provider_name] = provider_metadata
+
+    _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE = metadata
+    return _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE
+
+
+def _provider_names_by_installer_bin() -> dict[str, str]:
+    global _PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE
+    if _PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE is None:
+        _PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE = {
+            str(fields["INSTALLER_BIN"]): provider_name
+            for provider_name, fields in _provider_class_literal_fields_by_name().items()
+            if fields.get("INSTALLER_BIN")
+        }
+    return _PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE
+
+
 class ProviderClassByName(dict):
     """Mapping that preserves the public dict API while importing lazily.
 
@@ -214,6 +311,53 @@ class ProviderClassByName(dict):
         return self[provider_name]
 
 
+class ProviderClassByInstallerBin(dict):
+    """Lazy provider-class mapping keyed by the executable it bootstraps with."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._provider_names = _provider_names_by_installer_bin()
+
+    def __missing__(self, installer_bin: str):
+        provider_name = self._provider_names[installer_bin]
+        provider_classes = globals().get("PROVIDER_CLASS_BY_NAME")
+        if provider_classes is None:
+            provider_classes = _provider_class_by_name()
+            globals()["PROVIDER_CLASS_BY_NAME"] = provider_classes
+        provider_class = provider_classes[provider_name]
+        self[installer_bin] = provider_class
+        return provider_class
+
+    def __contains__(self, installer_bin: object) -> bool:
+        return installer_bin in self._provider_names
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._provider_names)
+
+    def __len__(self) -> int:
+        return len(self._provider_names)
+
+    def keys(self):
+        return self._provider_names.keys()
+
+    def _load_all(self) -> None:
+        for installer_bin in self._provider_names:
+            self[installer_bin]
+
+    def items(self):
+        self._load_all()
+        return super().items()
+
+    def values(self):
+        self._load_all()
+        return super().values()
+
+    def get(self, installer_bin: object, default: Any = None) -> Any:
+        if installer_bin not in self._provider_names:
+            return default
+        return self[installer_bin]
+
+
 def _all_providers():
     providers = []
     for module_name, class_name in _provider_class_names_by_name().values():
@@ -233,16 +377,23 @@ def _default_provider_names() -> list[str]:
     import platform
 
     operating_system = platform.system().lower()
-    return [
-        provider_name
-        for provider_name in _all_provider_names()
-        if not (operating_system == "darwin" and provider_name == "apt")
-        and provider_name not in ("ansible", "pyinfra")
-    ]
+    provider_metadata = _provider_default_metadata_by_name()
+    default_names: list[str] = []
+    for provider_name in _all_provider_names():
+        default_enabled, supported_platforms = provider_metadata[provider_name]
+        if default_enabled and (
+            supported_platforms is None or operating_system in supported_platforms
+        ):
+            default_names.append(provider_name)
+    return default_names
 
 
 def _provider_class_by_name():
     return ProviderClassByName()
+
+
+def _provider_class_by_installer_bin():
+    return ProviderClassByInstallerBin()
 
 
 _COMPUTED_EXPORTS = {
@@ -251,6 +402,7 @@ _COMPUTED_EXPORTS = {
     "ALL_PROVIDER_CLASS_NAMES": _all_provider_class_names,
     "DEFAULT_PROVIDER_NAMES": _default_provider_names,
     "PROVIDER_CLASS_BY_NAME": _provider_class_by_name,
+    "PROVIDER_CLASS_BY_INSTALLER_BIN": _provider_class_by_installer_bin,
 }
 
 

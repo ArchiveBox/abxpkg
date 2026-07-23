@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 from platformdirs import user_cache_path
@@ -47,6 +47,7 @@ class NpmProvider(BinProvider):
     name: BinProviderName = "npm"
     _log_emoji = "📦"
     INSTALLER_BIN: BinName = "npm"
+    INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ()
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily discovers npm local/global bin dirs. When install_root is set this becomes bin_dir only, otherwise it comes from npm prefix state.
     postinstall_scripts: bool | None = Field(
@@ -85,6 +86,31 @@ class NpmProvider(BinProvider):
             "NODE_PATH": ":" + node_modules_dir,
             "npm_config_prefix": str(self.install_root),
         }
+
+    def installer_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> "SemVer | str | None":
+        """Read npm's package metadata without starting its full JavaScript CLI."""
+        npm_candidate = abspath or bin_abspath(bin_name, PATH=self.PATH)
+        if npm_candidate is None:
+            return None
+
+        resolved_npm = Path(npm_candidate).resolve(strict=False)
+        for parent in (resolved_npm.parent, *resolved_npm.parents):
+            package_json = parent / "package.json"
+            if not package_json.is_file():
+                continue
+            try:
+                package = json.loads(package_json.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if package.get("name") == "npm" and SemVer.parse(package.get("version")):
+                return package["version"]
+        return None
 
     @property
     def cache_dir(self) -> Path:

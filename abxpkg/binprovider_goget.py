@@ -40,6 +40,7 @@ class GoGetProvider(BinProvider):
         "apt",
         "brew",
     )
+    INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ("version",)
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends the active GOBIN/bin_dir lazily.
 

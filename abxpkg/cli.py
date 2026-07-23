@@ -515,19 +515,23 @@ def _script_deps_from(
 
 
 def _build_binary(binary_name: str, options: ScriptOptions):
-    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary, EnvProvider
+    from . import (
+        DEFAULT_PROVIDER_NAMES,
+        PROVIDER_CLASS_BY_INSTALLER_BIN,
+        Binary,
+        EnvProvider,
+    )
 
     provider_names = options.provider_names
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
-        for provider_class in PROVIDER_CLASS_BY_NAME.values():
-            if provider_class.model_fields["INSTALLER_BIN"].default != binary_name:
-                continue
-            preferred = getattr(provider_class, "INSTALLER_BINPROVIDERS", None)
-            if preferred:
-                provider_names = [
-                    name for name in preferred if name in options.provider_names
-                ]
-            break
+        owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(binary_name)
+        preferred = (
+            owner_class.INSTALLER_BINPROVIDERS if owner_class is not None else None
+        )
+        if preferred:
+            provider_names = [
+                name for name in preferred if name in options.provider_names
+            ]
 
     providers = _build_providers(provider_names, options)
     explicit_abspath = Path(binary_name).expanduser()

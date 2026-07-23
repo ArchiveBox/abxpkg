@@ -56,6 +56,48 @@ class PnpmProvider(BinProvider):
     INSTALLER_BIN: BinName = "pnpm"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
 
+    @classmethod
+    def host_projection_target(cls, source_path: Path) -> Path | None:
+        """Resolve a pnpm shell shim to the executable package script it wraps."""
+        launcher_path = source_path.resolve(strict=False)
+        try:
+            with launcher_path.open("rb") as launcher_file:
+                launcher_bytes = launcher_file.read(64 * 1024)
+        except OSError:
+            return None
+        if not launcher_bytes.startswith(b"#!/bin/sh"):
+            return None
+        try:
+            launcher_text = launcher_bytes.decode("utf-8")
+        except UnicodeError:
+            return None
+
+        relative_prefix = "$basedir/../.pnpm/"
+        for line in reversed(launcher_text.splitlines()):
+            if relative_prefix not in line:
+                continue
+            try:
+                tokens = shlex.split(line)
+            except ValueError:
+                continue
+            for token in tokens:
+                if not token.startswith(relative_prefix):
+                    continue
+                relative_target = token.removeprefix("$basedir/")
+                package_store = (launcher_path.parent.parent / ".pnpm").resolve(
+                    strict=False,
+                )
+                target = (launcher_path.parent / relative_target).resolve(
+                    strict=False,
+                )
+                if (
+                    target.is_relative_to(package_store)
+                    and target.is_file()
+                    and os.access(target, os.X_OK)
+                ):
+                    return target
+        return None
+
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or PNPM_HOME in global mode.
     postinstall_scripts: bool | None = Field(
         default_factory=lambda: env_flag_is_true("ABXPKG_POSTINSTALL_SCRIPTS"),
@@ -502,10 +544,18 @@ class PnpmProvider(BinProvider):
         # pnpm REQUIRES PNPM_HOME to exist for global installs to work.
         pnpm_home = Path(self.ENV["PNPM_HOME"])
         pnpm_home.mkdir(parents=True, exist_ok=True)
-        if self.install_root is None:
-            env = dict(os.environ if kwargs.get("env") is None else kwargs["env"])
-            env["npm_config_global_bin_dir"] = str(pnpm_home)
-            kwargs["env"] = env
+        installer_abspath = (
+            self._INSTALLER_BINARY.loaded_abspath
+            if self._INSTALLER_BINARY is not None
+            else None
+        )
+        is_installer = str(bin_name) == str(self.INSTALLER_BIN) or (
+            installer_abspath is not None
+            and Path(bin_name).resolve(strict=False)
+            == Path(installer_abspath).resolve(strict=False)
+        )
+        if self.install_root is None and is_installer:
+            cmd = (f"--config.global-bin-dir={pnpm_home}", *cmd)
         if env_flag_is_true("ABXPKG_NO_CACHE"):
             env = dict(os.environ if kwargs.get("env") is None else kwargs["env"])
             env["XDG_CACHE_HOME"] = str(abxpkg_ephemeral_cache_home_default())

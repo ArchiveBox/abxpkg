@@ -2009,6 +2009,29 @@ def test_build_binary_uses_installer_provider_preferences_for_default_provider_s
     ] == expected_provider_names
 
 
+@pytest.mark.parametrize("binary_name", ["go", "brew", "npm"])
+def test_build_binary_loads_host_installer_with_owner_version_handler(
+    tmp_path,
+    binary_name,
+):
+    options = cli_module.CliOptions(
+        lib_dir=tmp_path,
+        provider_names=list(cli_module.DEFAULT_PROVIDER_NAMES),
+        dry_run=False,
+        debug=False,
+        no_cache=True,
+    )
+
+    loaded = cli_module.build_binary(binary_name, options, dry_run=False).load(
+        no_cache=True,
+    )
+
+    assert loaded.loaded_binprovider is not None
+    assert loaded.loaded_binprovider.name == "env"
+    assert loaded.loaded_abspath is not None
+    assert loaded.loaded_version is not None
+
+
 @pytest.mark.parametrize(
     ("binary_name", "expected_overrides"),
     [

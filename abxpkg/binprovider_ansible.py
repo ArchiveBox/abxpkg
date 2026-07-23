@@ -9,7 +9,7 @@ import logging as py_logging
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .binary import Binary
 from .base_types import BinProviderName, PATHStr, BinName, InstallArgs, bin_abspaths
@@ -304,6 +304,7 @@ class AnsibleProvider(BinProvider):
     name: BinProviderName = "ansible"
     _log_emoji = "📘"
     INSTALLER_BIN: BinName = "ansible"
+    DEFAULT_ENABLED: ClassVar[bool] = False
     PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Ansible has no bin_dir field of its own and never mutates PATH in setup().
 
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:

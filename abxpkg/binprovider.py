@@ -6,7 +6,6 @@ import sys
 import pwd
 import json
 import inspect
-import shlex
 import stat
 import hashlib
 import platform
@@ -48,6 +47,7 @@ from pydantic import (
     validate_call,
     ConfigDict,
     InstanceOf,
+    PrivateAttr,
     computed_field,
     model_validator,
 )
@@ -484,8 +484,12 @@ class BinProvider(BaseModel):
     )  # e.g.  '/opt/homebrew/bin:/opt/archivebox/bin'
     INSTALLER_BIN: BinName = "env"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
+    INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = None
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = None
+    DEFAULT_ENABLED: ClassVar[bool] = True
+    DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = None
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
+    CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {}
 
     euid: int | None = None
     install_root: Path | None = None
@@ -665,6 +669,18 @@ class BinProvider(BaseModel):
         self._append_unique_provider(providers, self)
         return providers
 
+    def set_projection_providers(
+        self,
+        providers: Iterable["BinProvider"],
+    ) -> None:
+        return None
+
+    def execution_PATH(self) -> PATHStr:
+        return self.PATH
+
+    def prepare_uninstall(self, bin_name: BinName) -> bool:
+        return False
+
     @staticmethod
     def _provider_cache_fields(provider: "BinProvider | None") -> dict[str, str]:
         if provider is None:
@@ -770,10 +786,10 @@ class BinProvider(BaseModel):
             provider_config["manual_binary_env"] = {
                 manual_binary_env_key: manual_binary,
             }
-        if str(bin_name) in {"python", "python3"} and os.environ.get("PYTHON_BINARY"):
-            provider_config.setdefault("manual_binary_env", {})["PYTHON_BINARY"] = (
-                os.environ["PYTHON_BINARY"]
-            )
+        for alias in self.CACHE_ENV_ALIASES.get(str(bin_name), ()):
+            alias_value = os.environ.get(alias)
+            if alias_value:
+                provider_config.setdefault("manual_binary_env", {})[alias] = alias_value
         return json.dumps(
             provider_config,
             default=str,
@@ -1322,6 +1338,7 @@ class BinProvider(BaseModel):
                     return loaded
 
         env_provider = EnvProvider()
+        env_provider.set_projection_providers([self])
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]
@@ -1436,6 +1453,17 @@ class BinProvider(BaseModel):
             self.__class__.__name__,
             self.INSTALLER_BIN,
         )
+
+    def installer_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> "VersionFuncReturnValue":
+        version_args = self.INSTALLER_VERSION_ARGS
+        assert version_args is not None
+        return [str(bin_name), *version_args]
 
     @computed_field(repr=False)
     @property
@@ -2213,6 +2241,11 @@ class BinProvider(BaseModel):
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         return bin_abspath
 
+    @classmethod
+    def host_projection_target(cls, source_path: Path) -> Path | None:
+        """Return a provider-owned executable target for a host launcher."""
+        return None
+
     def _is_managed_by_other_provider(self, abspath: HostBinPath | Path) -> bool:
         return False
 
@@ -2539,6 +2572,23 @@ class BinProvider(BaseModel):
         if not version:
             return None
 
+        return self._version_from_result(
+            version,
+            bin_name=bin_name,
+            abspath=abspath,
+            quiet=quiet,
+        )
+
+    def _version_from_result(
+        self,
+        version: "VersionFuncReturnValue",
+        *,
+        bin_name: BinName,
+        abspath: HostBinPath | None,
+        quiet: bool,
+    ) -> SemVer | None:
+        if version is None:
+            return None
         if isinstance(version, list):
             version_command = [str(arg) for arg in version]
             if not version_command:
@@ -2561,10 +2611,11 @@ class BinProvider(BaseModel):
             if not version:
                 return None
 
-        if not isinstance(version, SemVer):
-            version = SemVer.parse(version)
-
-        return version
+        if isinstance(version, SemVer):
+            return version
+        return SemVer.parse(
+            cast("str | tuple[int, ...] | tuple[str, ...]", version),
+        )
 
     @final
     @binprovider_cache
@@ -3318,11 +3369,10 @@ class BinProvider(BaseModel):
             None if no_cache else self.load_cached_binary(bin_name, installed_abspath)
         )
         if result is None:
-            loaded_version = self.get_version(
+            loaded_version = self._get_version_at_abspath(
                 bin_name,
-                abspath=installed_abspath,
+                installed_abspath,
                 quiet=quiet,
-                no_cache=True,
             )
             if not loaded_version:
                 return None
@@ -3365,11 +3415,29 @@ class BinProvider(BaseModel):
             )
         return result
 
+    def _get_version_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool,
+    ) -> SemVer | None:
+        return self.get_version(
+            bin_name,
+            abspath=installed_abspath,
+            quiet=quiet,
+            no_cache=True,
+        )
+
 
 class EnvProvider(BinProvider):
     name: BinProviderName = "env"
     _log_emoji = "🌍"
     INSTALLER_BIN: BinName = "which"
+    CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {
+        "python": ("PYTHON_BINARY",),
+        "python3": ("PYTHON_BINARY",),
+    }
     PATH: PATHStr = (
         DEFAULT_ENV_PATH  # Ambient runtime PATH; no provider-specific setup step.
     )
@@ -3378,6 +3446,7 @@ class EnvProvider(BinProvider):
             abxpkg_install_root_default("env") or (DEFAULT_ABXPKG_LIB_DIR / "env")
         ),
     )
+    _projection_providers: list[BinProvider] = PrivateAttr(default_factory=list)
 
     overrides: "BinProviderOverrides" = {
         "*": {
@@ -3398,66 +3467,27 @@ class EnvProvider(BinProvider):
             "abspath": "self.python_abspath_handler",
             "version": "{}.{}.{}".format(*sys.version_info[:3]),
         },
-        "go": {
-            "version": ["go", "version"],
-        },
-        "brew": {
-            "version": "self.brew_version_handler",
-        },
     }
 
-    def brew_version_handler(
+    def set_projection_providers(
         self,
-        bin_name: BinName,
-        abspath: HostBinPath | None = None,
-        timeout: int | None = None,
-        **context,
-    ) -> "VersionFuncReturnValue":
-        """Read Homebrew's repository version without its expensive dirty scan."""
-        brew_candidate = abspath or self.get_abspath(bin_name, quiet=True)
-        if brew_candidate is None:
-            return None
+        providers: Iterable[BinProvider],
+    ) -> None:
+        self._projection_providers = [
+            provider for provider in providers if not isinstance(provider, EnvProvider)
+        ]
 
-        brew_abspath = Path(brew_candidate)
-        brew_repository = brew_abspath.resolve().parent.parent
-        if not (brew_repository / ".git").exists():
-            return self.default_version_handler(
-                bin_name,
-                abspath=brew_candidate,
-                timeout=timeout,
-            )
-
-        git = EnvProvider(
-            install_root=self.install_root,
-            PATH=self.PATH,
-            postinstall_scripts=self.postinstall_scripts,
-            min_release_age=self.min_release_age,
-        ).load("git")
-        if git is None or git.loaded_abspath is None:
-            return self.default_version_handler(
-                bin_name,
-                abspath=brew_candidate,
-                timeout=timeout,
-            )
-
-        proc = git.exec(
-            cmd=(
-                "-C",
-                brew_repository,
-                "describe",
-                "--tags",
-                "--abbrev=7",
-            ),
-            timeout=self.version_timeout if timeout is None else timeout,
-            quiet=True,
+    def execution_PATH(self) -> PATHStr:
+        """Expose accepted host projections without elevating all discovery paths."""
+        return (
+            TypeAdapter(PATHStr).validate_python(str(self.bin_dir))
+            if self.bin_dir is not None
+            else self.PATH
         )
-        if proc.returncode != 0:
-            return self.default_version_handler(
-                bin_name,
-                abspath=brew_candidate,
-                timeout=timeout,
-            )
-        return proc.stdout.strip() or proc.stderr.strip() or None
+
+    def prepare_uninstall(self, bin_name: BinName) -> bool:
+        self.invalidate_cache(bin_name)
+        return True
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH lazily with install_root/bin ahead of the ambient PATH."""
@@ -3569,7 +3599,12 @@ class EnvProvider(BinProvider):
         # and a second env/bin hop would become argv[0] instead. Preserve the
         # final host/package-manager symlink; only peel abxpkg env/bin links.
         source_path = self._host_projection_target(source_path)
-        target = self._pnpm_launcher_target(source_path) or source_path
+        target = source_path
+        for provider in self._projection_providers:
+            provider_target = provider.host_projection_target(source_path)
+            if provider_target is not None:
+                target = provider_target
+                break
 
         link_name = Path(str(bin_name)).name
         if not link_name or link_name in {".", ".."} or "/" in str(bin_name):
@@ -3633,56 +3668,6 @@ class EnvProvider(BinProvider):
             ).absolute()
         return source_path
 
-    @staticmethod
-    def _pnpm_launcher_target(source_path: Path) -> Path | None:
-        """Resolve a pnpm shell shim to the executable package script it wraps.
-
-        pnpm's generated ``node_modules/.bin`` launchers locate their package
-        relative to ``$0``. A stable EnvProvider symlink changes ``$0`` to
-        ``ABXPKG_LIB_DIR/env/bin/<name>``, which incorrectly redirects the
-        launcher into a nonexistent ``env/.pnpm`` tree. Projecting the verified
-        package script itself preserves the env/bin symlink contract without
-        copying or relocating pnpm's runtime tree.
-        """
-        launcher_path = source_path.resolve(strict=False)
-        try:
-            with launcher_path.open("rb") as launcher_file:
-                launcher_bytes = launcher_file.read(64 * 1024)
-        except OSError:
-            return None
-        if not launcher_bytes.startswith(b"#!/bin/sh"):
-            return None
-        try:
-            launcher_text = launcher_bytes.decode("utf-8")
-        except UnicodeError:
-            return None
-
-        relative_prefix = "$basedir/../.pnpm/"
-        for line in reversed(launcher_text.splitlines()):
-            if relative_prefix not in line:
-                continue
-            try:
-                tokens = shlex.split(line)
-            except ValueError:
-                continue
-            for token in tokens:
-                if not token.startswith(relative_prefix):
-                    continue
-                relative_target = token.removeprefix("$basedir/")
-                package_store = (launcher_path.parent.parent / ".pnpm").resolve(
-                    strict=False,
-                )
-                target = (launcher_path.parent / relative_target).resolve(
-                    strict=False,
-                )
-                if (
-                    target.is_relative_to(package_store)
-                    and target.is_file()
-                    and os.access(target, os.X_OK)
-                ):
-                    return target
-        return None
-
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         # EnvProvider exposes stable managed links under ABXPKG_LIB_DIR/env/bin so
         # PATHs and cached Binary metadata stay portable. Executing those links
@@ -3706,25 +3691,48 @@ class EnvProvider(BinProvider):
         linked_to = bin_abspath.readlink()
         return linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to
 
-    def _get_projected_version(
+    def _get_version_at_abspath(
         self,
         bin_name: BinName,
-        projected_abspath: HostBinPath,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool,
     ) -> SemVer | None:
-        if str(bin_name) == "brew":
-            return self.get_version(
+        owner = next(
+            (
+                provider
+                for provider in self._projection_providers
+                if str(provider.INSTALLER_BIN) == str(bin_name)
+            ),
+            None,
+        )
+        if owner is None:
+            from . import PROVIDER_CLASS_BY_INSTALLER_BIN
+
+            owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(str(bin_name))
+            owner = owner_class() if owner_class is not None else None
+        if owner is not None and owner.INSTALLER_VERSION_ARGS is not None:
+            version = owner.installer_version_handler(
                 bin_name,
-                abspath=projected_abspath,
-                quiet=True,
-                no_cache=True,
+                abspath=installed_abspath,
+                timeout=self.version_timeout,
             )
-        projected_path = Path(projected_abspath).absolute()
+            if not version:
+                return None
+            return self._version_from_result(
+                version,
+                bin_name=bin_name,
+                abspath=installed_abspath,
+                quiet=quiet,
+            )
+
+        projected_path = Path(installed_abspath).absolute()
         token = ENV_PROJECTED_VERSION_PATH.set(projected_path)
         try:
             return self.get_version(
                 bin_name,
-                abspath=projected_abspath,
-                quiet=True,
+                abspath=installed_abspath,
+                quiet=quiet,
                 no_cache=True,
             )
         finally:
@@ -3875,9 +3883,10 @@ class EnvProvider(BinProvider):
                         else None
                     )
                     if (
-                        self._get_projected_version(
+                        self._get_version_at_abspath(
                             bin_name_str,
                             projected_abspath,
+                            quiet=True,
                         )
                         is not None
                     ):
@@ -3913,15 +3922,10 @@ class EnvProvider(BinProvider):
                 candidates.append(abspath)
 
         for abspath in candidates:
-            if bin_name_str == "brew":
-                abspath = TypeAdapter(HostBinPath).validate_python(
-                    self._host_projection_target(Path(abspath)),
-                )
-            version = self.get_version(
+            version = self._get_version_at_abspath(
                 bin_name_str,
-                abspath=abspath,
+                abspath,
                 quiet=True,
-                no_cache=True,
             )
             if version is not None:
                 if self.bin_dir is None:
@@ -3939,9 +3943,10 @@ class EnvProvider(BinProvider):
                         else None
                     )
                     if (
-                        self._get_projected_version(
+                        self._get_version_at_abspath(
                             bin_name_str,
                             projected_abspath,
+                            quiet=True,
                         )
                         is not None
                     ):
@@ -3968,9 +3973,10 @@ class EnvProvider(BinProvider):
                     managed_path.readlink() if managed_path.is_symlink() else None
                 )
                 if (
-                    self._get_projected_version(
+                    self._get_version_at_abspath(
                         bin_name_str,
                         managed_abspath,
+                        quiet=True,
                     )
                     is not None
                 ):

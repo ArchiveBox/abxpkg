@@ -21,6 +21,18 @@ from abxpkg.exceptions import (
 
 
 class TestBinary:
+    @pytest.mark.parametrize("binary_name", ["go", "brew", "npm"])
+    def test_env_binary_uses_installer_owner_version_handler(self, binary_name):
+        loaded = Binary(
+            name=binary_name,
+            binproviders=[EnvProvider()],
+        ).load(no_cache=True)
+
+        assert loaded.loaded_binprovider is not None
+        assert loaded.loaded_binprovider.name == "env"
+        assert loaded.loaded_abspath is not None
+        assert loaded.loaded_version is not None
+
     def test_short_aliases_match_loaded_field_names(self):
         binary = Binary(
             name="python",

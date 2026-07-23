@@ -1,4 +1,5 @@
 import logging
+import shutil
 import subprocess
 import tempfile
 
@@ -54,6 +55,39 @@ def _brew_formula_is_installed(provider: BrewProvider, formula: str) -> bool:
 
 
 class TestBrewProvider:
+    def test_shallow_repository_uses_homebrew_owned_version_floor(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_brew = Path(test_machine.require_tool("brew")).resolve()
+        host_repository = host_brew.parent.parent
+        brew_repository = tmp_path / "homebrew"
+        brew_binary = brew_repository / "bin" / "brew"
+        brew_binary.parent.mkdir(parents=True)
+        shutil.copy2(host_brew, brew_binary)
+
+        git_dir = brew_repository / ".git"
+        (git_dir / "refs" / "heads").mkdir(parents=True)
+        (git_dir / "refs" / "tags").mkdir(parents=True)
+        (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+        (git_dir / "refs" / "heads" / "main").write_text("a" * 40 + "\n")
+        (git_dir / "refs" / "tags" / "99.0.0").write_text("b" * 40 + "\n")
+
+        brew_script = brew_repository / "Library" / "Homebrew" / "brew.sh"
+        brew_script.parent.mkdir(parents=True)
+        shutil.copy2(
+            host_repository / "Library" / "Homebrew" / "brew.sh",
+            brew_script,
+        )
+
+        version = BrewProvider().installer_version_handler(
+            "brew",
+            abspath=brew_binary,
+        )
+
+        assert version == SemVer("4.3.0")
+
     def test_install_root_alias_symlinks_formula_into_requested_bin_dir(
         self,
         test_machine,

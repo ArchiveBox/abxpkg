@@ -353,25 +353,25 @@ def build_providers(
 
 
 def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Binary:
-    from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary, EnvProvider
+    from . import (
+        DEFAULT_PROVIDER_NAMES,
+        PROVIDER_CLASS_BY_INSTALLER_BIN,
+        Binary,
+        EnvProvider,
+    )
 
     provider_names = options.provider_names
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
-        for provider_class in PROVIDER_CLASS_BY_NAME.values():
-            if provider_class.model_fields["INSTALLER_BIN"].default != binary_name:
-                continue
-            preferred_provider_names = getattr(
-                provider_class,
-                "INSTALLER_BINPROVIDERS",
-                None,
-            )
-            if preferred_provider_names:
-                provider_names = [
-                    provider_name
-                    for provider_name in preferred_provider_names
-                    if provider_name in options.provider_names
-                ]
-            break
+        owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(binary_name)
+        preferred_provider_names = (
+            owner_class.INSTALLER_BINPROVIDERS if owner_class is not None else None
+        )
+        if preferred_provider_names:
+            provider_names = [
+                provider_name
+                for provider_name in preferred_provider_names
+                if provider_name in options.provider_names
+            ]
 
     providers = build_providers(
         provider_names,

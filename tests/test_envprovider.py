@@ -285,6 +285,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        env_provider.set_projection_providers([BrewProvider()])
         loaded = env_provider.load("brew", no_cache=True)
         assert loaded is not None
         assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "brew"
@@ -327,6 +328,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        env_provider.set_projection_providers([BrewProvider()])
         loaded = env_provider.load("brew", no_cache=True)
         assert loaded is not None
         assert loaded.loaded_abspath is not None
@@ -391,6 +393,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        env_provider.set_projection_providers([BrewProvider()])
         installer = env_provider.load("brew", no_cache=True)
         assert installer is not None
         assert installer.loaded_abspath is not None
@@ -439,6 +442,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        first_provider.set_projection_providers([BrewProvider()])
         first = first_provider.load("brew", no_cache=True)
         assert first is not None
         assert first.loaded_abspath is not None
@@ -449,6 +453,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        second_provider.set_projection_providers([BrewProvider()])
         second = second_provider.load("brew", no_cache=True)
         assert second is not None
         assert second.loaded_abspath is not None
@@ -708,6 +713,7 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
+        env_provider.set_projection_providers([host_provider])
         loaded = env_provider.load(projected_bin, no_cache=True)
 
         assert loaded is not None

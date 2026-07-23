@@ -891,9 +891,15 @@ class TestPnpmProvider:
             pnpm_home = (Path(temp_dir) / "pnpm-home").resolve()
             previous = os.environ.get("PNPM_HOME")
             previous_global_bin_dir = os.environ.get("npm_config_global_bin_dir")
+            previous_upper_global_bin_dir = os.environ.get(
+                "NPM_CONFIG_GLOBAL_BIN_DIR",
+            )
             os.environ["PNPM_HOME"] = str(pnpm_home)
             os.environ["npm_config_global_bin_dir"] = str(
                 pnpm_home / "configured-elsewhere",
+            )
+            os.environ["NPM_CONFIG_GLOBAL_BIN_DIR"] = str(
+                pnpm_home / "configured-elsewhere-again",
             )
             try:
                 provider = PnpmProvider(
@@ -907,6 +913,8 @@ class TestPnpmProvider:
                 assert installed.loaded_abspath is not None
                 # The shim must end up under PNPM_HOME, not the user's $HOME.
                 assert installed.loaded_abspath.resolve().is_relative_to(pnpm_home)
+                version_result = installed.exec(cmd=("--version",), quiet=True)
+                assert version_result.returncode == 0, version_result.stderr
                 # Real on-disk side effect: pnpm's global package manifest exists.
                 assert (pnpm_home / "global").exists()
                 assert provider.uninstall("zx", no_cache=True) is True
@@ -920,6 +928,12 @@ class TestPnpmProvider:
                     os.environ.pop("npm_config_global_bin_dir", None)
                 else:
                     os.environ["npm_config_global_bin_dir"] = previous_global_bin_dir
+                if previous_upper_global_bin_dir is None:
+                    os.environ.pop("NPM_CONFIG_GLOBAL_BIN_DIR", None)
+                else:
+                    os.environ["NPM_CONFIG_GLOBAL_BIN_DIR"] = (
+                        previous_upper_global_bin_dir
+                    )
 
     def test_no_cache_install_does_not_create_managed_store(self, test_machine):
         test_machine.require_tool("node")

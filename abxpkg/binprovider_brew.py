@@ -43,6 +43,7 @@ class BrewProvider(BinProvider):
     _log_emoji = "🍺"
     INSTALLER_BIN: BinName = "brew"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
+    INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ()
     # These variables control Homebrew itself. They belong on subprocesses
     # executed by this provider, but must not leak into a combined dependency
     # environment where `brew` may be a host binary selected by EnvProvider.
@@ -95,6 +96,76 @@ class BrewProvider(BinProvider):
             # provider install must not mutate packages outside its target.
             "HOMEBREW_NO_INSTALL_CLEANUP": "1",
         }
+
+    def installer_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> "SemVer | str | None":
+        """Read Homebrew's repository version from its own git metadata cache."""
+        brew_candidate = abspath or bin_abspath(bin_name, PATH=self.PATH)
+        if brew_candidate is None:
+            return None
+
+        brew_repository = Path(brew_candidate).resolve().parent.parent
+        git_dir = brew_repository / ".git"
+        try:
+            if git_dir.is_file():
+                git_dir_entry = git_dir.read_text(encoding="utf-8").strip()
+                if git_dir_entry.startswith("gitdir:"):
+                    git_dir = Path(git_dir_entry.removeprefix("gitdir:").strip())
+                    if not git_dir.is_absolute():
+                        git_dir = (brew_repository / git_dir).resolve()
+            if git_dir.is_dir():
+                head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+                revision = head
+                if head.startswith("ref:"):
+                    head_ref = head.removeprefix("ref:").strip()
+                    loose_ref = git_dir / head_ref
+                    if loose_ref.is_file():
+                        revision = loose_ref.read_text(encoding="utf-8").strip()
+                    else:
+                        packed_refs = git_dir / "packed-refs"
+                        if packed_refs.is_file():
+                            revision = next(
+                                (
+                                    line.split(" ", 1)[0]
+                                    for line in packed_refs.read_text(
+                                        encoding="utf-8",
+                                    ).splitlines()
+                                    if line.endswith(f" {head_ref}")
+                                ),
+                                "",
+                            )
+                describe_cache = git_dir / "describe-cache" / revision
+                if describe_cache.is_file():
+                    cached_version = describe_cache.read_text(
+                        encoding="utf-8",
+                    ).strip()
+                    if not cached_version.endswith("-dirty") and SemVer.parse(
+                        cached_version,
+                    ):
+                        return cached_version
+        except OSError:
+            pass
+
+        # Homebrew itself uses this lower bound when a shallow/no-git checkout
+        # cannot produce a describe result. Read it from the installed script
+        # so fallback semantics remain owned by Homebrew, not guessed here.
+        try:
+            for line in (
+                (brew_repository / "Library" / "Homebrew" / "brew.sh")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ):
+                if 'HOMEBREW_VERSION=">=' not in line:
+                    continue
+                return SemVer.parse(line.partition(">=")[2])
+        except OSError:
+            pass
+        return None
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False

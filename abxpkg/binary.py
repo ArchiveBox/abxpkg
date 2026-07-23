@@ -210,10 +210,12 @@ class Binary(ShallowBinary):
                 overrides_for_binprovider = {
                     self.name: self.overrides.get(binprovider_name, {}),
                 }
-                return binprovider.get_provider_with_overrides(
+                provider = binprovider.get_provider_with_overrides(
                     overrides=overrides_for_binprovider,
                     **extra_overrides,
                 )
+                provider.set_projection_providers(self.binproviders)
+                return provider
 
         raise KeyError(
             f"{binprovider_name} is not a supported BinProvider for Binary(name={self.name})",
@@ -509,16 +511,14 @@ class Binary(ShallowBinary):
         )
         uninstall_candidates: list[BinProvider] = []
         for binprovider in self._binprovider_order(binproviders):
-            if type(binprovider) is EnvProvider:
-                binprovider.invalidate_cache(self.name)
+            if binprovider.prepare_uninstall(self.name):
                 continue
             uninstall_candidates.append(binprovider)
         if not uninstall_candidates:
             for binprovider in self.binproviders:
                 if binproviders and binprovider.name not in binproviders:
                     continue
-                if type(binprovider) is EnvProvider:
-                    binprovider.invalidate_cache(self.name)
+                if binprovider.prepare_uninstall(self.name):
                     continue
                 uninstall_candidates.append(binprovider)
 

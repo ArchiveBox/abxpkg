@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import TypeAdapter, model_validator
-from typing import Self
+from typing import ClassVar, Self
 
 from .base_types import BinProviderName, PATHStr, BinName, HostBinPath, InstallArgs
 from .semver import SemVer
@@ -24,6 +24,7 @@ class AptProvider(BinProvider):
     name: BinProviderName = "apt"
     _log_emoji = "🐧"
     INSTALLER_BIN: BinName = "apt-get"
+    DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = ("linux",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() discovers package runtime bin dirs via dpkg and replaces PATH with those dirs.
     euid: int | None = (
