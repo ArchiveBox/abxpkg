@@ -8,7 +8,7 @@ import sys
 import urllib.request
 import urllib.parse
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -45,6 +45,8 @@ class BunProvider(BinProvider):
     name: BinProviderName = "bun"
     _log_emoji = "🥖"
     INSTALLER_BIN: BinName = "bun"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("brew",)
+    INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = True
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or Bun's global bin dir from BUN_INSTALL/~/.bun in ambient mode.
     postinstall_scripts: bool | None = Field(

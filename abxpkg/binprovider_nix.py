@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 __package__ = "abxpkg"
 
+import hashlib
 import json
 import os
+import platform
+import tempfile
+import urllib.request
 
 from pathlib import Path
 
 from pydantic import Field, model_validator, computed_field
-from typing import Self
+from typing import NamedTuple, Self
 
 from .base_types import (
     BinProviderName,
@@ -22,6 +26,7 @@ from .binprovider import (
     BinProvider,
     EnvProvider,
     DEFAULT_ENV_PATH,
+    ShallowBinary,
     log_method_call,
     remap_kwargs,
 )
@@ -35,6 +40,58 @@ logger = get_logger(__name__)
 DEFAULT_NIX_PROFILE = Path("~/.nix-profile").expanduser()
 DEFAULT_NIX_BIN_DIR = Path("/nix/var/nix/profiles/default/bin")
 NIXPKGS_SOURCE = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz"
+NIX_INSTALLER_VERSION = "3.21.8"
+
+
+class NixInstallerArtifact(NamedTuple):
+    name: str
+    url: str
+    sha256: str
+
+
+NIX_INSTALLER_ARTIFACTS: dict[tuple[str, str], tuple[str, str]] = {
+    (
+        "linux",
+        "x86_64",
+    ): (
+        "nix-installer-x86_64-linux",
+        "eecf66f62b044f40b0632d8e9ea72ffc3bd3214357d09317117febff748e71b3",
+    ),
+    (
+        "darwin",
+        "arm64",
+    ): (
+        "nix-installer-aarch64-darwin",
+        "f22909a4a816710dddd813bb5ad5958bb2ed100549c9d0edb535bfee8d252e48",
+    ),
+}
+
+
+def nix_installer_artifact(
+    *,
+    system: str | None = None,
+    machine: str | None = None,
+) -> NixInstallerArtifact:
+    target = (
+        (system or platform.system()).lower(),
+        (machine or platform.machine()).lower(),
+    )
+    try:
+        name, sha256 = NIX_INSTALLER_ARTIFACTS[target]
+    except KeyError as err:
+        raise RuntimeError(
+            "NixProvider managed bootstrap does not support "
+            f"{target[0]}/{target[1]}; supported targets are "
+            "linux/x86_64 and darwin/arm64",
+        ) from err
+    return NixInstallerArtifact(
+        name=name,
+        url=(
+            "https://github.com/DeterminateSystems/nix-installer/releases/download/"
+            f"v{NIX_INSTALLER_VERSION}/{name}"
+        ),
+        sha256=sha256,
+    )
 
 
 class NixProvider(BinProvider):
@@ -124,30 +181,11 @@ class NixProvider(BinProvider):
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
 
-        derived_env_path = self.derived_env_path
-        if not no_cache and derived_env_path and derived_env_path.is_file():
-            from .config import load_derived_cache
-
-            cache = load_derived_cache(derived_env_path)
-            for cached_record in cache.values():
-                if not isinstance(cached_record, dict):
-                    continue
-                if cached_record.get("provider_name") != self.name or cached_record.get(
-                    "bin_name",
-                ) != str(self.INSTALLER_BIN):
-                    continue
-                cached_abspath = cached_record.get("abspath")
-                if not isinstance(cached_abspath, str):
-                    continue
-                loaded = self.load_cached_binary(
-                    self.INSTALLER_BIN,
-                    Path(cached_abspath),
-                )
-                if loaded and loaded.loaded_abspath:
-                    self._INSTALLER_BINARY = loaded
-                    return loaded
-
-        env_provider = EnvProvider(install_root=None, bin_dir=None)
+        env_provider = EnvProvider()
+        env_provider.PATH = env_provider._merge_PATH(
+            DEFAULT_NIX_BIN_DIR,
+            PATH=env_provider.PATH,
+        )
         env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
         manual = os.environ.get(env_var)
         if manual and os.path.isabs(manual) and Path(manual).is_file():
@@ -159,24 +197,110 @@ class NixProvider(BinProvider):
 
         loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=no_cache)
         if loaded and loaded.loaded_abspath:
-            if loaded.loaded_version and loaded.loaded_sha256:
-                self.write_cached_binary(
-                    self.INSTALLER_BIN,
-                    loaded.loaded_abspath,
-                    loaded.loaded_version,
-                    loaded.loaded_sha256,
-                    resolved_provider_name=(
-                        loaded.loaded_binprovider.name
-                        if loaded.loaded_binprovider is not None
-                        else self.name
-                    ),
-                    resolved_provider=loaded.loaded_binprovider,
-                    cache_kind="dependency",
-                )
-            self._INSTALLER_BINARY = loaded
-            return self._INSTALLER_BINARY
+            return self._cache_installer_binary(loaded)
 
-        return super().INSTALLER_BINARY(no_cache=no_cache)
+        installer_path = self.download_nix_installer()
+        proc = self.exec(
+            bin_name=installer_path,
+            cmd=self.nix_installer_install_command(),
+            timeout=self.install_timeout,
+        )
+        if proc.returncode != 0:
+            self._raise_proc_error("install", self.INSTALLER_BIN, proc)
+
+        loaded = env_provider.load(bin_name=self.INSTALLER_BIN, no_cache=True)
+        if loaded and loaded.loaded_abspath:
+            return self._cache_installer_binary(loaded)
+
+        raise RuntimeError(
+            "NixProvider managed bootstrap completed but did not produce "
+            f"{DEFAULT_NIX_BIN_DIR / self.INSTALLER_BIN}",
+        )
+
+    def _cache_installer_binary(self, loaded: ShallowBinary) -> ShallowBinary:
+        if loaded.loaded_version and loaded.loaded_sha256 and loaded.loaded_abspath:
+            self.write_cached_binary(
+                self.INSTALLER_BIN,
+                loaded.loaded_abspath,
+                loaded.loaded_version,
+                loaded.loaded_sha256,
+                resolved_provider_name=(
+                    loaded.loaded_binprovider.name
+                    if loaded.loaded_binprovider is not None
+                    else self.name
+                ),
+                resolved_provider=loaded.loaded_binprovider,
+                cache_kind="dependency",
+            )
+        self._INSTALLER_BINARY = loaded
+        return loaded
+
+    @staticmethod
+    def nix_installer_install_command() -> tuple[str, ...]:
+        return (
+            "install",
+            "--no-confirm",
+            "--diagnostic-endpoint",
+            "",
+        )
+
+    def download_nix_installer(self) -> Path:
+        artifact = nix_installer_artifact()
+        install_root = self.install_root
+        assert install_root is not None
+        cache_dir = install_root.parent / "nix-installer" / f"v{NIX_INSTALLER_VERSION}"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        installer_path = cache_dir / artifact.name
+
+        if installer_path.is_file():
+            existing_sha256 = self.get_sha256(
+                "nix-installer",
+                abspath=installer_path,
+                no_cache=True,
+            )
+            if existing_sha256 != artifact.sha256:
+                raise RuntimeError(
+                    f"Refusing cached {installer_path}: expected SHA256 "
+                    f"{artifact.sha256}, got {existing_sha256}",
+                )
+            installer_path.chmod(0o755)
+            return installer_path
+
+        temp_fd, temp_name = tempfile.mkstemp(
+            dir=cache_dir,
+            prefix=f".{artifact.name}.",
+            suffix=".tmp",
+        )
+        temp_path = Path(temp_name)
+        digest = hashlib.sha256()
+        try:
+            request = urllib.request.Request(
+                artifact.url,
+                headers={"User-Agent": f"abxpkg nix bootstrap/{NIX_INSTALLER_VERSION}"},
+            )
+            with (
+                os.fdopen(temp_fd, "wb") as installer_file,
+                urllib.request.urlopen(
+                    request,
+                    timeout=self.install_timeout,
+                ) as response,
+            ):
+                for chunk in iter(lambda: response.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    installer_file.write(chunk)
+
+            downloaded_sha256 = digest.hexdigest()
+            if downloaded_sha256 != artifact.sha256:
+                raise RuntimeError(
+                    f"Refusing downloaded {artifact.url}: expected SHA256 "
+                    f"{artifact.sha256}, got {downloaded_sha256}",
+                )
+            temp_path.chmod(0o755)
+            os.replace(temp_path, installer_path)
+        finally:
+            temp_path.unlink(missing_ok=True)
+
+        return installer_path
 
     @log_method_call()
     def setup(

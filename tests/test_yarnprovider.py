@@ -4,8 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, SemVer, YarnProvider
-from abxpkg.base_types import bin_abspath
+from abxpkg import Binary, EnvProvider, NpmProvider, SemVer, YarnProvider
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
@@ -16,16 +15,33 @@ class TestYarnProvider:
         version_threshold = SemVer.parse("2.0.0")
         current_path = str(YarnProvider(**kwargs).PATH)
         if kind == "berry":
-            berry_alias = bin_abspath("yarn-berry", PATH=current_path) or bin_abspath(
-                "yarn-berry",
+            yarn_install_root = kwargs.get("install_root")
+            assert isinstance(yarn_install_root, Path)
+            npm_root = yarn_install_root.parent / "npm-yarn-berry"
+            npm_provider = NpmProvider(
+                install_root=npm_root / "package",
+                alias_bin_dir=npm_root / "alias" / "bin",
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={
+                    "yarn-berry": {
+                        "install_args": ["@yarnpkg/cli-dist@4.13.0"],
+                    },
+                },
             )
+            berry = Binary(
+                name="yarn-berry",
+                binproviders=[EnvProvider(), npm_provider],
+                min_version=SemVer("4.13.0"),
+                min_release_age=0,
+            ).install(no_cache=True)
+            berry_alias = berry.loaded_abspath
             assert berry_alias is not None, (
-                "Could not resolve the globally installed yarn-berry alias on PATH"
+                "abxpkg did not resolve or install the Yarn Berry runtime"
             )
-            # The CI dependency resolver exposes every selected binary through
-            # LIB_DIR/env/bin. Peel only that EnvProvider projection before
-            # inspecting npm's logical yarn-berry alias; the alias itself then
-            # points at the real `yarn` launcher directory YarnProvider needs.
+            # Peel the managed EnvProvider projection before inspecting npm's
+            # logical yarn-berry alias; the alias itself points at the real
+            # `yarn` launcher directory YarnProvider needs.
             if (
                 berry_alias.is_symlink()
                 and berry_alias.parent.name == "bin"

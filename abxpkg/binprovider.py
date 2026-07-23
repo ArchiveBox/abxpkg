@@ -484,6 +484,7 @@ class BinProvider(BaseModel):
     )  # e.g.  '/opt/homebrew/bin:/opt/archivebox/bin'
     INSTALLER_BIN: BinName = "env"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
+    INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = None
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
 
     euid: int | None = None
@@ -1381,6 +1382,7 @@ class BinProvider(BaseModel):
                 loaded = Binary(
                     name=self.INSTALLER_BIN,
                     binproviders=manual_installer_providers,
+                    postinstall_scripts=self.INSTALLER_POSTINSTALL_SCRIPTS,
                 ).install(
                     no_cache=no_cache,
                 )
@@ -1408,6 +1410,7 @@ class BinProvider(BaseModel):
             loaded = Binary(
                 name=self.INSTALLER_BIN,
                 binproviders=installer_providers,
+                postinstall_scripts=self.INSTALLER_POSTINSTALL_SCRIPTS,
             ).install(no_cache=no_cache)
             if loaded and loaded.loaded_abspath:
                 if loaded.loaded_version and loaded.loaded_sha256:

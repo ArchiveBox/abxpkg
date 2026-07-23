@@ -7,10 +7,100 @@ from typing import cast
 import pytest
 
 from abxpkg import Binary, NixProvider, SemVer
+from abxpkg.binprovider_nix import (
+    NIX_INSTALLER_VERSION,
+    nix_installer_artifact,
+)
 from abxpkg.binprovider import BinProvider
 
 
 class TestNixProvider:
+    @pytest.mark.parametrize(
+        ("system", "machine", "artifact_name", "sha256"),
+        (
+            (
+                "linux",
+                "x86_64",
+                "nix-installer-x86_64-linux",
+                "eecf66f62b044f40b0632d8e9ea72ffc3bd3214357d09317117febff748e71b3",
+            ),
+            (
+                "darwin",
+                "arm64",
+                "nix-installer-aarch64-darwin",
+                "f22909a4a816710dddd813bb5ad5958bb2ed100549c9d0edb535bfee8d252e48",
+            ),
+        ),
+    )
+    def test_supported_ci_targets_select_pinned_nix_installer_artifact(
+        self,
+        system,
+        machine,
+        artifact_name,
+        sha256,
+    ):
+        artifact = nix_installer_artifact(system=system, machine=machine)
+
+        assert artifact.name == artifact_name
+        assert artifact.sha256 == sha256
+        assert artifact.url == (
+            "https://github.com/DeterminateSystems/nix-installer/releases/download/"
+            f"v{NIX_INSTALLER_VERSION}/{artifact_name}"
+        )
+
+    def test_unsupported_nix_installer_target_fails_explicitly(self):
+        with pytest.raises(
+            RuntimeError,
+            match=(
+                "does not support plan9/mips64; supported targets are "
+                "linux/x86_64 and darwin/arm64"
+            ),
+        ):
+            nix_installer_artifact(system="plan9", machine="mips64")
+
+    def test_managed_nix_installer_artifact_is_verified_and_executable(self):
+        provider = NixProvider()
+        artifact = nix_installer_artifact()
+        installer_path = provider.download_nix_installer()
+
+        assert installer_path.is_file()
+        assert (
+            provider.get_sha256(
+                "nix-installer",
+                abspath=installer_path,
+                no_cache=True,
+            )
+            == artifact.sha256
+        )
+        proc = provider.exec(
+            bin_name=installer_path,
+            cmd=["--version"],
+            quiet=True,
+        )
+        assert proc.returncode == 0, proc.stderr or proc.stdout
+        assert proc.stdout.strip() == f"nix-installer {NIX_INSTALLER_VERSION}"
+
+    def test_nix_installer_command_is_noninteractive_and_disables_diagnostics(self):
+        assert NixProvider.nix_installer_install_command() == (
+            "install",
+            "--no-confirm",
+            "--diagnostic-endpoint",
+            "",
+        )
+
+    def test_installer_binary_is_projected_through_env_bin(self, test_machine):
+        provider = NixProvider()
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+
+        test_machine.assert_shallow_binary_loaded(
+            installer,
+            assert_version_command=True,
+        )
+        assert installer.loaded_binprovider.name == "env"
+        assert installer.loaded_abspath is not None
+        assert installer.loaded_abspath.parent.name == "bin"
+        assert installer.loaded_abspath.parent.parent.name == "env"
+
     def test_install_root_alias_installs_into_the_requested_profile(self, test_machine):
         assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
 

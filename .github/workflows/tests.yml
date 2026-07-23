@@ -40,11 +40,7 @@ jobs:
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "3.12" \
-        && uv sync --all-extras --all-groups --no-cache \
-        && uv pip install pip
-
-    - name: Resolve documentation runtime with abxpkg
-      run: .github/resolve_ci_binaries.sh docs_binaries python_cli_binaries
+        && uv sync --all-extras --all-groups --no-cache
 
     - name: Run pre-commit checks
       run: uv run prek run --all-files
@@ -71,17 +67,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
-    - name: Install Nix
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "3.12"
         uv sync --all-extras --all-groups --no-cache
-        uv pip install pip
-
-    - name: Resolve live documentation runtimes with abxpkg
-      run: .github/resolve_ci_binaries.sh manager_binaries node_npm_binaries pnpm_binaries yarn_binaries bun_binaries deno_binaries go_binaries cargo_binaries gem_binaries python_cli_binaries host_utility_binaries linux_binaries docker_binaries
 
     - name: Run live documentation code blocks
       run: uv run pytest -vv --tb=long -m live_required README.md django_example_project/README.md AGENTS.md skills docs
@@ -151,63 +140,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
-    - name: Install Nix
-      if: runner.os == 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-      with:
-        start-daemon: true
-
-    - name: Install Nix
-      if: runner.os != 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "${{ matrix.target.python_version }}"
         uv sync --all-extras
-        uv pip install pip
-
-    - name: Resolve test runtimes with abxpkg
-      env:
-        TEST_PATHS_JSON: ${{ toJson(matrix.shard.paths) }}
-      run: |
-        test_paths=()
-        while IFS= read -r test_path; do
-          [[ -z "$test_path" ]] || test_paths+=("$test_path")
-        done < <(uv run --no-project python -c 'import json, os; print(*json.loads(os.environ["TEST_PATHS_JSON"]), sep="\n")')
-
-        sections=()
-        for test_path in "${test_paths[@]}"; do
-          while IFS= read -r section; do
-            [[ -z "$section" ]] && continue
-            section_seen=false
-            for existing_section in "${sections[@]}"; do
-              if [[ "$existing_section" == "$section" ]]; then
-                section_seen=true
-                break
-              fi
-            done
-            if [[ "$section_seen" == false ]]; then
-              sections+=("$section")
-            fi
-          done < <(.github/ci_test_sections.sh "$test_path" "${{ runner.os }}")
-        done
-        if [[ "${#sections[@]}" -gt 0 ]]; then
-          .github/resolve_ci_binaries.sh "${sections[@]}"
-        fi
-
-    - name: Environment diagnostic
-      run: |
-        [[ -z "${CI_BREW_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
-        [[ -z "${CI_NIX_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
-        [[ -z "${CI_NODE_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
-        [[ -z "${CI_NPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
-        [[ -z "${CI_PNPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
-        [[ -z "${CI_YARN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
-        [[ -z "${CI_YARN_BERRY_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
-        [[ -z "${CI_BUN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
-        [[ -z "${CI_DENO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
-        [[ -z "${CI_GO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
 
     - name: Run standard test shard
       env:
@@ -263,44 +199,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
-    - name: Install Nix
-      if: runner.os == 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-      with:
-        start-daemon: true
-
-    - name: Install Nix
-      if: runner.os != 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "${{ matrix.target.python_version }}"
         uv sync --all-extras
-        uv pip install pip
-
-    - name: Resolve Playwright test runtimes with abxpkg
-      run: |
-        sections=()
-        while IFS= read -r section; do
-          [[ -z "$section" ]] || sections+=("$section")
-        done < <(.github/ci_test_sections.sh "${{ needs.discover-standard-tests.outputs.playwright-test }}" "${{ runner.os }}")
-        if [[ "${#sections[@]}" -gt 0 ]]; then
-          .github/resolve_ci_binaries.sh "${sections[@]}"
-        fi
-
-    - name: Environment diagnostic
-      run: |
-        [[ -z "${CI_BREW_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BREW_BIN" --version
-        [[ -z "${CI_NIX_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NIX_BIN" --version
-        [[ -z "${CI_NODE_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NODE_BIN" --version
-        [[ -z "${CI_NPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_NPM_BIN" --version
-        [[ -z "${CI_PNPM_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_PNPM_BIN" --version
-        [[ -z "${CI_YARN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BIN" --version
-        [[ -z "${CI_YARN_BERRY_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_YARN_BERRY_BIN" --version
-        [[ -z "${CI_BUN_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_BUN_BIN" --version
-        [[ -z "${CI_DENO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_DENO_BIN" --version
-        [[ -z "${CI_GO_BIN:-}" ]] || uv run abxpkg run --install --binproviders=env "$CI_GO_BIN" version
 
     - name: Run Playwright provider tests
       run: uv run pytest -vv --tb=long -m "not root_required and not docker_required" "${{ needs.discover-standard-tests.outputs.playwright-test }}"
@@ -381,39 +283,10 @@ jobs:
         enable-cache: true
         cache-dependency-glob: "pyproject.toml"
 
-    - name: Install Nix
-      if: runner.os == 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-      with:
-        start-daemon: true
-
-    - name: Install Nix
-      if: runner.os != 'Linux'
-      uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "${{ matrix.live.python_version }}"
         uv sync --all-extras
-        uv pip install pip
-
-    - name: Resolve integration runtimes with abxpkg
-      run: |
-        sections=()
-        while IFS= read -r section; do
-          [[ -z "$section" ]] || sections+=("$section")
-        done < <(.github/ci_test_sections.sh "${{ matrix.live.path }}" "Linux")
-        sections+=(linux_binaries)
-        if [[ "${{ matrix.live.needs_docker }}" == "true" ]]; then
-          sections+=(docker_binaries)
-        fi
-        .github/resolve_ci_binaries.sh "${sections[@]}"
-
-    - name: Inspect Docker
-      if: ${{ matrix.live.needs_docker }}
-      run: |
-        "$CI_DOCKER_BIN" version
-        "$CI_DOCKER_BIN" info
 
     - name: Run every privileged provider test
       run: uv run pytest -vv --tb=long -m "root_required or docker_required" "${{ matrix.live.path }}"
