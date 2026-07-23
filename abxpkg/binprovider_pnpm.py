@@ -287,7 +287,7 @@ class PnpmProvider(BinProvider):
         if version is None or version >= (22, 13, 0):
             return "pnpm"
         if version >= (18, 12, 0):
-            return "pnpm@10"
+            return "pnpm@10.19.0"
         if version >= (16, 14, 0):
             return "pnpm@8"
         if version >= (14, 6, 0):
@@ -365,17 +365,20 @@ class PnpmProvider(BinProvider):
         from .binprovider_npm import NpmProvider
 
         npm_root = self._installer_provider_root()
-        node_loaded = self._cache_node_dependency(no_cache=no_cache)
-        pnpm_package = self._pnpm_package_for_node(
-            node_loaded.loaded_version if node_loaded is not None else None,
-        )
         npm_provider = NpmProvider(
             install_root=npm_root,
             postinstall_scripts=True,
             min_release_age=0,
-        ).get_provider_with_overrides(
+        )
+        npm_installer = npm_provider.INSTALLER_BINARY(no_cache=no_cache)
+        node_loaded = self._cache_node_dependency(no_cache=no_cache)
+        pnpm_package = self._pnpm_package_for_node(
+            node_loaded.loaded_version if node_loaded is not None else None,
+        )
+        npm_provider = npm_provider.get_provider_with_overrides(
             overrides={"pnpm": {"install_args": [pnpm_package]}},
         )
+        npm_provider._INSTALLER_BINARY = npm_installer
 
         # npm is a host dependency. Project it into the managed env/bin before
         # giving it to the npm provider so no programmatic path relies on the

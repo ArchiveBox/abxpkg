@@ -105,8 +105,8 @@ class TestPnpmProvider:
         [
             (SemVer(24, 0, 0), "pnpm"),
             (SemVer(22, 13, 0), "pnpm"),
-            (SemVer(22, 12, 0), "pnpm@10"),
-            (SemVer(18, 12, 0), "pnpm@10"),
+            (SemVer(22, 12, 0), "pnpm@10.19.0"),
+            (SemVer(18, 12, 0), "pnpm@10.19.0"),
             (SemVer(18, 11, 0), "pnpm@8"),
             (SemVer(16, 14, 0), "pnpm@8"),
             (SemVer(14, 6, 0), "pnpm@7"),
