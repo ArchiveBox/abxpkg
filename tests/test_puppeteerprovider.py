@@ -27,7 +27,11 @@ class TestPuppeteerProvider:
             with pytest.raises(BinaryInstallError) as exc_info:
                 provider.install("chromedriver")
 
-            assert "ERR_PNPM_NO_MATCHING_VERSION" in str(exc_info.value)
+            failure = str(exc_info.value).lower()
+            assert "pnpmprovider install failed" in failure
+            assert "returncode 1" in failure
+            assert "@puppeteer/browsers" in failure
+            assert "published at" in failure
             assert not (
                 root / "pnpm" / "node_modules" / "@puppeteer" / "browsers"
             ).exists()
