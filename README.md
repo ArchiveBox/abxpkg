@@ -877,7 +877,7 @@ Source: [`abxpkg/binprovider_apt.py`](./abxpkg/binprovider_apt.py) • Tests: [`
 
 ```python
 INSTALLER_BIN = "apt-get"
-PATH = ""                            # populated from `dpkg -L bash` bin dirs
+PATH = ""                            # populated from `dpkg -L bash` bin/sbin roots
 euid = 0                             # always runs as root
 ```
 
@@ -886,7 +886,7 @@ euid = 0                             # always runs as root
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` becomes `apt-get install -y -qq --no-install-recommends ...`; `update()` uses `apt-get install --only-upgrade ...`; `uninstall()` uses `apt-get remove -y -qq ...`.
-- Notes: direct mode runs `apt-get update -qq` at most once per day and requests privilege escalation when needed.
+- Notes: direct mode runs `apt-get update -qq` at most once per day and requests privilege escalation when needed. Executables without a usable version flag are versioned from their owning package's `dpkg-query` metadata.
 
 </details>
 
