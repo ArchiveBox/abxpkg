@@ -3703,7 +3703,7 @@ class EnvProvider(BinProvider):
             if (
                 isinstance(record, dict)
                 and record.get("provider_name") == self.name
-                and record.get("cache_kind") == "projection"
+                and record.get("cache_kind") in {"binary", "projection"}
                 and record.get("abspath") == str(absolute_abspath)
                 and (bin_name is None or record.get("bin_name") == str(bin_name))
             ):
@@ -3978,6 +3978,25 @@ class EnvProvider(BinProvider):
         if self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
             return None
+        projection_record = self._projection_cache_record(abspath, bin_name)
+        if (
+            projection_record is not None
+            and projection_record.get("cache_kind") != "projection"
+            and self._get_projected_version(bin_name, abspath) is None
+        ):
+            projected_path = Path(abspath).expanduser().absolute()
+            projected_target = (
+                projected_path.readlink() if projected_path.is_symlink() else None
+            )
+            self.invalidate_cache(bin_name)
+            with self.mutation_lock():
+                if (
+                    projected_target is not None
+                    and projected_path.is_symlink()
+                    and projected_path.readlink() == projected_target
+                ):
+                    projected_path.unlink()
+            return None
         if logger.isEnabledFor(py_logging.DEBUG):
             log_with_trace_depth(
                 logger,
@@ -3992,7 +4011,7 @@ class EnvProvider(BinProvider):
                     ),
                 ),
             )
-        return cast(Any, BinProvider.load_cached_binary).__wrapped__(
+        loaded = cast(Any, BinProvider.load_cached_binary).__wrapped__(
             self,
             bin_name,
             abspath,
@@ -4001,6 +4020,32 @@ class EnvProvider(BinProvider):
             cache_context_hash=cache_context_hash,
             setup_path=setup_path,
         )
+        if (
+            loaded is not None
+            and projection_record is not None
+            and projection_record.get("cache_kind") != "projection"
+            and loaded.loaded_version is not None
+            and loaded.loaded_sha256 is not None
+        ):
+            resolved_provider = self._resolved_provider_from_cache_record(
+                projection_record,
+            )
+            self.write_cached_binary(
+                bin_name,
+                abspath,
+                loaded.loaded_version,
+                loaded.loaded_sha256,
+                resolved_provider_name=resolved_provider.name,
+                resolved_provider=resolved_provider,
+                cache_kind="projection",
+            )
+            return loaded.model_copy(
+                update={
+                    "loaded_binprovider": resolved_provider,
+                    "binproviders": [resolved_provider],
+                },
+            )
+        return loaded
 
     @log_method_call()
     def write_cached_binary(
@@ -4020,6 +4065,8 @@ class EnvProvider(BinProvider):
         if not is_direct_projection and self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
             return None
+        if is_direct_projection and cache_kind == "binary":
+            cache_kind = "projection"
         if logger.isEnabledFor(py_logging.DEBUG):
             log_with_trace_depth(
                 logger,
