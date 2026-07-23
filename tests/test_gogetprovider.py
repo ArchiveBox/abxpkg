@@ -1,3 +1,4 @@
+import os
 import tempfile
 from pathlib import Path
 import logging
@@ -9,20 +10,34 @@ from abxpkg import Binary, GoGetProvider, SemVer
 
 
 class TestGoGetProvider:
-    def test_installer_binary_uses_go_version_override(self, test_machine):
-        test_machine.require_tool("go")
+    def test_installer_binary_uses_go_version_override(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lib_dir = (Path(temp_dir) / "lib").resolve()
+            previous_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+            os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+            try:
+                bootstrap_provider = GoGetProvider(
+                    postinstall_scripts=True,
+                    min_release_age=3,
+                )
+                bootstrapped = bootstrap_provider.INSTALLER_BINARY(no_cache=True)
+                assert bootstrapped.loaded_abspath is not None
 
-        provider = GoGetProvider(postinstall_scripts=True, min_release_age=3)
-        installer = provider.INSTALLER_BINARY(no_cache=True)
+                # Re-resolve after bootstrap so an installer supplied by Apt or
+                # Homebrew is discovered as a host binary and projected through
+                # the stable managed env path before GoGet executes it.
+                provider = GoGetProvider(postinstall_scripts=True, min_release_age=3)
+                installer = provider.INSTALLER_BINARY(no_cache=True)
+            finally:
+                if previous_lib_dir is None:
+                    os.environ.pop("ABXPKG_LIB_DIR", None)
+                else:
+                    os.environ["ABXPKG_LIB_DIR"] = previous_lib_dir
 
-        assert installer is not None
-        assert installer.loaded_abspath is not None
-        assert installer.loaded_version is not None
-        assert installer.loaded_abspath.name == "go"
-        loaded_version = installer.loaded_version
-        expected_version = SemVer.parse("1.0.0")
-        assert expected_version is not None
-        assert loaded_version >= expected_version
+            assert installer.loaded_abspath == lib_dir / "env" / "bin" / "go"
+            assert installer.loaded_abspath.is_symlink()
+            assert installer.loaded_version is not None
+            assert installer.loaded_version >= SemVer("1.0.0")
 
     def test_default_install_args_fail_closed_for_bare_binary_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -38,8 +53,6 @@ class TestGoGetProvider:
                 provider.get_install_args("shfmt", quiet=False)
 
     def test_module_path_name_installs_without_overrides(self, test_machine):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             module_path = "mvdan.cc/sh/v3/cmd/shfmt"
             provider = GoGetProvider.model_validate(
@@ -64,8 +77,6 @@ class TestGoGetProvider:
         self,
         test_machine,
     ):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "go-root"
             bin_dir = Path(temp_dir) / "custom-bin"
@@ -97,8 +108,6 @@ class TestGoGetProvider:
         self,
         test_machine,
     ):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = GoGetProvider.model_validate(
@@ -152,8 +161,6 @@ class TestGoGetProvider:
         self,
         test_machine,
     ):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_provider = GoGetProvider(
@@ -203,8 +210,6 @@ class TestGoGetProvider:
             assert installed.loaded_version > ambient_installed.loaded_version
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider(
                 bin_dir=Path(temp_dir) / "go/bin",
@@ -224,8 +229,6 @@ class TestGoGetProvider:
         self,
         test_machine,
     ):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             gobin = Path(temp_dir) / "go/bin"
             gopath = Path(temp_dir) / "go"
@@ -274,8 +277,6 @@ class TestGoGetProvider:
         test_machine,
         caplog,
     ):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
                 installed = (
@@ -324,8 +325,6 @@ class TestGoGetProvider:
             assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
                 name="shfmt",
@@ -348,8 +347,6 @@ class TestGoGetProvider:
             test_machine.exercise_binary_lifecycle(binary)
 
     def test_provider_dry_run_does_not_install_shfmt(self, test_machine):
-        test_machine.require_tool("go")
-
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider(
                 bin_dir=Path(temp_dir) / "go/bin",
@@ -366,7 +363,6 @@ class TestGoGetProvider:
             test_machine.exercise_provider_dry_run(provider, bin_name="shfmt")
 
     def test_search_finds_real_go_module_and_install_works(self, test_machine):
-        test_machine.require_tool("go")
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = GoGetProvider(
                 install_root=Path(temp_dir) / "go",

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, PnpmProvider, SemVer
+from abxpkg import Binary, NpmProvider, PnpmProvider, SemVer
 from abxpkg.base_types import bin_abspath
 from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
@@ -266,16 +266,31 @@ class TestPnpmProvider:
         test_machine.require_tool("node")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            lib_dir = Path(temp_dir) / "lib"
+            temp_path = Path(temp_dir)
+            lib_dir = temp_path / "lib"
+            host_pnpm = Binary(
+                name="pnpm",
+                binproviders=[
+                    NpmProvider(
+                        install_root=temp_path / "host-npm",
+                        postinstall_scripts=True,
+                        min_release_age=0,
+                    ),
+                ],
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).install(no_cache=True)
+            assert host_pnpm.loaded_abspath is not None
             provider = PnpmProvider(
                 install_root=lib_dir / "pnpm",
                 postinstall_scripts=True,
                 min_release_age=0,
             )
-            pnpm_binary = provider.get_abspath("pnpm", quiet=True, no_cache=True)
-            assert pnpm_binary is not None
+            pnpm_binary = host_pnpm.loaded_abspath
             old_pnpm_binary = os.environ.get("PNPM_BINARY")
-            os.environ["PNPM_BINARY"] = str(pnpm_binary)
+            old_path = os.environ.get("PATH", "")
+            os.environ.pop("PNPM_BINARY", None)
+            os.environ["PATH"] = os.pathsep.join([str(pnpm_binary.parent), old_path])
 
             try:
                 installer = provider.INSTALLER_BINARY(no_cache=True)
@@ -290,6 +305,7 @@ class TestPnpmProvider:
                     os.environ.pop("PNPM_BINARY", None)
                 else:
                     os.environ["PNPM_BINARY"] = old_pnpm_binary
+                os.environ["PATH"] = old_path
 
             projected_pnpm = lib_dir / "env" / "bin" / "pnpm"
             projected_node = lib_dir / "env" / "bin" / "node"
@@ -874,7 +890,11 @@ class TestPnpmProvider:
             # through /private) compare equal to the paths pnpm produces.
             pnpm_home = (Path(temp_dir) / "pnpm-home").resolve()
             previous = os.environ.get("PNPM_HOME")
+            previous_global_bin_dir = os.environ.get("npm_config_global_bin_dir")
             os.environ["PNPM_HOME"] = str(pnpm_home)
+            os.environ["npm_config_global_bin_dir"] = str(
+                pnpm_home / "configured-elsewhere",
+            )
             try:
                 provider = PnpmProvider(
                     install_root=None,  # global mode
@@ -896,6 +916,10 @@ class TestPnpmProvider:
                     os.environ.pop("PNPM_HOME", None)
                 else:
                     os.environ["PNPM_HOME"] = previous
+                if previous_global_bin_dir is None:
+                    os.environ.pop("npm_config_global_bin_dir", None)
+                else:
+                    os.environ["npm_config_global_bin_dir"] = previous_global_bin_dir
 
     def test_no_cache_install_does_not_create_managed_store(self, test_machine):
         test_machine.require_tool("node")

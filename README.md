@@ -30,7 +30,7 @@ cd "$ABXPKG_INSTALL_TEST"
 -->
 <!--pytest-codeblocks:cont-->
 ```bash
-uv pip install abxpkg    # uv tool install abxpkg
+pip install abxpkg    # uv tool install abxpkg
 abxpkg --version
 ```
 
@@ -78,8 +78,8 @@ dependencies = [
     Binary(name='curl',       binproviders=[env, apt, brew]),
     Binary(name='yt-dlp',     binproviders=[env, pip, uv, apt, brew]),
     Binary(name='playwright', binproviders=[env, npm, pnpm]),
-    Binary(name='chromium',   binproviders=[playwright, puppeteer, apt]),
-    Binary(name='postgres',   binproviders=[docker, env, apt, brew]),
+    Binary(name='chromium',   binproviders=[env, playwright, puppeteer, apt]),
+    Binary(name='postgres',   binproviders=[env, docker, apt, brew]),
 ]
 assert dependencies[0].binproviders == [env, apt, brew]
 assert dependencies[1].binproviders == [env, pip, uv, apt, brew]
@@ -116,7 +116,7 @@ cd "$ABXPKG_PIP_INSTALL_TEST"
 -->
 <!--pytest-codeblocks:cont-->
 ```bash
-uv pip install abxpkg
+pip install abxpkg
 abxpkg --version
 ```
 
@@ -129,6 +129,7 @@ trap 'rm -rf "$ABXPKG_TOOL_INSTALL_TEST"' EXIT
 export ABXPKG_LIB_DIR="$ABXPKG_TOOL_INSTALL_TEST/lib"
 export UV_TOOL_DIR="$ABXPKG_TOOL_INSTALL_TEST/tools"
 export UV_TOOL_BIN_DIR="$ABXPKG_TOOL_INSTALL_TEST/bin"
+export PATH="$UV_TOOL_BIN_DIR:$PATH"
 export UV_PYTHON=3.12
 cd "$ABXPKG_TOOL_INSTALL_TEST"
 ```
@@ -136,7 +137,7 @@ cd "$ABXPKG_TOOL_INSTALL_TEST"
 <!--pytest-codeblocks:cont-->
 ```bash
 uv tool install abxpkg
-"$UV_TOOL_BIN_DIR/abxpkg" --version
+abxpkg --version
 ```
 
 ### CLI
@@ -148,6 +149,7 @@ Installing `abxpkg` also provides an `abxpkg` CLI entrypoint:
 ABXPKG_CLI_TEST="$(mktemp -d)"
 trap 'rm -rf "$ABXPKG_CLI_TEST"' EXIT
 export ABXPKG_LIB_DIR="$ABXPKG_CLI_TEST/lib"
+export ABXPKG_BINPROVIDERS="env,pip"
 abxpkg() { uv run --project "$PWD" abxpkg "$@"; }
 ```
 -->
@@ -157,12 +159,12 @@ abxpkg --version
 abxpkg version
 abxpkg list
 
-abxpkg --binproviders=env,pip install yt-dlp
-abxpkg --binproviders=env,pip load yt-dlp
-abxpkg --binproviders=env,pip env yt-dlp
-abxpkg --binproviders=env,pip activate yt-dlp
-abxpkg --binproviders=env,pip update yt-dlp
-abxpkg --binproviders=env,pip uninstall yt-dlp
+abxpkg install yt-dlp
+abxpkg load yt-dlp
+abxpkg env yt-dlp
+abxpkg activate yt-dlp
+abxpkg update yt-dlp
+abxpkg uninstall yt-dlp
 ```
 
 <!--pytest-codeblocks:cont-->
@@ -172,6 +174,8 @@ test ! -e "$ABXPKG_LIB_DIR/env/bin/yt-dlp"
 test ! -e "$ABXPKG_LIB_DIR/pip/bin/yt-dlp"
 ```
 -->
+
+Search package indexes:
 
 <!-- pytest.mark.live_required -->
 ```bash
@@ -267,10 +271,8 @@ env ABXPKG_BINPROVIDERS=env,uv,pip,apt,brew abxpkg install yt-dlp
 #### Customize where installed packages are located
 
 ```bash
-ABXPKG_DOCS_TMP="$(mktemp -d)"
-trap 'rm -rf "$ABXPKG_DOCS_TMP"' EXIT
-abxpkg --lib="$ABXPKG_DOCS_TMP/custom" --binproviders=env load python3
-env ABXPKG_LIB_DIR="$ABXPKG_DOCS_TMP/from-env" abxpkg --binproviders=env load python3
+abxpkg --lib=./vendor/abxpkg --binproviders=env load python3
+env ABXPKG_LIB_DIR=./vendor/abxpkg abxpkg --binproviders=env load python3
 ```
 
 #### Run in "dry mode" to see what commands will do before executing
@@ -301,8 +303,8 @@ It will automatically fetch, install, and make the packages available to your sc
 // /// script
 // dependencies = [
 //     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},
-//     {name = "playwright", binproviders = ["pnpm", "npm"], install_args = ["playwright@next"]},
-//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},
+//     {name = "playwright", binproviders = ["env", "pnpm", "npm"], install_args = ["playwright@next"]},
+//     {name = "chromium", binproviders = ["env", "playwright", "puppeteer", "apt"], min_version = "131.0.0"},
 // ]
 // [tool.abxpkg]
 // ABXPKG_POSTINSTALL_SCRIPTS = true
@@ -460,7 +462,7 @@ class DockerBinary(Binary):
     overrides: dict[BinProviderName, HandlerDict] = {
         'env': {
             # prefer podman if installed, fall back to docker
-            'abspath': shutil.which('podman') or shutil.which('docker') or shutil.which('docker-ce'),
+            'abspath': lambda: shutil.which('podman') or shutil.which('docker') or shutil.which('docker-ce'),
         },
         'apt': {
             # vary the installed package name based on CPU architecture
@@ -866,7 +868,7 @@ PATH = DEFAULT_ENV_PATH              # current PATH + current Python bin dir
 - Auto-switching: none.
 - Security: `min_release_age` and `postinstall_scripts` are unsupported here and are ignored with a warning if explicitly passed to `install()` / `update()`.
 - Overrides: `abspath` / `version` are the useful ones here. `python` has a built-in override to the current `sys.executable` and interpreter version.
-- Notes: resolved `abspath`s always point at the real underlying host binary, not the managed `env/bin/<name>` symlink. `install()` / `update()` return explanatory no-op messages, and `uninstall()` is a no-op.
+- Notes: with a managed env root, compatible host binaries are projected into `env/bin/<name>` and resolved through that stable symlink. `install()` / `update()` return explanatory no-op messages, and `uninstall()` is a no-op.
 
 </details>
 
@@ -1135,7 +1137,7 @@ bin_dir = None                       # defaults to <install_root>/bin
 ```
 
 - Install root: set `install_root` for the Go install tree, and optionally `bin_dir` for the executable dir; otherwise installs land in `<install_root>/bin`.
-- Auto-switching: none.
+- Auto-switching: none. Resolves a compatible host `go` first, then installs Go through Apt or Homebrew if it is missing.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
 - Overrides: `install_args` is passed to `go install ...`; the default is `["<bin_name>@latest"]`.
@@ -1161,7 +1163,7 @@ install_root = Path(os.environ.get("ABXPKG_NIX_PROFILE", "~/.nix-profile")).expa
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` and `postinstall_scripts=False` are unsupported and are ignored with a warning if explicitly requested.
-- Overrides: `install_args` is passed to `nix profile install ...`; search results use the explicit official `nixpkgs-unstable` channel archive instead of the host's Nix registry.
+- Overrides: `install_args` is passed to `nix profile install ...`; the default is `[bin_name]`. Search results use the explicit official `nixpkgs-unstable` channel archive instead of the host's Nix registry.
 - Notes: update/uninstall operate on the resolved profile element name rather than reusing the full flake ref.
 
 </details>

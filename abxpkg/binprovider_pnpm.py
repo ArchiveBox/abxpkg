@@ -502,6 +502,10 @@ class PnpmProvider(BinProvider):
         # pnpm REQUIRES PNPM_HOME to exist for global installs to work.
         pnpm_home = Path(self.ENV["PNPM_HOME"])
         pnpm_home.mkdir(parents=True, exist_ok=True)
+        if self.install_root is None:
+            env = dict(os.environ if kwargs.get("env") is None else kwargs["env"])
+            env["npm_config_global_bin_dir"] = str(pnpm_home)
+            kwargs["env"] = env
         if env_flag_is_true("ABXPKG_NO_CACHE"):
             env = dict(os.environ if kwargs.get("env") is None else kwargs["env"])
             env["XDG_CACHE_HOME"] = str(abxpkg_ephemeral_cache_home_default())

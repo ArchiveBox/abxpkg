@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from pydantic import Field, TypeAdapter, model_validator, computed_field
-from typing import Self
+from typing import ClassVar, Self
 
 from .base_types import (
     BinProviderName,
@@ -36,6 +36,11 @@ class GoGetProvider(BinProvider):
     name: BinProviderName = "goget"
     _log_emoji = "🐹"
     INSTALLER_BIN: BinName = "go"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "apt",
+        "brew",
+    )
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends the active GOBIN/bin_dir lazily.
 
@@ -124,10 +129,7 @@ class GoGetProvider(BinProvider):
                     self._INSTALLER_BINARY = loaded
                     return loaded
 
-        env_provider = EnvProvider(
-            install_root=None,
-            bin_dir=None,
-        ).get_provider_with_overrides(
+        env_provider = EnvProvider().get_provider_with_overrides(
             overrides={
                 "*": {
                     "version": ["go", "version"],
