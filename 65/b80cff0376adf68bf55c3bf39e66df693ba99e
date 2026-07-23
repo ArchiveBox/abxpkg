@@ -1,0 +1,36 @@
+README.md
+  s_f8414d52051f83::t_b4f241547c227d 33,119,132,140,152,162-167,178-179,274-275,465,1166
+  s_f8414d52051f83::t_f6b85f173c7506 81-82,306-307
+  s_f8414d52051f83::t_140fa26e2bb28f 871,1140
+tests/test_gogetprovider.py
+  s_f8414d52051f83::t_28f4f96ac530a3 1
+  s_f8414d52051f83::t_b23e509150aa31 15
+  s_f8414d52051f83::t_c7b39cb35e15e0 13
+  s_f8414d52051f83::t_1629cfa4545bc2 19-28
+  s_f8414d52051f83::t_d4b4286913c4ab 14,16-18,29-40
+tests/test_pnpmprovider.py
+  s_f8414d52051f83::t_83e0583aa2393d 893,895-897,919-922
+  s_f8414d52051f83::t_736205457b16c0 291-293,308
+  s_f8414d52051f83::t_b4f241547c227d 11,269-283,289
+abxpkg/binprovider_goget.py
+  s_f8414d52051f83::t_a0863213d15b17 132
+  s_f8414d52051f83::t_b4f241547c227d 9,39-43
+abxpkg/binprovider_pnpm.py
+  s_f8414d52051f83::t_7d0b04c20add62 505-508
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "65b80cff0376adf68bf55c3bf39e66df693ba99e",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
