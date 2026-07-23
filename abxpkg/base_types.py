@@ -184,7 +184,8 @@ def path_is_file(path: Path | str) -> Path:
 HostExistsPath = Annotated[Path, AfterValidator(path_is_file)]
 
 
-def path_is_executable(path: HostExistsPath) -> HostExistsPath:
+def path_is_executable(path: Path | str) -> Path:
+    path = Path(path) if isinstance(path, str) else path
     assert os.path.isfile(path) and os.access(path, os.X_OK), (
         f"Path is not executable (fix by running chmod +x {path})"
     )
@@ -199,7 +200,7 @@ def path_is_script(path: HostExistsPath) -> HostExistsPath:
     return path
 
 
-HostExecutablePath = Annotated[HostExistsPath, AfterValidator(path_is_executable)]
+HostExecutablePath = Annotated[Path, AfterValidator(path_is_executable)]
 
 
 def path_is_abspath(path: Path) -> Path:
@@ -211,11 +212,25 @@ def path_is_abspath(path: Path) -> Path:
 
 
 HostAbsPath = Annotated[HostExistsPath, AfterValidator(path_is_abspath)]
+
+
+def path_is_binary(path: Path | str) -> Path:
+    path = Path(path) if isinstance(path, str) else path
+    assert os.path.isfile(path) and (
+        os.access(path, os.R_OK) or os.access(path, os.X_OK)
+    ), f"Path is not a readable binary artifact or executable: {path}"
+    return path
+
+
 HostBinPath = Annotated[
-    HostExistsPath,
+    Path,
+    AfterValidator(path_is_binary),
     AfterValidator(path_is_abspath),
-]  # removed: AfterValidator(path_is_executable)
-# not all bins need to be executable to be bins, some are scripts
+]
+# Package providers may expose readable artifacts (for example a Python module
+# or extension manifest) as their loaded path. Host command discovery still
+# uses executable-only lookup, and execute-only system commands are valid even
+# when their contents cannot be read for hashing.
 
 
 def bin_abspath(

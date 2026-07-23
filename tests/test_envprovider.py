@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 import subprocess
 import tempfile
@@ -9,12 +10,49 @@ from threading import Barrier
 import pytest
 
 from abxpkg import Binary, BrewProvider, EnvProvider, PipProvider, PnpmProvider, SemVer
-from abxpkg.base_types import bin_abspaths
+from abxpkg.base_types import UNKNOWN_SHA256, bin_abspaths
 from abxpkg.config import load_derived_cache, save_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:
+    def test_projects_execute_only_host_binary(self, tmp_path, test_machine):
+        host_git = Path(test_machine.require_tool("git"))
+        execute_only_git = tmp_path / "host" / "git"
+        execute_only_git.parent.mkdir()
+        shutil.copyfile(host_git, execute_only_git)
+        execute_only_git.chmod(0o111)
+
+        assert execute_only_git.is_file()
+        assert execute_only_git.stat().st_mode & 0o444 == 0
+        assert os.access(execute_only_git, os.X_OK)
+
+        provider = EnvProvider(
+            install_root=tmp_path / "lib" / "env",
+            PATH=str(execute_only_git.parent),
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        loaded = provider.load("git", no_cache=True)
+
+        assert loaded is not None
+        assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "git"
+        assert loaded.loaded_abspath.is_symlink()
+        assert loaded.loaded_abspath.readlink() == execute_only_git
+        assert loaded.loaded_sha256 == (
+            UNKNOWN_SHA256
+            if not os.access(execute_only_git, os.R_OK)
+            else provider.get_sha256("git", abspath=loaded.loaded_abspath)
+        )
+        version = subprocess.run(
+            [str(loaded.loaded_abspath), "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert version.returncode == 0, version.stderr
+        assert version.stdout.startswith("git version ")
+
     def test_derived_cache_writes_replace_complete_file(self, tmp_path):
         derived_env_path = tmp_path / "lib" / "env" / "derived.env"
         original_cache = {"original": {"bin_name": "original"}}
