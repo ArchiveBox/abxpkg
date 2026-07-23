@@ -108,11 +108,19 @@ class AptProvider(BinProvider):
                     .split("\n")
                 )
                 dpkg_bin_dirs = [
-                    path for path in dpkg_install_dirs if path.endswith("/bin")
+                    Path(path) for path in dpkg_install_dirs if path.endswith("/bin")
                 ]
-                for bin_dir in dpkg_bin_dirs:
-                    if str(bin_dir) not in PATH:
-                        PATH = ":".join([str(bin_dir), *PATH.split(":")])
+                dpkg_runtime_dirs = list(
+                    dict.fromkeys(
+                        runtime_dir
+                        for bin_dir in dpkg_bin_dirs
+                        for runtime_dir in (bin_dir, bin_dir.with_name("sbin"))
+                        if runtime_dir.is_dir()
+                    ),
+                )
+                for runtime_dir in dpkg_runtime_dirs:
+                    if str(runtime_dir) not in PATH:
+                        PATH = ":".join([str(runtime_dir), *PATH.split(":")])
                 self.PATH = TypeAdapter(PATHStr).validate_python(PATH)
         super().setup_PATH(no_cache=no_cache)
 

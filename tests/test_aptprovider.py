@@ -93,6 +93,16 @@ class TestAptProvider:
         assert loaded_bash is not None
         assert loaded_bash.is_valid
 
+    def test_provider_path_includes_package_sbin_directories(self, test_machine):
+        test_machine.require_tool("apt-get")
+
+        provider = AptProvider()
+        provider.setup_PATH(no_cache=True)
+
+        runtime_dirs = [Path(path) for path in provider.PATH.split(os.pathsep)]
+        assert any(path.name == "bin" for path in runtime_dirs)
+        assert any(path.name == "sbin" for path in runtime_dirs)
+
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
 
