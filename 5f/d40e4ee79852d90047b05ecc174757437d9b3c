@@ -1,0 +1,30 @@
+abxpkg/binprovider.py
+  s_f8414d52051f83::t_33cd34f07963e0 491,683-686,3441,3702-3721,3741,3744-3746,3748-3754
+  s_f8414d52051f83::t_d94b1bce4141ae 3736,3738-3739,3743
+tests/test_binary.py
+  s_f8414d52051f83::t_33cd34f07963e0 35-42
+.github/ci_test_matrix.py
+  s_f8414d52051f83::t_a0822a56145c97 10-44,47-48,50,54-57,59-61,63-68,70-76,78-81,83-97,99,102
+  s_f8414d52051f83::t_c67ea21c2e7cb7 103
+.github/workflows/tests.yml
+  s_f8414d52051f83::t_a0822a56145c97 78,82,93,95,97-100,106,114,125,128-129,135
+abxpkg/binprovider_bash.py
+  s_f8414d52051f83::t_33cd34f07963e0 40
+  s_f8414d52051f83::t_6013921b019323 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "5fd40e4ee79852d90047b05ecc174757437d9b3c",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
