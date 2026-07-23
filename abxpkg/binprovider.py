@@ -3401,7 +3401,63 @@ class EnvProvider(BinProvider):
         "go": {
             "version": ["go", "version"],
         },
+        "brew": {
+            "version": "self.brew_version_handler",
+        },
     }
+
+    def brew_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        **context,
+    ) -> "VersionFuncReturnValue":
+        """Read Homebrew's repository version without its expensive dirty scan."""
+        brew_candidate = abspath or self.get_abspath(bin_name, quiet=True)
+        if brew_candidate is None:
+            return None
+
+        brew_abspath = Path(brew_candidate)
+        brew_repository = brew_abspath.resolve().parent.parent
+        if not (brew_repository / ".git").exists():
+            return self.default_version_handler(
+                bin_name,
+                abspath=brew_candidate,
+                timeout=timeout,
+            )
+
+        git = EnvProvider(
+            install_root=self.install_root,
+            PATH=self.PATH,
+            postinstall_scripts=self.postinstall_scripts,
+            min_release_age=self.min_release_age,
+        ).load("git")
+        if git is None or git.loaded_abspath is None:
+            return self.default_version_handler(
+                bin_name,
+                abspath=brew_candidate,
+                timeout=timeout,
+            )
+
+        proc = git.exec(
+            cmd=(
+                "-C",
+                brew_repository,
+                "describe",
+                "--tags",
+                "--abbrev=7",
+            ),
+            timeout=self.version_timeout if timeout is None else timeout,
+            quiet=True,
+        )
+        if proc.returncode != 0:
+            return self.default_version_handler(
+                bin_name,
+                abspath=brew_candidate,
+                timeout=timeout,
+            )
+        return proc.stdout.strip() or proc.stderr.strip() or None
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH lazily with install_root/bin ahead of the ambient PATH."""
