@@ -103,6 +103,30 @@ class TestAptProvider:
         assert any(path.name == "bin" for path in runtime_dirs)
         assert any(path.name == "sbin" for path in runtime_dirs)
 
+    @pytest.mark.parametrize(
+        ("bin_name", "package_name"),
+        (("exportfs", "nfs-kernel-server"), ("mount.cifs", "cifs-utils")),
+    )
+    def test_provider_loads_sbin_binary_version_from_package_metadata(
+        self,
+        test_machine,
+        bin_name,
+        package_name,
+    ):
+        test_machine.require_tool("apt-get")
+        provider = AptProvider().get_provider_with_overrides(
+            overrides={bin_name: {"install_args": [package_name]}},
+        )
+
+        try:
+            installed = provider.install(bin_name, no_cache=True)
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.parent.name == "sbin"
+            assert installed.loaded_version is not None
+        finally:
+            provider.uninstall(bin_name, quiet=True, no_cache=True)
+
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
 
