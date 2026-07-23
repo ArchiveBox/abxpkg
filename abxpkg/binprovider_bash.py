@@ -5,7 +5,7 @@ __package__ = "abxpkg"
 import os
 import shlex
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import Field, TypeAdapter, model_validator
 
@@ -37,6 +37,7 @@ class BashProvider(EnvProvider):
     name: BinProviderName = "bash"
     _log_emoji = "🧪"
     INSTALLER_BIN: BinName = "bash"
+    INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() replaces it with bin_dir only.
     postinstall_scripts: bool | None = Field(default=None, repr=False)

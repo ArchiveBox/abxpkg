@@ -488,6 +488,7 @@ class BinProvider(BaseModel):
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = None
     DEFAULT_ENABLED: ClassVar[bool] = True
     DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = None
+    INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {}
 
@@ -679,7 +680,10 @@ class BinProvider(BaseModel):
         return self.PATH
 
     def prepare_uninstall(self, bin_name: BinName) -> bool:
-        return False
+        if not self.INVALIDATE_ONLY_ON_UNINSTALL:
+            return False
+        self.invalidate_cache(bin_name)
+        return True
 
     @staticmethod
     def _provider_cache_fields(provider: "BinProvider | None") -> dict[str, str]:
@@ -3434,6 +3438,7 @@ class EnvProvider(BinProvider):
     name: BinProviderName = "env"
     _log_emoji = "🌍"
     INSTALLER_BIN: BinName = "which"
+    INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = True
     CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {
         "python": ("PYTHON_BINARY",),
         "python3": ("PYTHON_BINARY",),
@@ -3484,10 +3489,6 @@ class EnvProvider(BinProvider):
             if self.bin_dir is not None
             else self.PATH
         )
-
-    def prepare_uninstall(self, bin_name: BinName) -> bool:
-        self.invalidate_cache(bin_name)
-        return True
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH lazily with install_root/bin ahead of the ambient PATH."""
@@ -3698,6 +3699,26 @@ class EnvProvider(BinProvider):
         *,
         quiet: bool,
     ) -> SemVer | None:
+        projected_path = Path(installed_abspath).absolute()
+        token = ENV_PROJECTED_VERSION_PATH.set(projected_path)
+        try:
+            return self.get_version(
+                bin_name,
+                abspath=installed_abspath,
+                quiet=quiet,
+                no_cache=True,
+            )
+        finally:
+            ENV_PROJECTED_VERSION_PATH.reset(token)
+
+    def default_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        no_cache: bool = False,
+        **context,
+    ) -> "VersionFuncReturnValue":
         owner = next(
             (
                 provider
@@ -3712,31 +3733,25 @@ class EnvProvider(BinProvider):
             owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(str(bin_name))
             owner = owner_class() if owner_class is not None else None
         if owner is not None and owner.INSTALLER_VERSION_ARGS is not None:
-            version = owner.installer_version_handler(
+            owner_abspath = abspath or self.get_abspath(
                 bin_name,
-                abspath=installed_abspath,
-                timeout=self.version_timeout,
+                quiet=True,
+                no_cache=no_cache,
             )
-            if not version:
-                return None
-            return self._version_from_result(
-                version,
-                bin_name=bin_name,
-                abspath=installed_abspath,
-                quiet=quiet,
-            )
-
-        projected_path = Path(installed_abspath).absolute()
-        token = ENV_PROJECTED_VERSION_PATH.set(projected_path)
-        try:
-            return self.get_version(
+            return owner.installer_version_handler(
                 bin_name,
-                abspath=installed_abspath,
-                quiet=quiet,
-                no_cache=True,
+                abspath=owner_abspath,
+                timeout=timeout,
+                no_cache=no_cache,
+                **context,
             )
-        finally:
-            ENV_PROJECTED_VERSION_PATH.reset(token)
+        return super().default_version_handler(
+            bin_name,
+            abspath=abspath,
+            timeout=timeout,
+            no_cache=no_cache,
+            **context,
+        )
 
     def _is_managed_by_other_provider(
         self,

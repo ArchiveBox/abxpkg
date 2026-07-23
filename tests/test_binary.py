@@ -32,6 +32,14 @@ class TestBinary:
         assert loaded.loaded_binprovider.name == "env"
         assert loaded.loaded_abspath is not None
         assert loaded.loaded_version is not None
+        assert (
+            loaded.loaded_binprovider.get_version(
+                loaded.name,
+                quiet=True,
+                no_cache=True,
+            )
+            == loaded.loaded_version
+        )
 
     def test_short_aliases_match_loaded_field_names(self):
         binary = Binary(
