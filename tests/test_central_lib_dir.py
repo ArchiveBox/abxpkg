@@ -313,17 +313,7 @@ class TestAbxPkgLibDir:
         assert Path(payload["npm"]) == explicit_npm.resolve()
         assert payload["pip"] is None
 
-    def test_real_installs_land_under_abxpkg_lib_dir(self, test_machine):
-        test_machine.require_tool("node")
-        test_machine.require_tool("npm")
-        test_machine.require_tool("uv")
-        test_machine.require_tool("pnpm")
-        test_machine.require_tool("yarn")
-        test_machine.require_tool("bun")
-        test_machine.require_tool("deno")
-        test_machine.require_tool("cargo")
-        test_machine.require_tool("gem")
-
+    def test_real_installs_land_under_abxpkg_lib_dir(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             lib_dir = Path(tmp_dir) / "abx-lib"
             script = textwrap.dedent(
