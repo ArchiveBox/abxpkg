@@ -1752,6 +1752,7 @@ def build_command_exec_env(
     update_before_run: bool = False,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
+    from . import EnvProvider
     from .config import build_exec_env as build_provider_exec_env
 
     env = dict(os.environ if base_env is None else base_env)
@@ -1766,7 +1767,7 @@ def build_command_exec_env(
             install_timeout=options.install_timeout,
             version_timeout=options.version_timeout,
         )
-        exec_env_providers: list[BinProvider] = []
+        exec_env_providers: list[BinProvider] = [EnvProvider()]
 
         def append_provider(provider: BinProvider | None) -> None:
             if provider is None:
