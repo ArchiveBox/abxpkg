@@ -1,0 +1,73 @@
+abxpkg/binprovider.py
+  s_f8414d52051f83::t_7f42e07760eb8e 493,680-685,1383,1386-1387,1394-1395,1398,3479-3490
+  s_f8414d52051f83::t_e601e9b6aa56ea 1358-1360,3434
+  s_f8414d52051f83::t_f8ac14217e9705 3492-3521
+  s_f8414d52051f83::t_c681f244d79a71 3491
+abxpkg/binprovider_playwright.py
+  s_f8414d52051f83::t_7f42e07760eb8e 70-73
+abxpkg/binprovider_pip.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 13,54
+abxpkg/binprovider_uv.py
+  s_f8414d52051f83::t_7f42e07760eb8e 63-66
+abxpkg/binprovider_deno.py
+  s_f8414d52051f83::t_7f42e07760eb8e 49-52
+abxpkg/binprovider_bash.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 40
+abxpkg/binprovider_pyinfra.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 266-270
+pyproject.toml
+  s_f8414d52051f83::t_665a676a692af5 3
+abxpkg/click_cli.py
+  s_f8414d52051f83::t_f8ac14217e9705 1384,1713
+  s_f8414d52051f83::t_7f42e07760eb8e 388-391,1454,1470-1473
+abxpkg/binprovider_bun.py
+  s_f8414d52051f83::t_7f42e07760eb8e 48-51,53-55
+abxpkg/cli.py
+  s_f8414d52051f83::t_7f42e07760eb8e 537,540-543,553-555
+  s_f8414d52051f83::t_20c32dc954f00c 8
+abxpkg/binprovider_nix.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 14,101
+abxpkg/binprovider_chromewebstore.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 11,45
+abxpkg/binprovider_ansible.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 307
+abxpkg/binprovider_npm.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 50
+  s_f8414d52051f83::t_7f42e07760eb8e 52-54
+tests/test_cli.py
+  s_f8414d52051f83::t_a4de84dba1481c 20,2065
+  s_f8414d52051f83::t_4c1b0e9b05b068 2037-2047,2049-2051
+  s_f8414d52051f83::t_ea7ea1b0ccc8f1 2048
+  s_f8414d52051f83::t_94305518fc0e1d 2078-2090
+abxpkg/binprovider_docker.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 8,36
+abxpkg/binprovider_apt.py
+  s_f8414d52051f83::t_e601e9b6aa56ea 27
+abxpkg/config.py
+  s_f8414d52051f83::t_7f42e07760eb8e 22,197
+abxpkg/binprovider_puppeteer.py
+  s_f8414d52051f83::t_7f42e07760eb8e 55-58
+abxpkg/binprovider_yarn.py
+  s_f8414d52051f83::t_b8efaf6db04379 215-216,221
+  s_f8414d52051f83::t_20c32dc954f00c 11,66
+  s_f8414d52051f83::t_e601e9b6aa56ea 62-65,204
+  s_f8414d52051f83::t_7f42e07760eb8e 67-68
+abxpkg/binprovider_pnpm.py
+  s_f8414d52051f83::t_7f42e07760eb8e 57-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "8a474096f76dc3e9f341a4ca0efe19a413c506a6",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
