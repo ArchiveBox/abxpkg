@@ -1701,8 +1701,9 @@ def build_command_exec_env(
     env = dict(os.environ if base_env is None else base_env)
     names = tuple(binary_names)
     if not names:
+        provider_names = list(dict.fromkeys(("env", *options.provider_names)))
         providers = build_providers(
-            options.provider_names,
+            provider_names,
             dry_run=options.dry_run,
             install_root=options.install_root,
             bin_dir=options.bin_dir,

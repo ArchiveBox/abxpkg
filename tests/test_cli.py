@@ -1279,10 +1279,17 @@ def test_parse_activate_shell_rejects_multiple_modes():
 
 def test_build_command_exec_env_without_names_includes_installers_and_cached_binaries(
     tmp_path,
+    test_machine,
 ):
     lib_dir = tmp_path / "abxlib"
+    npm_binary = test_machine.require_tool("npm")
+    test_machine.require_tool("node")
     old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    old_npm_binary = os.environ.get("NPM_BINARY")
+    old_path = os.environ.get("PATH", "")
     os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+    os.environ["NPM_BINARY"] = npm_binary
+    os.environ["PATH"] = "/usr/bin:/bin"
     try:
         provider = PnpmProvider(
             install_root=lib_dir / "pnpm",
@@ -1310,6 +1317,11 @@ def test_build_command_exec_env_without_names_includes_installers_and_cached_bin
             os.environ.pop("ABXPKG_LIB_DIR", None)
         else:
             os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
+        if old_npm_binary is None:
+            os.environ.pop("NPM_BINARY", None)
+        else:
+            os.environ["NPM_BINARY"] = old_npm_binary
+        os.environ["PATH"] = old_path
 
     path_entries = final_env["PATH"].split(os.pathsep)
     assert str(lib_dir / "env" / "bin") in path_entries
