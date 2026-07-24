@@ -8,7 +8,7 @@ import re
 import shutil
 import urllib.request
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from pydantic import Field, computed_field, model_validator
 
@@ -42,6 +42,7 @@ class ChromeWebstoreProvider(BinProvider):
     name: BinProviderName = "chromewebstore"
     _log_emoji = "🧩"
     INSTALLER_BIN: BinName = "node"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
 
     PATH: PATHStr = ""  # Intentionally unused for resolution; extension wrappers resolve from bin_dir directly and installers resolve from ambient env.
     postinstall_scripts: bool | None = Field(

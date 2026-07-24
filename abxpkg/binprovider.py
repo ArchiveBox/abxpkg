@@ -490,6 +490,7 @@ class BinProvider(BaseModel):
     DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = None
     INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {}
 
     euid: int | None = None
@@ -675,6 +676,12 @@ class BinProvider(BaseModel):
         providers: Iterable["BinProvider"],
     ) -> None:
         return None
+
+    def add_host_bin_dir(self, bin_dir: Path) -> None:
+        return None
+
+    def explicit_abspath_overrides(self, abspath: Path) -> "BinaryOverrides":
+        return {}
 
     def execution_PATH(self) -> PATHStr:
         return self.PATH
@@ -1341,8 +1348,6 @@ class BinProvider(BaseModel):
                     self._INSTALLER_BINARY = loaded
                     return loaded
 
-        env_provider = EnvProvider()
-        env_provider.set_projection_providers([self])
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]
@@ -1350,9 +1355,9 @@ class BinProvider(BaseModel):
             else list(DEFAULT_PROVIDER_NAMES)
         )
         preferred_provider_names = (
-            selected_provider_names
-            if raw_provider_names or not self.INSTALLER_BINPROVIDERS
-            else list(self.INSTALLER_BINPROVIDERS)
+            list(self.INSTALLER_BINPROVIDERS)
+            if self.INSTALLER_BINPROVIDERS
+            else selected_provider_names
         )
         # Drop a cross-provider candidate iff that candidate's *own*
         # explicit INSTALLER_BINPROVIDERS list names ``self`` — that's a
@@ -1369,40 +1374,28 @@ class BinProvider(BaseModel):
             provider_name
             for provider_name in preferred_provider_names
             if provider_name
-            and provider_name in selected_provider_names
             and provider_name in PROVIDER_CLASS_BY_NAME
             and provider_name != self.name
             and self.name
             not in (PROVIDER_CLASS_BY_NAME[provider_name].INSTALLER_BINPROVIDERS or ())
         ]
         installer_providers: list[BinProvider] = [
-            env_provider
-            if provider_name == "env"
-            else PROVIDER_CLASS_BY_NAME[provider_name]()
+            PROVIDER_CLASS_BY_NAME[provider_name]()
             for provider_name in installer_provider_names
         ]
-        if all(provider.name != "env" for provider in installer_providers):
-            installer_providers.insert(0, env_provider)
+        for provider in installer_providers:
+            provider.set_projection_providers([self])
 
         # Check {INSTALLER_BIN}_BINARY env var (e.g. NPM_BINARY, UV_BINARY)
         env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
         manual = os.environ.get(env_var)
         if manual and os.path.isabs(manual) and Path(manual).is_file():
-            manual_dir = str(Path(manual).parent)
             try:
-                env_provider.PATH = env_provider._merge_PATH(
-                    manual_dir,
-                    PATH=env_provider.PATH,
-                    prepend=True,
-                )
-                manual_installer_providers = (
-                    [env_provider, *installer_providers]
-                    if all(provider.name != "env" for provider in installer_providers)
-                    else installer_providers
-                )
+                for provider in installer_providers:
+                    provider.add_host_bin_dir(Path(manual).parent)
                 loaded = Binary(
                     name=self.INSTALLER_BIN,
-                    binproviders=manual_installer_providers,
+                    binproviders=installer_providers,
                     postinstall_scripts=self.INSTALLER_POSTINSTALL_SCRIPTS,
                 ).install(
                     no_cache=no_cache,
@@ -3438,6 +3431,7 @@ class EnvProvider(BinProvider):
     name: BinProviderName = "env"
     _log_emoji = "🌍"
     INSTALLER_BIN: BinName = "which"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
     INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = True
     CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {
         "python": ("PYTHON_BINARY",),
@@ -3481,6 +3475,49 @@ class EnvProvider(BinProvider):
         self._projection_providers = [
             provider for provider in providers if not isinstance(provider, EnvProvider)
         ]
+
+    def add_host_bin_dir(self, bin_dir: Path) -> None:
+        self.PATH = self._merge_PATH(
+            bin_dir,
+            PATH=self.PATH,
+            prepend=True,
+        )
+
+    def explicit_abspath_overrides(self, abspath: Path) -> "BinaryOverrides":
+        if self._is_managed_by_other_provider(abspath):
+            return {self.name: {"abspath": str(abspath)}}
+        self.add_host_bin_dir(abspath.parent)
+        return {}
+
+    def project_binary(
+        self,
+        binary: ShallowBinary,
+        bin_name: BinName | str,
+    ) -> HostBinPath | None:
+        if binary.loaded_abspath is None:
+            return None
+        self.setup_PATH()
+        if binary.loaded_binprovider is not None:
+            self.set_projection_providers([binary.loaded_binprovider])
+        projected_abspath = self._link_loaded_binary(
+            Path(str(bin_name)).name,
+            binary.loaded_abspath,
+        )
+        if (
+            binary.loaded_version is not None
+            and binary.loaded_sha256 is not None
+            and binary.loaded_binprovider is not None
+        ):
+            self.write_cached_binary(
+                Path(str(bin_name)).name,
+                projected_abspath,
+                binary.loaded_version,
+                binary.loaded_sha256,
+                resolved_provider_name=binary.loaded_binprovider.name,
+                resolved_provider=binary.loaded_binprovider,
+                cache_kind="projection",
+            )
+        return projected_abspath
 
     def execution_PATH(self) -> PATHStr:
         """Expose accepted host projections without elevating all discovery paths."""

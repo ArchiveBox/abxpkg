@@ -24,6 +24,7 @@ class AptProvider(BinProvider):
     name: BinProviderName = "apt"
     _log_emoji = "🐧"
     INSTALLER_BIN: BinName = "apt-get"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
     DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = ("linux",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() discovers package runtime bin dirs via dpkg and replaces PATH with those dirs.

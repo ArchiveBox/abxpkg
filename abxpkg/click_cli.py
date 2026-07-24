@@ -357,7 +357,6 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         DEFAULT_PROVIDER_NAMES,
         PROVIDER_CLASS_BY_INSTALLER_BIN,
         Binary,
-        EnvProvider,
     )
 
     provider_names = options.provider_names
@@ -386,17 +385,10 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
     inferred_overrides: dict[str, Any] | None = None
     if explicit_abspath.is_absolute():
         for provider in providers:
-            if type(provider) is EnvProvider:
-                if provider._is_managed_by_other_provider(explicit_abspath):
-                    inferred_overrides = {
-                        "env": {"abspath": str(explicit_abspath)},
-                    }
-                else:
-                    provider.PATH = provider._merge_PATH(
-                        explicit_abspath.parent,
-                        PATH=provider.PATH,
-                        prepend=True,
-                    )
+            inferred_overrides = merge_binary_overrides(
+                inferred_overrides,
+                provider.explicit_abspath_overrides(explicit_abspath),
+            )
 
     binary_kwargs: dict[str, Any] = {
         "name": binary_name,
@@ -1389,26 +1381,7 @@ def build_deps_from_exec_env(
                     version_timeout=options.version_timeout,
                 )[0],
             )
-            projection_provider.setup_PATH()
-            if binary.loaded_binprovider is not None:
-                projection_provider.set_projection_providers(
-                    [binary.loaded_binprovider],
-                )
-            projected_abspath = projection_provider._link_loaded_binary(
-                Path(dep_name).name,
-                projected_abspath,
-            )
-            if binary.loaded_version is not None and binary.loaded_sha256 is not None:
-                assert binary.loaded_binprovider is not None
-                projection_provider.write_cached_binary(
-                    Path(dep_name).name,
-                    projected_abspath,
-                    binary.loaded_version,
-                    binary.loaded_sha256,
-                    resolved_provider_name=binary.loaded_binprovider.name,
-                    resolved_provider=binary.loaded_binprovider,
-                    cache_kind="projection",
-                )
+            projected_abspath = projection_provider.project_binary(binary, dep_name)
             env_provider = projection_provider
         env_key = dep.get("_abxpkg_env_key") if isinstance(dep, dict) else None
         if env_key and projected_abspath:
@@ -1469,35 +1442,7 @@ def resolve_runtime_binary(
     install_before_run: bool = False,
     update_before_run: bool = False,
 ) -> tuple[Binary, list[BinProvider]]:
-    if (
-        install_before_run
-        and not update_before_run
-        and options.provider_names
-        and options.provider_names[0] == "env"
-    ):
-        # Loading EnvProvider is intentionally a separate first phase. Building
-        # every managed provider eagerly creates and inspects their environments,
-        # which is both unnecessary and expensive when a compatible host binary
-        # is already available. Only construct managed fallbacks after a real
-        # host miss or version rejection.
-        host_binary = build_binary(
-            binary_name,
-            replace(options, provider_names=["env"]),
-            dry_run=options.dry_run,
-        )
-        try:
-            host_binary = host_binary.load(no_cache=options.no_cache)
-        except ABXPkgError as err:
-            logger.debug("Host-first load missed %s: %s", binary_name, err)
-        else:
-            return host_binary, list(host_binary.binproviders)
-
     binary = build_binary(binary_name, options, dry_run=options.dry_run)
-    update_provider_names = [
-        provider_name
-        for provider_name in options.provider_names
-        if provider_name != "env"
-    ]
 
     try:
         if update_before_run:
@@ -1506,15 +1451,13 @@ def resolve_runtime_binary(
                 loaded_for_update = binary.load(no_cache=options.no_cache)
             except ABXPkgError:
                 loaded_for_update = None
-            if loaded_for_update is not None and update_provider_names:
+            if loaded_for_update is not None:
                 binary = loaded_for_update.update(
-                    binproviders=update_provider_names,
                     dry_run=options.dry_run,
                     no_cache=options.no_cache,
                 )
             else:
                 binary = binary.update(
-                    binproviders=update_provider_names or None,
                     dry_run=options.dry_run,
                     no_cache=options.no_cache,
                 )
@@ -1524,13 +1467,10 @@ def resolve_runtime_binary(
                         no_cache=options.no_cache,
                     )
         elif install_before_run:
-            try:
-                binary = binary.load(no_cache=options.no_cache)
-            except ABXPkgError:
-                binary = binary.install(
-                    dry_run=options.dry_run,
-                    no_cache=options.no_cache,
-                )
+            binary = binary.install(
+                dry_run=options.dry_run,
+                no_cache=options.no_cache,
+            )
         else:
             binary = binary.load(no_cache=options.no_cache)
     except ABXPkgError as err:
@@ -1756,7 +1696,6 @@ def build_command_exec_env(
     update_before_run: bool = False,
     base_env: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    from . import EnvProvider
     from .config import build_exec_env as build_provider_exec_env
 
     env = dict(os.environ if base_env is None else base_env)
@@ -1771,7 +1710,7 @@ def build_command_exec_env(
             install_timeout=options.install_timeout,
             version_timeout=options.version_timeout,
         )
-        exec_env_providers: list[BinProvider] = [EnvProvider()]
+        exec_env_providers: list[BinProvider] = []
 
         def append_provider(provider: BinProvider | None) -> None:
             if provider is None:

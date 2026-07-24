@@ -8,7 +8,7 @@ import sys
 import urllib.request
 import urllib.parse
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -59,6 +59,13 @@ class YarnProvider(BinProvider):
     name: BinProviderName = "yarn"
     _log_emoji = "🧶"
     INSTALLER_BIN: BinName = "yarn"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "npm",
+    )
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/node_modules/.bin only.
     postinstall_scripts: bool | None = Field(
@@ -194,7 +201,7 @@ class YarnProvider(BinProvider):
         super().setup_PATH(no_cache=no_cache)
 
     def INSTALLER_BINARY(self, no_cache: bool = False):
-        from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
+        from . import PROVIDER_CLASS_BY_NAME
 
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             loaded = self._INSTALLER_BINARY
@@ -205,20 +212,13 @@ class YarnProvider(BinProvider):
                 PATH=env_provider.PATH,
                 prepend=True,
             )
-            raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
-            selected_provider_names = (
-                [
-                    provider_name.strip()
-                    for provider_name in raw_provider_names.split(",")
-                ]
-                if raw_provider_names
-                else list(DEFAULT_PROVIDER_NAMES)
-            )
+            installer_provider_names = self.INSTALLER_BINPROVIDERS
+            assert installer_provider_names is not None
             installer_providers: list[BinProvider] = [
                 env_provider
                 if provider_name == "env"
                 else PROVIDER_CLASS_BY_NAME[provider_name]()
-                for provider_name in selected_provider_names
+                for provider_name in installer_provider_names
                 if provider_name
                 and provider_name in PROVIDER_CLASS_BY_NAME
                 and provider_name != self.name

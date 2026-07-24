@@ -17,7 +17,7 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abxpkg import EnvProvider, PnpmProvider
+from abxpkg import EnvProvider, PnpmProvider, PROVIDER_CLASS_BY_INSTALLER_BIN
 from abxpkg.config import load_derived_cache
 import abxpkg.cli as cli_module
 
@@ -2034,7 +2034,21 @@ def test_build_binary_forwards_binary_level_fields(tmp_path):
     assert binary.overrides == {"pip": {"install_args": ["custom==1.0"]}}
 
 
-@pytest.mark.parametrize("binary_name", ["cargo", "gem"])
+@pytest.mark.parametrize(
+    "binary_name",
+    [
+        "brew",
+        "bun",
+        "cargo",
+        "deno",
+        "gem",
+        "go",
+        "playwright",
+        "pnpm",
+        "browsers",
+        "uv",
+    ],
+)
 def test_build_binary_uses_installer_provider_preferences_for_default_provider_set(
     tmp_path,
     binary_name,
@@ -2048,7 +2062,7 @@ def test_build_binary_uses_installer_provider_preferences_for_default_provider_s
     )
 
     binary = cli_module.build_binary(binary_name, options, dry_run=False)
-    provider_class = cli_module.PROVIDER_CLASS_BY_NAME[binary_name]
+    provider_class = PROVIDER_CLASS_BY_INSTALLER_BIN[binary_name]
     assert provider_class.INSTALLER_BINPROVIDERS is not None
     expected_provider_names = [
         provider_name
@@ -2059,6 +2073,19 @@ def test_build_binary_uses_installer_provider_preferences_for_default_provider_s
     assert [
         provider.name for provider in binary.binproviders
     ] == expected_provider_names
+
+
+@pytest.mark.parametrize(
+    "provider_name",
+    sorted(cli_module.PROVIDER_CLASS_BY_NAME),
+)
+def test_installer_provider_chains_are_host_first(provider_name):
+    installer_providers = cli_module.PROVIDER_CLASS_BY_NAME[
+        provider_name
+    ].INSTALLER_BINPROVIDERS
+
+    assert installer_providers
+    assert installer_providers[0] == "env"
 
 
 @pytest.mark.parametrize("binary_name", ["go", "brew", "npm"])

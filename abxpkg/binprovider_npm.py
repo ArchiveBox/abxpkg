@@ -47,7 +47,11 @@ class NpmProvider(BinProvider):
     name: BinProviderName = "npm"
     _log_emoji = "📦"
     INSTALLER_BIN: BinName = "npm"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ()
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily discovers npm local/global bin dirs. When install_root is set this becomes bin_dir only, otherwise it comes from npm prefix state.
     postinstall_scripts: bool | None = Field(

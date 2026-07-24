@@ -5,7 +5,7 @@ import os
 import json
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import Field, model_validator, TypeAdapter
 from typing import Self
@@ -33,6 +33,7 @@ class DockerProvider(BinProvider):
     name: BinProviderName = "docker"
     _log_emoji = "🐳"
     INSTALLER_BIN: BinName = "docker"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
 
     PATH: PATHStr = (
         ""  # Starts empty; setup_PATH() replaces it with the shim bin_dir only.

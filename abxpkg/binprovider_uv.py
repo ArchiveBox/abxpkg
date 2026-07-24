@@ -60,7 +60,10 @@ class UvProvider(BinProvider):
     name: BinProviderName = "uv"
     _log_emoji = "🚀"
     INSTALLER_BIN: BinName = "uv"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("pip",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "pip",
+    )
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/venv/bin in venv mode, or UV_TOOL_BIN_DIR/~/.local/bin in tool mode.
     postinstall_scripts: bool | None = Field(
         default_factory=lambda: env_flag_is_true("ABXPKG_POSTINSTALL_SCRIPTS"),

@@ -13,23 +13,13 @@ from typing import ClassVar, Protocol, runtime_checkable
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 _SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
-_FIRST_WRITER_ENV_KEYS = frozenset(
-    {
-        # These are convenience aliases for JS tooling with a single value,
-        # while NODE_PATH is the complete ordered search path. Provider envs are
-        # merged in precedence order, so keep the first alias value and let
-        # later providers contribute only through NODE_PATH. Otherwise a lower
-        # priority provider can overwrite the alias with an unused workspace.
-        "NODE_MODULES_DIR",
-        "NODE_MODULE_DIR",
-    },
-)
 
 
 @runtime_checkable
 class SupportsExecEnv(Protocol):
     PATH: str
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]]
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]]
 
     def setup_PATH(self) -> None: ...
 
@@ -204,7 +194,7 @@ def build_exec_env(
         if not include_exec_only_env:
             for key in getattr(provider, "EXEC_ONLY_ENV_KEYS", ()):
                 provider_env.pop(key, None)
-        for key in _FIRST_WRITER_ENV_KEYS:
+        for key in provider.FIRST_WRITER_ENV_KEYS:
             if key in first_writer_provider_keys:
                 provider_env.pop(key, None)
             elif provider_env.get(key):

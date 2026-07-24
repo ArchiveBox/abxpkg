@@ -10,7 +10,7 @@ import sysconfig
 from platformdirs import user_cache_path
 
 from pathlib import Path
-from typing import Self
+from typing import ClassVar, Self
 from pydantic import Field, model_validator, TypeAdapter, computed_field
 
 from .binary import Binary
@@ -51,6 +51,7 @@ class PipProvider(BinProvider):
     name: BinProviderName = "pip"
     _log_emoji = "🐍"
     INSTALLER_BIN: BinName = "pip"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/venv/bin in venv mode, or discovers ambient Python script dirs in global mode.
     postinstall_scripts: bool | None = Field(

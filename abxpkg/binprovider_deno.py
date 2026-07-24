@@ -46,7 +46,10 @@ class DenoProvider(BinProvider):
     name: BinProviderName = "deno"
     _log_emoji = "🦕"
     INSTALLER_BIN: BinName = "deno"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("brew",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "brew",
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or DENO_INSTALL_ROOT/~/.deno/bin in ambient mode.
     postinstall_scripts: bool | None = Field(

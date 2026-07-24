@@ -52,7 +52,10 @@ class PuppeteerProvider(BinProvider):
     name: BinProviderName = "puppeteer"
     _log_emoji = "🎭"
     INSTALLER_BIN: BinName = "browsers"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("pnpm",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "pnpm",
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with bin_dir and any install_root/pnpm helper bins.
     postinstall_scripts: bool | None = Field(

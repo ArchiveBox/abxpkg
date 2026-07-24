@@ -45,8 +45,14 @@ class BunProvider(BinProvider):
     name: BinProviderName = "bun"
     _log_emoji = "🥖"
     INSTALLER_BIN: BinName = "bun"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("brew",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "brew",
+    )
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = True
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
+    )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() lazily uses install_root/bin_dir only, or Bun's global bin dir from BUN_INSTALL/~/.bun in ambient mode.
     postinstall_scripts: bool | None = Field(

@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 
 from pydantic import Field, model_validator, computed_field
-from typing import NamedTuple, Self
+from typing import ClassVar, NamedTuple, Self
 
 from .base_types import (
     BinProviderName,
@@ -98,6 +98,7 @@ class NixProvider(BinProvider):
     name: BinProviderName = "nix"
     _log_emoji = "❄️"
     INSTALLER_BIN: BinName = "nix"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
 
     @staticmethod
     def _systemctl_abspath() -> str | None:

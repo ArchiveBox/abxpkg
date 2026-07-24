@@ -54,7 +54,13 @@ class PnpmProvider(BinProvider):
     name: BinProviderName = "pnpm"
     _log_emoji = "📦"
     INSTALLER_BIN: BinName = "pnpm"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("npm",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "npm",
+    )
+    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
+    )
 
     @classmethod
     def host_projection_target(cls, source_path: Path) -> Path | None:

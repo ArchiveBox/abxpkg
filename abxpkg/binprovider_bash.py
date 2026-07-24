@@ -37,6 +37,7 @@ class BashProvider(EnvProvider):
     name: BinProviderName = "bash"
     _log_emoji = "🧪"
     INSTALLER_BIN: BinName = "bash"
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
     INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() replaces it with bin_dir only.
