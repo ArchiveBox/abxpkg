@@ -319,6 +319,16 @@ class UvProvider(BinProvider):
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/venv/bin in venv mode, or UV tool bin dirs in tool mode."""
         if self.install_root:
+            packages_root = self.install_root / "packages"
+            if packages_root.is_dir():
+                for package_root in sorted(packages_root.iterdir(), reverse=True):
+                    package_bin_dir = package_root / "venv" / "bin"
+                    if package_bin_dir.is_dir():
+                        self.PATH = self._merge_PATH(
+                            package_bin_dir,
+                            PATH=self.PATH,
+                            prepend=True,
+                        )
             bin_dir = self.bin_dir
             assert bin_dir is not None
             self.PATH = self._merge_PATH(
@@ -853,20 +863,32 @@ class UvProvider(BinProvider):
         if self.install_root:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
             assert installer_binary.loaded_abspath
-            proc = self.exec(
-                bin_name=installer_binary.loaded_abspath,
-                cmd=[
-                    "pip",
-                    "show",
-                    "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
-                    tool_name,
-                ],
-                timeout=self.version_timeout,
-                quiet=True,
-            )
-            if proc.returncode == 0:
-                candidate = self.install_root / "venv" / "bin" / str(bin_name)
+
+            venv_roots = [self.install_root / "venv"]
+            packages_root = self.install_root / "packages"
+            if packages_root.is_dir():
+                venv_roots.extend(
+                    package_root / "venv"
+                    for package_root in sorted(packages_root.iterdir())
+                    if (package_root / "venv" / "bin").is_dir()
+                )
+
+            for venv_root in venv_roots:
+                proc = self.exec(
+                    bin_name=installer_binary.loaded_abspath,
+                    cmd=[
+                        "pip",
+                        "show",
+                        "--python",
+                        str(venv_root / "bin" / "python"),
+                        tool_name,
+                    ],
+                    timeout=self.version_timeout,
+                    quiet=True,
+                )
+                if proc.returncode != 0:
+                    continue
+                candidate = venv_root / "bin" / str(bin_name)
                 if candidate.exists():
                     return TypeAdapter(HostBinPath).validate_python(candidate)
                 site_packages_locations = [

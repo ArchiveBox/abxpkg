@@ -86,6 +86,42 @@ class TestUvProvider:
             assert cached_installer.loaded_abspath == installer.loaded_abspath
             assert cached_installer.loaded_version == installer.loaded_version
 
+    def test_parent_provider_loads_package_scoped_venv_binaries(self, test_machine):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "uv-root"
+            package_root = install_root / "packages" / "cowsay"
+            package_provider = UvProvider(
+                install_root=package_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            installed = package_provider.install("cowsay")
+            test_machine.assert_shallow_binary_loaded(
+                installed,
+                assert_version_command=False,
+            )
+            assert installed is not None
+            assert installed.loaded_abspath == package_root / "venv" / "bin" / "cowsay"
+
+            parent_provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            reloaded = parent_provider.load("cowsay", quiet=True, no_cache=True)
+
+            assert reloaded is not None
+            assert reloaded.loaded_abspath == installed.loaded_abspath
+            assert reloaded.is_valid
+            assert reloaded.loaded_binprovider is not None
+            assert reloaded.loaded_binprovider.name == "uv"
+            assert reloaded.loaded_version is not None
+            assert reloaded.loaded_sha256 is not None
+            assert (
+                parent_provider.get_abspath("cowsay", quiet=True, no_cache=True)
+                == installed.loaded_abspath
+            )
+
     def test_version_falls_back_to_uv_metadata_when_console_script_rejects_flags(
         self,
     ):
