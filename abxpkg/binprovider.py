@@ -3497,8 +3497,17 @@ class EnvProvider(BinProvider):
         if binary.loaded_abspath is None:
             return None
         self.setup_PATH()
-        if binary.loaded_binprovider is not None:
-            self.set_projection_providers([binary.loaded_binprovider])
+        loaded_binprovider = binary.loaded_binprovider
+        projection_record = self._projection_cache_record(
+            binary.loaded_abspath,
+            Path(str(bin_name)).name,
+        )
+        if projection_record is not None:
+            loaded_binprovider = self._resolved_provider_from_cache_record(
+                projection_record,
+            )
+        if loaded_binprovider is not None:
+            self.set_projection_providers([loaded_binprovider])
         projected_abspath = self._link_loaded_binary(
             Path(str(bin_name)).name,
             binary.loaded_abspath,
@@ -3506,15 +3515,15 @@ class EnvProvider(BinProvider):
         if (
             binary.loaded_version is not None
             and binary.loaded_sha256 is not None
-            and binary.loaded_binprovider is not None
+            and loaded_binprovider is not None
         ):
             self.write_cached_binary(
                 Path(str(bin_name)).name,
                 projected_abspath,
                 binary.loaded_version,
                 binary.loaded_sha256,
-                resolved_provider_name=binary.loaded_binprovider.name,
-                resolved_provider=binary.loaded_binprovider,
+                resolved_provider_name=loaded_binprovider.name,
+                resolved_provider=loaded_binprovider,
                 cache_kind="projection",
             )
         return projected_abspath
@@ -4144,6 +4153,17 @@ class EnvProvider(BinProvider):
         is_direct_projection = (
             self.bin_dir is not None and absolute_abspath.parent == self.bin_dir
         )
+        projection_record = (
+            self._projection_cache_record(absolute_abspath, bin_name)
+            if is_direct_projection and cache_kind != "projection"
+            else None
+        )
+        if projection_record is not None:
+            resolved_provider = self._resolved_provider_from_cache_record(
+                projection_record,
+            )
+            resolved_provider_name = resolved_provider.name
+            cache_kind = "projection"
         if not is_direct_projection and self._is_managed_by_other_provider(abspath):
             self.invalidate_cache(bin_name)
             return None

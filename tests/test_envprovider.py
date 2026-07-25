@@ -773,6 +773,63 @@ class TestEnvProvider:
         assert result.returncode == 0, result.stderr
         assert (result.stdout + result.stderr).strip()
 
+    def test_revalidating_projection_preserves_managed_provider_runtime(
+        self,
+        tmp_path,
+    ):
+        managed_provider = PnpmProvider(
+            install_root=tmp_path / "lib" / "pnpm" / "packages" / "zx",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"zx": {"install_args": ["zx"]}},
+        )
+        managed = managed_provider.install("zx")
+        assert managed is not None
+        assert managed.loaded_version is not None
+        assert managed.loaded_sha256 is not None
+
+        env_root = tmp_path / "lib" / "env"
+        projection_provider = EnvProvider(install_root=env_root)
+        projected = projection_provider.project_binary(managed, "zx")
+        assert projected is not None
+
+        consumer = EnvProvider(install_root=env_root).get_provider_with_overrides(
+            overrides={"zx": {"version": str(managed.loaded_version)}},
+        )
+        consumer.setup_PATH()
+        consumer.write_cached_binary(
+            "zx",
+            projected,
+            managed.loaded_version,
+            managed.loaded_sha256,
+        )
+        env_owned_projection = managed.model_copy(
+            update={
+                "loaded_abspath": projected,
+                "loaded_binprovider": consumer,
+                "binproviders": [consumer],
+            },
+        )
+        projection_provider.project_binary(env_owned_projection, "zx")
+
+        projection_records = [
+            record
+            for record in load_derived_cache(env_root / "derived.env").values()
+            if record.get("bin_name") == "zx"
+        ]
+        assert len(projection_records) == 1
+        assert projection_records[0]["cache_kind"] == "projection"
+        assert projection_records[0]["resolved_provider_name"] == "pnpm"
+
+        reloaded = consumer.load("zx")
+        assert reloaded is not None
+        assert reloaded.loaded_binprovider is not None
+        assert reloaded.loaded_binprovider.name == "pnpm"
+        assert str(managed_provider.install_root / "node_modules") in (
+            reloaded.loaded_binprovider.ENV["NODE_PATH"].split(os.pathsep)
+        )
+
     def test_search_returns_empty_for_env_provider(self):
         # EnvProvider has no package index — it just exposes ambient PATH —
         # so search must be an empty list rather than a crash or fallback.
