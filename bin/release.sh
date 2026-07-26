@@ -245,13 +245,6 @@ publish_artifacts() {
     fi
 }
 
-version_at_ref() {
-    local ref="$1"
-    git show "${ref}:pyproject.toml" \
-        | sed -nE 's/^version = "([^"]+)".*/\1/p' \
-        | head -n 1
-}
-
 create_release() {
     local slug="$1"
     local version="$2"
@@ -269,7 +262,7 @@ create_release() {
 }
 
 main() {
-    local slug release_sha release_branch version previous_version latest pypi_latest relation released_tag release_target pypi_exists github_release_exists
+    local slug release_sha release_branch version latest pypi_latest relation released_tag release_target pypi_exists github_release_exists
 
     source_optional_env
     slug="$(repo_slug)"
@@ -278,12 +271,6 @@ main() {
     require_clean_exact_checkout "${release_sha}" "${release_branch}"
 
     version="$(current_version)"
-    previous_version="$(version_at_ref "${release_sha}^" || true)"
-    if [[ -n "${previous_version}" && "${previous_version}" == "${version}" ]]; then
-        echo "Package version ${version} did not change in ${release_sha}; nothing to publish"
-        return
-    fi
-
     latest="$(latest_release_version "${slug}")"
     pypi_latest="$(latest_pypi_version)"
     if [[ -n "${pypi_latest}" && ( -z "${latest}" || "$(compare_versions "${pypi_latest}" "${latest}")" == "gt" ) ]]; then
