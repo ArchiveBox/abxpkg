@@ -1,0 +1,45 @@
+pyproject.toml
+  s_f8414d52051f83::t_57c5b3fbcbba12 3
+abxpkg/binprovider_pnpm.py
+  s_f8414d52051f83::t_58f7f7607e4810 40
+  s_f8414d52051f83::t_e29f186ed1a9d6 13,31,171
+  s_f8414d52051f83::t_a0b94ddf82b015 606,612-624,639,641,644-645
+  s_f8414d52051f83::t_16a866440ae26e 172-177,314-320,451-457,625-638,640,642-643,747-753,772,798,1103-1109,1145-1152
+abxpkg/binprovider_uv.py
+  s_f8414d52051f83::t_f70edc2c1a05cd 387,396-397,401-404
+  s_f8414d52051f83::t_a0b94ddf82b015 13,398-400,405-428
+  s_f8414d52051f83::t_61eac1268e293b 429
+tests/test_pnpmprovider.py
+  s_f8414d52051f83::t_58f7f7607e4810 47
+  s_f8414d52051f83::t_f1b579ce22447d 48-53,151-181,741
+tests/test_uvprovider.py
+  s_f8414d52051f83::t_a0b94ddf82b015 174-195
+  s_4bc469058f4b62::t_5c8b703126356a 196-204
+tests/test_cli.py
+  s_f8414d52051f83::t_c040b02c354bf6 1151-1154
+  s_f8414d52051f83::t_5cd11962759fb8 1110-1150,1155-1157
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "9bbe1291ed4c56d6a4f45b93031db224bff4e006",
+  "prompts": {},
+  "sessions": {
+    "s_4bc469058f4b62": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f773c-e7fe-77c2-8517-75233af0fe5a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    },
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
