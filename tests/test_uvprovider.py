@@ -122,6 +122,62 @@ class TestUvProvider:
                 == installed.loaded_abspath
             )
 
+    def test_managed_uv_root_installs_packages_into_isolated_venvs(
+        self,
+        test_machine,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "uv"
+            provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+
+            cowsay = provider.install("cowsay")
+            pyfiglet = provider.install("pyfiglet")
+
+            assert cowsay is not None
+            assert pyfiglet is not None
+            assert cowsay.loaded_abspath is not None
+            assert pyfiglet.loaded_abspath is not None
+            assert cowsay.loaded_abspath == (
+                install_root / "packages" / "cowsay" / "venv" / "bin" / "cowsay"
+            )
+            assert pyfiglet.loaded_abspath == (
+                install_root / "packages" / "pyfiglet" / "venv" / "bin" / "pyfiglet"
+            )
+            assert cowsay.loaded_abspath.exists()
+            assert pyfiglet.loaded_abspath.exists()
+            assert cowsay.loaded_version is not None
+            assert pyfiglet.loaded_version is not None
+            assert cowsay.loaded_sha256 is not None
+            assert pyfiglet.loaded_sha256 is not None
+            assert not (install_root / "venv" / "bin" / "cowsay").exists()
+            assert not (install_root / "venv" / "bin" / "pyfiglet").exists()
+
+            reloaded_provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            assert (
+                reloaded_provider.load(
+                    "cowsay",
+                    quiet=True,
+                    no_cache=True,
+                ).loaded_abspath
+                == cowsay.loaded_abspath
+            )
+            assert (
+                reloaded_provider.load(
+                    "pyfiglet",
+                    quiet=True,
+                    no_cache=True,
+                ).loaded_abspath
+                == pyfiglet.loaded_abspath
+            )
+
     def test_version_falls_back_to_uv_metadata_when_console_script_rejects_flags(
         self,
     ):

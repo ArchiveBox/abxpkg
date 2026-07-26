@@ -2,17 +2,20 @@
 __package__ = "abxpkg"
 import json
 import os
-import shutil
 import re
+import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC
 from pathlib import Path
 from typing import ClassVar, Self
+
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
+
 from .base_types import (
     BinName,
     BinProviderName,
@@ -391,10 +394,49 @@ class UvProvider(BinProvider):
             if self.bin_dir:
                 self.bin_dir.mkdir(parents=True, exist_ok=True)
 
-    def _ensure_venv(self, *, no_cache: bool = False) -> None:
-        """Create the managed uv virtualenv on first use when install_root is pinned."""
+    def _managed_package_root(
+        self,
+        bin_name: BinName,
+        install_args: InstallArgs | None = None,
+    ) -> Path:
+        """Return the mutable install root for a managed Python CLI package."""
         assert self.install_root is not None
-        venv_root = self.install_root / "venv"
+        if self.install_root.parent.name == "packages":
+            return self.install_root
+        if self.install_root.name != "uv":
+            return self.install_root
+        package_name = self._package_name_for_bin(
+            bin_name,
+            install_args=install_args,
+        )
+        return self.install_root / "packages" / package_name
+
+    def _managed_venv_roots(self, bin_name: BinName | None = None) -> list[Path]:
+        """Return candidate managed uv venvs, with package-specific roots first."""
+        roots: list[Path] = []
+        if self.install_root is None:
+            return roots
+        if bin_name is not None:
+            roots.append(self._managed_package_root(bin_name) / "venv")
+        packages_root = self.install_root / "packages"
+        if packages_root.is_dir():
+            roots.extend(
+                package_root / "venv"
+                for package_root in sorted(packages_root.iterdir())
+                if (package_root / "venv" / "bin").is_dir()
+            )
+        roots.append(self.install_root / "venv")
+        deduped: list[Path] = []
+        for root in roots:
+            if root not in deduped:
+                deduped.append(root)
+        return deduped
+
+    def _ensure_venv(self, root: Path | None = None, *, no_cache: bool = False) -> None:
+        """Create a managed uv virtualenv on first use when install_root is pinned."""
+        assert self.install_root is not None
+        target_root = root or self.install_root
+        venv_root = target_root / "venv"
         venv_python = venv_root / "bin" / "python"
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
             proc = subprocess.run(
@@ -417,7 +459,7 @@ class UvProvider(BinProvider):
             # wheels such as pydantic-core at an incompatible ABI, so rebuild it
             # before any package install/load can leak those paths downstream.
             shutil.rmtree(venv_root, ignore_errors=True)
-        self.install_root.parent.mkdir(parents=True, exist_ok=True)
+        target_root.parent.mkdir(parents=True, exist_ok=True)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         proc = self.exec(
@@ -440,9 +482,9 @@ class UvProvider(BinProvider):
         """Translate ``min_release_age`` days into uv's ``--exclude-newer`` timestamp."""
         if min_release_age is None or min_release_age <= 0:
             return None
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
-        return (datetime.now(timezone.utc) - timedelta(days=min_release_age)).strftime(
+        return (datetime.now(UTC) - timedelta(days=min_release_age)).strftime(
             "%Y-%m-%dT%H:%M:%SZ",
         )
 
@@ -481,11 +523,21 @@ class UvProvider(BinProvider):
         package_name = package_name.split("[", 1)[0].strip()
         return package_name or None
 
-    def _package_name_for_bin(self, bin_name: BinName, **context) -> str:
+    def _package_name_for_bin(
+        self,
+        bin_name: BinName,
+        install_args: InstallArgs | None = None,
+        **context,
+    ) -> str:
         """Pick the owning Python package name used for uv metadata lookups."""
-        install_args = self.get_install_args(str(bin_name), **context) or [
-            str(bin_name),
-        ]
+        install_args = (
+            install_args
+            or self.get_install_args(
+                str(bin_name),
+                **context,
+            )
+            or [str(bin_name)]
+        )
         for install_arg in install_args:
             package_name = self._package_name_from_install_arg(install_arg)
             if package_name:
@@ -526,26 +578,27 @@ class UvProvider(BinProvider):
         try:
             uv_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert uv_abspath
-        except Exception:
+        except (AssertionError, OSError, RuntimeError, ValueError):
             return None
         if self.install_root:
-            proc = self.exec(
-                bin_name=uv_abspath,
-                cmd=[
-                    *self._cache_args(no_cache=no_cache),
-                    "pip",
-                    "show",
-                    "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
-                    package_name,
-                ],
-                timeout=timeout,
-                quiet=True,
-            )
-            if proc.returncode == 0:
-                for line in proc.stdout.splitlines():
-                    if line.startswith("Version: "):
-                        return SemVer.parse(line.split("Version: ", 1)[1])
+            for venv_root in self._managed_venv_roots(package_name):
+                proc = self.exec(
+                    bin_name=uv_abspath,
+                    cmd=[
+                        *self._cache_args(no_cache=no_cache),
+                        "pip",
+                        "show",
+                        "--python",
+                        str(venv_root / "bin" / "python"),
+                        package_name,
+                    ],
+                    timeout=timeout,
+                    quiet=True,
+                )
+                if proc.returncode == 0:
+                    for line in proc.stdout.splitlines():
+                        if line.startswith("Version: "):
+                            return SemVer.parse(line.split("Version: ", 1)[1])
             return None
         proc = self.exec(
             bin_name=uv_abspath,
@@ -660,6 +713,12 @@ class UvProvider(BinProvider):
             min_release_age=min_release_age,
         )
         if self.install_root:
+            target_root = self._managed_package_root(
+                bin_name,
+                install_args,
+            )
+            target_python = target_root / "venv" / "bin" / "python"
+            self._ensure_venv(target_root, no_cache=no_cache)
             if min_version:
                 tool_names = self._package_names_from_install_args(
                     install_args,
@@ -682,7 +741,7 @@ class UvProvider(BinProvider):
                             "pip",
                             "uninstall",
                             "--python",
-                            str(self.install_root / "venv" / "bin" / "python"),
+                            str(target_python),
                             *tool_names,
                         ],
                         timeout=timeout,
@@ -703,7 +762,7 @@ class UvProvider(BinProvider):
                 "pip",
                 "install",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(target_python),
                 *flags,
                 *install_args,
             ]
@@ -754,6 +813,12 @@ class UvProvider(BinProvider):
             min_release_age=min_release_age,
         )
         if self.install_root:
+            target_root = self._managed_package_root(
+                bin_name,
+                install_args,
+            )
+            target_python = target_root / "venv" / "bin" / "python"
+            self._ensure_venv(target_root, no_cache=no_cache)
             # Do an explicit uninstall + install cycle instead of
             # ``uv pip install --upgrade --reinstall`` so the venv's
             # site-packages is fully repopulated from scratch (uv's
@@ -768,7 +833,7 @@ class UvProvider(BinProvider):
                     "pip",
                     "uninstall",
                     "--python",
-                    str(self.install_root / "venv" / "bin" / "python"),
+                    str(target_python),
                     *tool_names,
                 ],
                 timeout=timeout,
@@ -787,7 +852,7 @@ class UvProvider(BinProvider):
                 "pip",
                 "install",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(target_python),
                 *flags,
                 *install_args,
             ]
@@ -829,11 +894,17 @@ class UvProvider(BinProvider):
             if arg and not arg.startswith("-")
         ] or [bin_name]
         if self.install_root:
+            target_python = (
+                self._managed_package_root(bin_name, install_args)
+                / "venv"
+                / "bin"
+                / "python"
+            )
             cmd = [
                 "pip",
                 "uninstall",
                 "--python",
-                str(self.install_root / "venv" / "bin" / "python"),
+                str(target_python),
                 *tool_names,
             ]
         else:
@@ -853,27 +924,18 @@ class UvProvider(BinProvider):
             abspath = super().default_abspath_handler(bin_name, **context)
             if abspath:
                 return TypeAdapter(HostBinPath).validate_python(abspath)
-        except Exception:
-            pass
+        except (OSError, RuntimeError, ValueError) as err:
+            logger.debug("uv provider host-path probe failed for %s: %s", bin_name, err)
         try:
             installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
-        except Exception:
+        except (OSError, RuntimeError, ValueError):
             return None
         # Fallback: ``uv pip show`` for venv mode.
         if self.install_root:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
             assert installer_binary.loaded_abspath
 
-            venv_roots = [self.install_root / "venv"]
-            packages_root = self.install_root / "packages"
-            if packages_root.is_dir():
-                venv_roots.extend(
-                    package_root / "venv"
-                    for package_root in sorted(packages_root.iterdir())
-                    if (package_root / "venv" / "bin").is_dir()
-                )
-
-            for venv_root in venv_roots:
+            for venv_root in self._managed_venv_roots(str(bin_name)):
                 proc = self.exec(
                     bin_name=installer_binary.loaded_abspath,
                     cmd=[
