@@ -40,7 +40,7 @@ bootstrap_build_dependencies() {
 
     case "$OSTYPE" in
         linux*)
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
@@ -48,7 +48,7 @@ bootstrap_build_dependencies() {
                 --binproviders=env,apt \
                 --overrides='{"apt":{"install_args":["build-essential"]}}' \
                 cc >/dev/null
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
@@ -57,14 +57,14 @@ bootstrap_build_dependencies() {
                 --overrides='{"env":{"version":["ldapsearch","-VV"]},"apt":{"install_args":["ldap-utils","python3-dev","python3-setuptools","libssl-dev","libldap2-dev","libsasl2-dev","zlib1g-dev","libatomic1"],"version":["ldapsearch","-VV"]}}' \
                 ldapsearch >/dev/null
 
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
                 --lib="$ABXPKG_LIB_DIR" \
                 --binproviders=env \
                 cc >/dev/null
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
@@ -79,7 +79,7 @@ bootstrap_build_dependencies() {
             test -x "$ABXPKG_LIB_DIR/env/bin/ldapsearch"
             ;;
         darwin*)
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --json \
                 --lib="$ABXPKG_LIB_DIR" \
@@ -94,7 +94,7 @@ bootstrap_build_dependencies() {
             brew_root="$(dirname "$(dirname "$brew_target")")"
             export ABXPKG_BREW_ROOT="$brew_root"
 
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
@@ -102,7 +102,7 @@ bootstrap_build_dependencies() {
                 --binproviders=env,brew \
                 --overrides='{"brew":{"install_args":["llvm"]}}' \
                 clang >/dev/null
-            uv run --no-sync abxpkg env \
+            uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                 --install \
                 --no-cache \
                 --json \
@@ -112,7 +112,7 @@ bootstrap_build_dependencies() {
                 ldapvc >/dev/null
 
             PATH="$PATH:$brew_root/opt/llvm/bin" \
-                uv run --no-sync abxpkg env \
+                uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                     --install \
                     --no-cache \
                     --json \
@@ -120,7 +120,7 @@ bootstrap_build_dependencies() {
                     --binproviders=env \
                     clang >/dev/null
             PATH="$PATH:$brew_root/opt/openldap/bin" \
-                uv run --no-sync abxpkg env \
+                uv tool run --from "$ROOT_DIR/abxpkg" abxpkg env \
                     --install \
                     --no-cache \
                     --json \
@@ -161,7 +161,25 @@ bootstrap_build_dependencies() {
 }
 
 sync_workspace() {
-    uv sync --all-packages --all-extras --no-cache --active
+    uv sync --all-extras --no-cache --active
+
+    for repo_name in "${REPO_NAMES[@]}"; do
+        printf 'Syncing %s into monorepo environment\n' "$repo_name"
+        case "$repo_name" in
+            archivebox)
+                (
+                    cd "$ROOT_DIR/$repo_name"
+                    UV_PROJECT_ENVIRONMENT="$ROOT_DIR/.venv" uv sync --dev --all-extras --inexact --no-cache --active
+                )
+                ;;
+            *)
+                (
+                    cd "$ROOT_DIR/$repo_name"
+                    UV_PROJECT_ENVIRONMENT="$ROOT_DIR/.venv" uv sync --dev --inexact --no-cache --active
+                )
+                ;;
+        esac
+    done
 }
 
 ensure_setup_link() {
@@ -271,7 +289,6 @@ rm -Rf ./*/.venv   # delete all sub-repo venvs, the monorepo venv needs to take 
 uv venv --allow-existing "$ROOT_DIR/.venv"
 # shellcheck disable=SC1091
 source "$ROOT_DIR/.venv/bin/activate"
-uv sync --package abxpkg --no-dev --no-cache --active
 bootstrap_build_dependencies
 sync_workspace
 echo
@@ -282,5 +299,5 @@ echo "    VIRTUAL_ENV=$VIRTUAL_ENV"
 echo "    PYTHON_BIN=$VIRTUAL_ENV/bin/python"
 echo
 echo "TIPS:"
-echo " - Always use 'uv run ...' within each subrepo, never in the root & never run 'python ...' directly"
+echo " - Use 'uv run ...' inside subrepos for package work; their standalone uv.lock files remain authoritative for CI/release"
 echo " - Always read $ROOT_DIR/README.md into context before starting any work"
