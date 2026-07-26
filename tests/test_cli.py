@@ -692,7 +692,7 @@ signal.pause()
             ready_connection, _ = ready_listener.accept()
         except TimeoutError:
             proc.kill()
-            stdout, stderr = proc.communicate()
+            stdout, stderr = proc.communicate(timeout=5)
             raise AssertionError(
                 f"child did not report readiness; rc={proc.returncode} "
                 f"stdout={stdout!r} stderr={stderr!r}",
@@ -712,7 +712,7 @@ signal.pause()
     finally:
         if proc.poll() is None:
             proc.kill()
-            proc.communicate()
+            proc.communicate(timeout=5)
         ready_listener.close()
         stopped_listener.close()
         shutil.rmtree(socket_dir)
