@@ -10,6 +10,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Mapping
 from datetime import UTC
 from pathlib import Path
 from typing import ClassVar, Self
@@ -383,10 +384,7 @@ class UvProvider(BinProvider):
         no_cache: bool = False,
     ) -> None:
         if self.euid is None:
-            self.euid = self.detect_euid(
-                owner_paths=(self.install_root, self.tool_dir, self.bin_dir),
-                preserve_root=True,
-            )
+            self.euid = self._managed_install_euid()
         self._ensure_writable_cache_dir(self.cache_dir)
         if self.install_root:
             self._ensure_venv(no_cache=no_cache)
@@ -394,6 +392,40 @@ class UvProvider(BinProvider):
             self.tool_dir.mkdir(parents=True, exist_ok=True)
             if self.bin_dir:
                 self.bin_dir.mkdir(parents=True, exist_ok=True)
+
+    def _managed_install_euid(self) -> int:
+        """Return the uid that should own uv-managed package environments."""
+        sudo_uid = self._sudo_managed_install_euid()
+        if sudo_uid is not None:
+            return sudo_uid
+        return self.detect_euid(
+            owner_paths=(self.install_root, self.tool_dir, self.bin_dir),
+            preserve_root=True,
+        )
+
+    def _sudo_managed_install_euid(
+        self,
+        *,
+        current_euid: int | None = None,
+        environ: Mapping[str, str] | None = None,
+    ) -> int | None:
+        """Return SUDO_UID for root-invoked managed installs, when usable."""
+        if self.install_root is None:
+            return None
+        if current_euid is None:
+            current_euid = os.geteuid()
+        if current_euid != 0:
+            return None
+        sudo_uid = (environ or os.environ).get("SUDO_UID")
+        if not sudo_uid:
+            return None
+        try:
+            uid = int(sudo_uid)
+        except ValueError:
+            return None
+        if uid > 0 and self.uid_has_passwd_entry(uid):
+            return uid
+        return None
 
     def _managed_package_root(
         self,

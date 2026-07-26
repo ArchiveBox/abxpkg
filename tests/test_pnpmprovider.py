@@ -44,7 +44,13 @@ def _concurrent_pnpm_bootstrap_worker(
                 version.stderr,
             ),
         )
-    except BaseException:
+    except (
+        AssertionError,
+        RuntimeError,
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+    ):
         results.put((False, "", traceback.format_exc()))
 
 
@@ -141,6 +147,37 @@ class TestPnpmProvider:
         )
 
         assert provider._store_dir() == expected_store
+
+    def test_root_managed_install_uses_sudo_invoking_uid(self, tmp_path):
+        invoking_uid = os.getuid()
+        assert invoking_uid > 0
+        provider = PnpmProvider(
+            install_root=tmp_path / "pnpm",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            == invoking_uid
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=invoking_uid,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            is None
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": "not-a-uid"},
+            )
+            is None
+        )
 
     def test_refresh_bin_link_preserves_real_pnpm_shim_behavior(
         self,
@@ -701,7 +738,7 @@ class TestPnpmProvider:
             )
 
             # update() with an unreachable min_version must surface a real error.
-            with pytest.raises(Exception):
+            with pytest.raises((BinaryInstallError, BinProviderInstallError)):
                 PnpmProvider(
                     install_root=pnpm_prefix,
                     postinstall_scripts=True,

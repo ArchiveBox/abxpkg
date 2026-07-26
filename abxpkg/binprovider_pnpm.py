@@ -9,14 +9,13 @@ import sys
 import tempfile
 import urllib.parse
 import urllib.request
-from pathlib import Path
 from collections.abc import Mapping
+from pathlib import Path
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
-from .binary import Binary
 from .base_types import (
     BinName,
     BinProviderName,
@@ -29,6 +28,7 @@ from .base_types import (
     abxpkg_install_root_default,
     bin_abspath,
 )
+from .binary import Binary
 from .binprovider import (
     BinProvider,
     EnvProvider,
@@ -37,9 +37,9 @@ from .binprovider import (
     remap_kwargs,
 )
 from .config import load_derived_cache
+from .exceptions import BinaryInstallError, BinProviderInstallError
 from .logging import format_subprocess_output
 from .semver import SemVer
-
 
 USER_CACHE_PATH = user_cache_path("pnpm", "abxpkg")
 
@@ -168,7 +168,13 @@ class PnpmProvider(BinProvider):
         threshold = SemVer.parse("10.16.0")
         try:
             installer = self.INSTALLER_BINARY(no_cache=no_cache)
-        except Exception:
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
             return False
         version = installer.loaded_version if installer else None
         return bool(version and threshold and version >= threshold)
@@ -305,7 +311,13 @@ class PnpmProvider(BinProvider):
                 name="node",
                 binproviders=[self._managed_env_provider()],
             ).load(no_cache=no_cache)
-        except Exception:
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
             node_loaded = None
         if (
             node_loaded
@@ -436,7 +448,13 @@ class PnpmProvider(BinProvider):
                 name="npm",
                 binproviders=[self._managed_env_provider()],
             ).load(no_cache=no_cache)
-        except Exception:
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
             host_npm = None
         if host_npm and host_npm.loaded_abspath:
             npm_provider._INSTALLER_BINARY = host_npm
@@ -585,14 +603,45 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
     ) -> None:
         if self.euid is None:
-            self.euid = self.detect_euid(
-                owner_paths=(self.install_root,),
-                preserve_root=True,
-            )
+            self.euid = self._managed_install_euid()
         if not no_cache:
             self._ensure_writable_cache_dir(self.cache_dir)
         if self.bin_dir:
             self.bin_dir.mkdir(parents=True, exist_ok=True)
+
+    def _managed_install_euid(self) -> int:
+        """Return the uid that should own pnpm-managed package installs."""
+        sudo_uid = self._sudo_managed_install_euid()
+        if sudo_uid is not None:
+            return sudo_uid
+        return self.detect_euid(
+            owner_paths=(self.install_root,),
+            preserve_root=True,
+        )
+
+    def _sudo_managed_install_euid(
+        self,
+        *,
+        current_euid: int | None = None,
+        environ: Mapping[str, str] | None = None,
+    ) -> int | None:
+        """Return SUDO_UID for root-invoked managed installs, when usable."""
+        if self.install_root is None:
+            return None
+        if current_euid is None:
+            current_euid = os.geteuid()
+        if current_euid != 0:
+            return None
+        sudo_uid = (environ or os.environ).get("SUDO_UID")
+        if not sudo_uid:
+            return None
+        try:
+            uid = int(sudo_uid)
+        except ValueError:
+            return None
+        if uid > 0 and self.uid_has_passwd_entry(uid):
+            return uid
+        return None
 
     def _store_dir(self, no_cache: bool = False) -> Path:
         existing_store_dir = self._existing_store_dir()
@@ -695,7 +744,13 @@ class PnpmProvider(BinProvider):
                     quiet=True,
                 ).stdout.strip(),
             )
-        except Exception:
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
             return None
 
     def _installed_package_dir(self, bin_name: str) -> Path | None:
@@ -714,7 +769,7 @@ class PnpmProvider(BinProvider):
         package_json_path = package_dir / "package.json"
         try:
             loaded = json.loads(package_json_path.read_text())
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
@@ -740,7 +795,7 @@ class PnpmProvider(BinProvider):
                 continue
             try:
                 cli_paths[entry.name] = TypeAdapter(HostBinPath).validate_python(entry)
-            except Exception:
+            except ValueError:
                 continue
         return cli_paths
 
@@ -1045,7 +1100,13 @@ class PnpmProvider(BinProvider):
         try:
             pnpm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert pnpm_abspath
-        except Exception:
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
             pnpm_abspath = None
 
         # Fallback: ask `pnpm ls --json` for the installed version of the
@@ -1081,7 +1142,14 @@ class PnpmProvider(BinProvider):
                 if isinstance(listing, list):
                     listing = listing[0] if listing else {}
                 return listing["dependencies"][package]["version"]
-            except Exception:
+            except (
+                KeyError,
+                TypeError,
+                json.JSONDecodeError,
+                BinProviderInstallError,
+                OSError,
+                ValueError,
+            ):
                 pass
 
         try:

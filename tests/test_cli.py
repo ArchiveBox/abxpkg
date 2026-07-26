@@ -1107,6 +1107,54 @@ def test_env_command_deps_from_uses_real_required_binary_exec_env(tmp_path):
     assert any((hook_runtime / "venv").rglob("humanize"))
 
 
+def test_env_command_installs_forum_dl_style_uv_required_binary(tmp_path):
+    lib = tmp_path / "lib"
+    package_root = lib / "uv" / "packages" / "forum-dl"
+    config = tmp_path / "forumdl.json"
+    config.write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "FORUMDL_BINARY": {"default": "forum-dl"},
+                },
+                "required_binaries": [
+                    {
+                        "name": "{FORUMDL_BINARY}",
+                        "binproviders": "env,uv",
+                        "min_release_age": 3,
+                        "overrides": {
+                            "uv": {
+                                "install_root": str(package_root),
+                                "install_args": ["--no-deps", "forum-dl"],
+                                "postinstall_scripts": True,
+                            },
+                        },
+                    },
+                ],
+            },
+            indent=2,
+        ),
+    )
+
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    entrypoint = package_root / "venv" / "bin" / "forum-dl"
+    projected_entrypoint = lib / "env" / "bin" / "forum-dl"
+    assert payload["FORUMDL_BINARY"] == str(projected_entrypoint)
+    assert projected_entrypoint.is_symlink()
+    assert projected_entrypoint.resolve() == entrypoint
+    assert os.access(entrypoint, os.X_OK)
+
+
 def test_env_command_exports_and_runs_projected_host_brew(
     tmp_path,
     test_machine,

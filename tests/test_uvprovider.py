@@ -171,6 +171,37 @@ class TestUvProvider:
             assert reloaded is not None
             assert reloaded.loaded_abspath == entrypoint
 
+    def test_root_managed_install_uses_sudo_invoking_uid(self, tmp_path):
+        invoking_uid = os.getuid()
+        assert invoking_uid > 0
+        provider = UvProvider(
+            install_root=tmp_path / "uv",
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            == invoking_uid
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=invoking_uid,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            is None
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": "not-a-uid"},
+            )
+            is None
+        )
+
     def test_managed_uv_root_installs_packages_into_isolated_venvs(
         self,
         test_machine,
