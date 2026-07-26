@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import urllib.error
@@ -439,6 +440,7 @@ class UvProvider(BinProvider):
         venv_root = target_root / "venv"
         venv_python = venv_root / "bin" / "python"
         if venv_python.is_file() and os.access(venv_python, os.X_OK):
+            self._ensure_managed_root_access(target_root)
             proc = subprocess.run(
                 [
                     str(venv_python),
@@ -476,6 +478,93 @@ class UvProvider(BinProvider):
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", ["uv venv"], proc)
+        self._ensure_managed_root_access(target_root)
+
+    def _ensure_managed_root_access(self, root: Path) -> None:
+        """Keep uv-created managed venv roots usable by this provider's runtime UID.
+
+        ArchiveBox can invoke installers from a sudo-created process whose real
+        uid is still root while the effective/runtime uid is the collection
+        owner. Plain ``os.access`` probes can therefore accept files that only
+        root can execute. ``UvProvider`` owns these package-scoped venv trees, so
+        normalize just the venv root directories and entrypoints after uv mutates
+        them. Do not recurse through uv's shared cache; that path is large and
+        hot.
+        """
+        if self.install_root is None:
+            return
+        try:
+            root = root.expanduser().resolve(strict=False)
+            install_root = self.install_root.expanduser().resolve(strict=False)
+            if root != install_root and not root.is_relative_to(install_root):
+                return
+        except OSError:
+            return
+
+        uid = self.EUID
+        try:
+            gid = self.get_pw_record(uid).pw_gid
+        except KeyError:
+            gid = os.getegid()
+
+        paths = [
+            root,
+            root / "venv",
+            root / "venv" / "bin",
+            root / "venv" / "lib",
+        ]
+        for path in paths:
+            if not path.exists():
+                continue
+            try:
+                if os.geteuid() == 0 or os.getuid() == 0:
+                    os.chown(path, uid, gid)
+            except PermissionError:
+                pass
+            try:
+                current_mode = path.stat().st_mode
+                path.chmod(
+                    current_mode
+                    | stat.S_IRUSR
+                    | stat.S_IWUSR
+                    | stat.S_IXUSR
+                    | stat.S_IRGRP
+                    | stat.S_IXGRP
+                    | stat.S_IROTH
+                    | stat.S_IXOTH,
+                )
+            except PermissionError:
+                pass
+
+        bin_dir = root / "venv" / "bin"
+        if not bin_dir.is_dir():
+            return
+        for entrypoint in bin_dir.iterdir():
+            if not (entrypoint.is_file() or entrypoint.is_symlink()):
+                continue
+            try:
+                if os.geteuid() == 0 or os.getuid() == 0:
+                    if entrypoint.is_symlink():
+                        os.lchown(entrypoint, uid, gid)
+                    else:
+                        os.chown(entrypoint, uid, gid)
+            except (NotImplementedError, PermissionError):
+                pass
+            if entrypoint.is_symlink():
+                continue
+            try:
+                current_mode = entrypoint.stat().st_mode
+                entrypoint.chmod(
+                    current_mode
+                    | stat.S_IRUSR
+                    | stat.S_IXUSR
+                    | stat.S_IRGRP
+                    | stat.S_IXGRP
+                    | stat.S_IROTH
+                    | stat.S_IXOTH,
+                )
+            except PermissionError:
+                pass
 
     @staticmethod
     def _release_age_cutoff(min_release_age: float | None) -> str | None:
@@ -712,6 +801,7 @@ class UvProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
+        target_root: Path | None = None
         if self.install_root:
             target_root = self._managed_package_root(
                 bin_name,
@@ -778,6 +868,8 @@ class UvProvider(BinProvider):
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
+        if target_root is not None:
+            self._ensure_managed_root_access(target_root)
         return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
@@ -812,6 +904,7 @@ class UvProvider(BinProvider):
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
+        target_root: Path | None = None
         if self.install_root:
             target_root = self._managed_package_root(
                 bin_name,
@@ -870,6 +963,8 @@ class UvProvider(BinProvider):
         proc = self.exec(bin_name=installer_bin, cmd=cmd, timeout=timeout)
         if proc.returncode != 0:
             self._raise_proc_error("update", install_args, proc)
+        if target_root is not None:
+            self._ensure_managed_root_access(target_root)
         return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})

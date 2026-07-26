@@ -1,5 +1,6 @@
 import logging
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -141,6 +142,34 @@ class TestUvProvider:
             assert path_entries.index(str(package_bin)) < path_entries.index(
                 str(shared_bin),
             )
+
+    def test_managed_package_venv_repair_restores_entrypoint_access(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "uv"
+            provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+
+            installed = provider.install("cowsay")
+
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            entrypoint = installed.loaded_abspath
+            entrypoint.chmod(
+                entrypoint.stat().st_mode
+                & ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH),
+            )
+            assert not os.access(entrypoint, os.X_OK)
+
+            package_root = install_root / "packages" / "cowsay"
+            provider._ensure_managed_root_access(package_root)
+            reloaded = provider.load("cowsay", quiet=True, no_cache=True)
+
+            assert os.access(entrypoint, os.X_OK)
+            assert reloaded is not None
+            assert reloaded.loaded_abspath == entrypoint
 
     def test_managed_uv_root_installs_packages_into_isolated_venvs(
         self,
