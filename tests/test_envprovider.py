@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import sys
@@ -598,6 +599,11 @@ class TestEnvProvider:
             assert cached_record["bin_name"] == "python3"
             assert cached_record["abspath"] == str(loaded.loaded_abspath)
             assert cached_record["install_args"] == ["python3"]
+            cache_context = cached_record["cache_context"]
+            assert isinstance(cache_context, str)
+            assert json.loads(cache_context)["runtime_python"] == str(
+                Path(sys.executable).absolute(),
+            )
             stat_result = loaded.loaded_abspath.stat()
             assert cached_record["inode"] == stat_result.st_ino
             assert cached_record["mtime"] == stat_result.st_mtime_ns

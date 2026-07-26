@@ -3551,6 +3551,8 @@ class EnvProvider(BinProvider):
     def _cache_context(self, bin_name: BinName) -> str:
         provider_config = json.loads(super()._cache_context(bin_name))
         provider_config["env_projection_version"] = 2
+        if str(bin_name) in {"python", "python3"}:
+            provider_config["runtime_python"] = str(Path(sys.executable).absolute())
         return json.dumps(
             provider_config,
             default=str,
