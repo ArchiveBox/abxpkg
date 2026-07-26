@@ -10,7 +10,11 @@ import pytest
 
 from abxpkg import Binary, NpmProvider, PnpmProvider, SemVer
 from abxpkg.base_types import bin_abspath
-from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
+from abxpkg.exceptions import (
+    BinaryInstallError,
+    BinProviderInstallError,
+    BinProviderUpdateError,
+)
 
 
 def _concurrent_pnpm_bootstrap_worker(
@@ -738,7 +742,9 @@ class TestPnpmProvider:
             )
 
             # update() with an unreachable min_version must surface a real error.
-            with pytest.raises((BinaryInstallError, BinProviderInstallError)):
+            with pytest.raises(
+                (BinaryInstallError, BinProviderInstallError, BinProviderUpdateError),
+            ):
                 PnpmProvider(
                     install_root=pnpm_prefix,
                     postinstall_scripts=True,
