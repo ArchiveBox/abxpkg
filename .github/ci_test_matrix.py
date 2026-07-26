@@ -5,38 +5,37 @@ import re
 from collections import Counter
 from pathlib import Path
 
-
 PRIVILEGED_MARKER = re.compile(r"@pytest\.mark\.(root_required|docker_required)")
 SUPPORTED_TARGETS = (
     {
         "os": "ubuntu-24.04",
         "os_name": "linux",
-        "python_version": "3.12.13",
+        "python_version": "3.12",
     },
     {
         "os": "macOS-15",
         "os_name": "macOS",
-        "python_version": "3.12.10",
+        "python_version": "3.12",
     },
     {
         "os": "ubuntu-24.04",
         "os_name": "linux",
-        "python_version": "3.13.14",
+        "python_version": "3.13",
     },
     {
         "os": "macOS-15",
         "os_name": "macOS",
-        "python_version": "3.13.13",
+        "python_version": "3.13",
     },
     {
         "os": "ubuntu-24.04",
         "os_name": "linux",
-        "python_version": "3.14.6",
+        "python_version": "3.14",
     },
     {
         "os": "macOS-15",
         "os_name": "macOS",
-        "python_version": "3.14.6",
+        "python_version": "3.14",
     },
 )
 LINUX_TARGETS = tuple(
