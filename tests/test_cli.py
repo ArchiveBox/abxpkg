@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import os
 import json
+import logging
+import os
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
-import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,9 +17,9 @@ import pytest
 import rich_click as click
 from click.testing import CliRunner
 
-from abxpkg import EnvProvider, PnpmProvider, PROVIDER_CLASS_BY_INSTALLER_BIN
-from abxpkg.config import load_derived_cache
 import abxpkg.cli as cli_module
+from abxpkg import PROVIDER_CLASS_BY_INSTALLER_BIN, EnvProvider, PnpmProvider
+from abxpkg.config import load_derived_cache
 
 
 def _abxpkg_executable() -> Path:
@@ -57,6 +57,7 @@ def _run_cli(
     return subprocess.run(
         [str(script), *args],
         capture_output=True,
+        check=False,
         text=True,
         env=env,
         timeout=timeout,
@@ -109,17 +110,13 @@ def test_shebang_script_exec_replaces_launcher_so_sigterm_reaches_child(tmp_path
     )
     script = tmp_path / "sigterm-hook.js"
     script.write_text(
-        "\n".join(
-            [
-                "#!/usr/bin/env -S abxpkg run --script --deps-from=./config.json:required_binaries node",
-                "// /// script",
-                "// ///",
-                "process.on('SIGTERM', () => { console.log('clean'); process.exit(0); });",
-                "console.log('ready');",
-                "setInterval(() => {}, 1000);",
-                "",
-            ],
-        ),
+        """#!/usr/bin/env -S abxpkg run --script --deps-from=./config.json:required_binaries node
+// /// script
+// ///
+process.on('SIGTERM', () => { console.log('clean'); process.exit(0); });
+console.log('ready');
+setInterval(() => {}, 1000);
+""",
     )
     script.chmod(0o755)
     env = {
@@ -644,35 +641,32 @@ def test_run_terminates_child_process_group(tmp_path):
     stopped_listener.settimeout(8)
     script = tmp_path / "spawn_child.py"
     script.write_text(
-        "\n".join(
-            [
-                "import os",
-                "import signal",
-                "import socket",
-                "import subprocess",
-                "import sys",
-                "ready_path = sys.argv[1]",
-                "stopped_path = sys.argv[2]",
-                "child_code = (",
-                "    'import os, signal, socket, sys\\n'",
-                "    'ready_path, stopped_path = sys.argv[1:]\\n'",
-                "    'def stop(*_):\\n'",
-                "    '    with socket.socket(socket.AF_UNIX) as client:\\n'",
-                "    '        client.connect(stopped_path)\\n'",
-                "    '        client.sendall(b\\\"stopped\\\\n\\\")\\n'",
-                "    '    raise SystemExit(0)\\n'",
-                "    'signal.signal(signal.SIGTERM, stop)\\n'",
-                "    'with socket.socket(socket.AF_UNIX) as client:\\n'",
-                "    '    client.connect(ready_path)\\n'",
-                "    '    client.sendall(f\\\"{os.getpid()}\\\\n\\\".encode())\\n'",
-                "    'signal.pause()\\n'",
-                ")",
-                "child = subprocess.Popen(",
-                "    [sys.executable, '-c', child_code, ready_path, stopped_path],",
-                ")",
-                "signal.pause()",
-            ],
-        ),
+        """import os
+import signal
+import socket
+import subprocess
+import sys
+ready_path = sys.argv[1]
+stopped_path = sys.argv[2]
+child_code = (
+    'import os, signal, socket, sys\\n'
+    'ready_path, stopped_path = sys.argv[1:]\\n'
+    'def stop(*_):\\n'
+    '    with socket.socket(socket.AF_UNIX) as client:\\n'
+    '        client.connect(stopped_path)\\n'
+    '        client.sendall(b"stopped\\\\n")\\n'
+    '    raise SystemExit(0)\\n'
+    'signal.signal(signal.SIGTERM, stop)\\n'
+    'with socket.socket(socket.AF_UNIX) as client:\\n'
+    '    client.connect(ready_path)\\n'
+    '    client.sendall(f"{os.getpid()}\\\\n".encode())\\n'
+    'signal.pause()\\n'
+)
+child = subprocess.Popen(
+    [sys.executable, '-c', child_code, ready_path, stopped_path],
+)
+signal.pause()
+""",
     )
     env = {
         key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
@@ -1342,6 +1336,7 @@ def test_activate_command_can_be_evaled_for_installable_pip_binary(tmp_path):
     proc = subprocess.run(
         ["bash", "-lc", command],
         capture_output=True,
+        check=False,
         text=True,
         env=env,
         timeout=900,
@@ -3450,7 +3445,9 @@ def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
     assert Path(payload["virtual_env"]) == (lib / "uv" / "venv")
     assert Path(payload["uv_cache_dir"]) == lib.resolve() / "cache" / "uv"
     assert str(lib.resolve() / "bin") not in payload["path"].split(os.pathsep)
-    assert str(lib / "uv" / "venv") in payload["imagesize_file"]
+    assert (
+        str(lib / "uv" / "packages" / "imagesize" / "venv") in payload["imagesize_file"]
+    )
     assert f"python{payload['runtime_python']}" in payload["imagesize_file"]
 
 
@@ -3524,7 +3521,9 @@ def test_run_script_keeps_active_runtime_imports_with_uv_provider_cache(
     )
     assert Path(payload["executable"]).samefile(sys.executable)
     assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
-    assert str(lib / "uv" / "venv") in payload["imagesize_file"]
+    assert (
+        str(lib / "uv" / "packages" / "imagesize" / "venv") in payload["imagesize_file"]
+    )
     assert str(hook_runtime / "venv") in payload["humanize_file"]
     assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
