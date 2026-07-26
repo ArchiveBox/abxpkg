@@ -122,6 +122,26 @@ class TestUvProvider:
                 == installed.loaded_abspath
             )
 
+    def test_package_scoped_venvs_precede_shared_venv_on_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "uv"
+            shared_bin = install_root / "venv" / "bin"
+            package_bin = install_root / "packages" / "forum-dl" / "venv" / "bin"
+            shared_bin.mkdir(parents=True)
+            package_bin.mkdir(parents=True)
+
+            provider = UvProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            provider.setup_PATH(no_cache=True)
+            path_entries = provider.PATH.split(os.pathsep)
+
+            assert path_entries.index(str(package_bin)) < path_entries.index(
+                str(shared_bin),
+            )
+
     def test_managed_uv_root_installs_packages_into_isolated_venvs(
         self,
         test_machine,

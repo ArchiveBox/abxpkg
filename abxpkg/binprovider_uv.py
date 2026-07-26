@@ -322,6 +322,13 @@ class UvProvider(BinProvider):
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from install_root/venv/bin in venv mode, or UV tool bin dirs in tool mode."""
         if self.install_root:
+            bin_dir = self.bin_dir
+            assert bin_dir is not None
+            self.PATH = self._merge_PATH(
+                bin_dir,
+                PATH=self.PATH,
+                prepend=True,
+            )
             packages_root = self.install_root / "packages"
             if packages_root.is_dir():
                 for package_root in sorted(packages_root.iterdir(), reverse=True):
@@ -332,13 +339,6 @@ class UvProvider(BinProvider):
                             PATH=self.PATH,
                             prepend=True,
                         )
-            bin_dir = self.bin_dir
-            assert bin_dir is not None
-            self.PATH = self._merge_PATH(
-                bin_dir,
-                PATH=self.PATH,
-                prepend=True,
-            )
         elif self.bin_dir:
             self.PATH = self._merge_PATH(
                 self.bin_dir,
