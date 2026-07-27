@@ -10,6 +10,7 @@ import pytest
 
 from abxpkg import Binary, NpmProvider, PnpmProvider, SemVer
 from abxpkg.base_types import bin_abspath
+from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import (
     BinaryInstallError,
     BinProviderInstallError,
@@ -299,6 +300,20 @@ class TestPnpmProvider:
             assert (lib_dir / "env" / "bin" / "npm").resolve() == npm_binary.resolve()
             assert (lib_dir / "env" / "bin" / "node").resolve() == node_binary.resolve()
             assert not (lib_dir / "bin").exists()
+            provider.PATH = ""
+            provider.setup_PATH()
+            path_entries = provider.PATH.split(os.pathsep)
+            assert path_entries[0] == str(lib_dir / "env" / "bin")
+            assert str(provider.bin_dir) in path_entries
+            cache = load_derived_cache(provider.derived_env_path)
+            dependency_names = {
+                record["bin_name"]
+                for record in cache.values()
+                if isinstance(record, dict)
+                and record.get("provider_name") == "pnpm"
+                and record.get("cache_kind") == "dependency"
+            }
+            assert {"node", "npm", "pnpm"} <= dependency_names
 
     def test_host_pnpm_and_node_are_projected_before_execution(
         self,
