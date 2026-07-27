@@ -1,0 +1,24 @@
+pyproject.toml
+  s_f8414d52051f83::t_173f13e937bd2b 3
+abxpkg/binprovider_pnpm.py
+  s_f8414d52051f83::t_173f13e937bd2b 1107-1109,1117,1129-1136
+tests/test_binprovider.py
+  s_f8414d52051f83::t_173f13e937bd2b 451,458,466,472-473,478-479
+  s_f8414d52051f83::t_db14d7aaf382a4 474-477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "4a367e42165bb2b2b42a769d3b8776f10c715446",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
