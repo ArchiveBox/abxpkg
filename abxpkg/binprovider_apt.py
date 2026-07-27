@@ -2,6 +2,7 @@
 __package__ = "abxpkg"
 
 import fcntl
+import os
 import sys
 import time
 from contextlib import contextmanager
@@ -228,6 +229,51 @@ class AptProvider(BinProvider):
         if package_version.returncode != 0:
             return None
         return SemVer.parse(package_version.stdout.strip())
+
+    def default_abspath_handler(
+        self,
+        bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
+        **context,
+    ) -> HostBinPath | None:
+        abspath = super().default_abspath_handler(
+            bin_name,
+            no_cache=no_cache,
+            **context,
+        )
+        if abspath or sys.platform != "linux" or "/" in str(bin_name):
+            return (
+                TypeAdapter(HostBinPath).validate_python(abspath) if abspath else None
+            )
+
+        dpkg_query = EnvProvider().load("dpkg-query", no_cache=no_cache)
+        if not dpkg_query or not dpkg_query.loaded_abspath:
+            return None
+
+        proc = self.exec(
+            bin_name=dpkg_query.loaded_abspath,
+            cmd=["--search", f"*/{bin_name}"],
+            quiet=True,
+            timeout=self.version_timeout,
+        )
+        if proc.returncode != 0:
+            return None
+
+        for line in proc.stdout.splitlines():
+            _, separator, package_path = line.partition(": ")
+            if not separator:
+                continue
+            candidate = Path(package_path.strip())
+            if candidate.name != str(bin_name):
+                continue
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                self.PATH = self._merge_PATH(
+                    candidate.parent,
+                    PATH=self.PATH,
+                    prepend=True,
+                )
+                return TypeAdapter(HostBinPath).validate_python(candidate)
+        return None
 
     @remap_kwargs({"packages": "install_args"})
     def default_install_handler(

@@ -127,6 +127,27 @@ class TestAptProvider:
         finally:
             provider.uninstall(bin_name, quiet=True, no_cache=True)
 
+    def test_provider_loads_apt_owned_binary_outside_system_path(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("apt-get")
+        provider = AptProvider().get_provider_with_overrides(
+            overrides={
+                "initdb": {
+                    "install_args": ["postgresql"],
+                },
+            },
+        )
+
+        installed = provider.install("initdb", no_cache=True)
+
+        test_machine.assert_shallow_binary_loaded(installed)
+        assert installed.loaded_abspath is not None
+        assert "/postgresql/" in str(installed.loaded_abspath)
+        assert installed.loaded_abspath.name == "initdb"
+        assert installed.loaded_version is not None
+
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("apt-get")
 
