@@ -775,7 +775,18 @@ class PnpmProvider(BinProvider):
         if not package or modules_dir is None:
             return None
         package_dir = modules_dir / package
-        return package_dir if package_dir.is_dir() else None
+        if package_dir.is_dir():
+            return package_dir
+        virtual_store = modules_dir / ".pnpm"
+        if not virtual_store.is_dir():
+            return None
+        for candidate in sorted(
+            virtual_store.glob(f"*/node_modules/{package}/package.json"),
+        ):
+            package_dir = candidate.parent
+            if package_dir.is_dir():
+                return package_dir
+        return None
 
     def _installed_package_json(self, bin_name: str) -> dict:
         package_dir = self._installed_package_dir(bin_name)

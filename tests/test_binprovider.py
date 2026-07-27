@@ -448,7 +448,15 @@ class TestBinProvider:
 
     def test_pnpm_provider_projects_package_owned_bin_alias(self, tmp_path):
         install_root = tmp_path / "pnpm" / "packages" / "mercury"
-        package_dir = install_root / "node_modules" / "@postlight" / "parser"
+        package_dir = (
+            install_root
+            / "node_modules"
+            / ".pnpm"
+            / "@postlight+parser@2.2.3"
+            / "node_modules"
+            / "@postlight"
+            / "parser"
+        )
         bin_dir = install_root / "node_modules" / ".bin"
         package_dir.mkdir(parents=True)
         bin_dir.mkdir(parents=True)
