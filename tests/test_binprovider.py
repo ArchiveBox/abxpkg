@@ -23,6 +23,7 @@ from abxpkg import (
     UvProvider,
     YarnProvider,
 )
+from abxpkg.binprovider import ShallowBinary
 
 
 class TestBinProvider:
@@ -517,6 +518,51 @@ class TestBinProvider:
             PnpmProvider._package_name_from_install_args(install_args)
             == "@postlight/parser"
         )
+
+    def test_pnpm_provider_projects_declared_package_exec_wrapper(self, tmp_path):
+        install_root = tmp_path / "pnpm" / "packages" / "mercury"
+        pnpm_abspath = tmp_path / "env" / "bin" / "pnpm"
+        pnpm_abspath.parent.mkdir(parents=True)
+        pnpm_abspath.write_text("#!/bin/sh\nexit 0\n")
+        pnpm_abspath.chmod(0o755)
+        install_root.mkdir(parents=True)
+        (install_root / "package.json").write_text(
+            json.dumps({"dependencies": {"@postlight/parser": "2.2.3"}}),
+        )
+
+        provider = PnpmProvider(
+            install_root=install_root,
+            overrides={
+                "postlight-parser": {
+                    "install_args": (
+                        "--config.blockExoticSubdeps=false",
+                        "@postlight/parser",
+                    ),
+                },
+            },
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        provider._INSTALLER_BINARY = ShallowBinary(
+            name="pnpm",
+            abspath=pnpm_abspath,
+            version=SemVer("10.0.0"),
+            sha256="0" * 64,
+            mtime=0,
+            euid=os.geteuid(),
+            binproviders=[provider],
+        )
+        provider.setup_PATH()
+
+        abspath = provider.default_abspath_handler(BinName("postlight-parser"))
+
+        assert abspath == install_root / "node_modules" / ".bin" / "postlight-parser"
+        assert abspath.is_file()
+        assert os.access(abspath, os.X_OK)
+        wrapper = abspath.read_text()
+        assert str(pnpm_abspath) in wrapper
+        assert f"--dir {install_root}" in wrapper
+        assert "exec postlight-parser" in wrapper
 
     def test_build_exec_env_replaces_stale_ambient_js_module_alias(self, tmp_path):
         pnpm_provider = PnpmProvider(

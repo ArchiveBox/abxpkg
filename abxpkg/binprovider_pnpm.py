@@ -874,6 +874,52 @@ class PnpmProvider(BinProvider):
         link_path.chmod(0o755)
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
+    def _refresh_pnpm_exec_link(
+        self,
+        bin_name: BinName | HostBinPath,
+        package: str,
+        no_cache: bool = False,
+    ) -> HostBinPath | None:
+        """Recreate a managed shim that asks this pnpm project to run a binary."""
+        if self.bin_dir is None or self.install_root is None:
+            return None
+        if not self._project_declares_package(package):
+            return None
+        try:
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            pnpm_abspath = installer.loaded_abspath
+        except (
+            AssertionError,
+            BinProviderInstallError,
+            BinaryInstallError,
+            OSError,
+            ValueError,
+        ):
+            pnpm_abspath = None
+        if pnpm_abspath is None:
+            return None
+
+        link_path = self._linked_bin_path(bin_name)
+        assert link_path is not None, "_refresh_pnpm_exec_link requires bin_dir"
+        link_path.parent.mkdir(parents=True, exist_ok=True)
+        wrapper = (
+            "#!/bin/sh\n"
+            f"exec {shlex.quote(str(pnpm_abspath))} "
+            f"--dir {shlex.quote(str(self.install_root))} "
+            f'exec {shlex.quote(str(bin_name))} "$@"\n'
+        )
+        if link_path.is_file() and not link_path.is_symlink():
+            try:
+                if link_path.read_text() == wrapper:
+                    return TypeAdapter(HostBinPath).validate_python(link_path)
+            except OSError:
+                pass
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink(missing_ok=True)
+        link_path.write_text(wrapper)
+        link_path.chmod(0o755)
+        return TypeAdapter(HostBinPath).validate_python(link_path)
+
     def default_search_handler(
         self,
         bin_name: BinName,
@@ -1138,15 +1184,27 @@ class PnpmProvider(BinProvider):
         if direct_abspath:
             return direct_abspath
 
+        install_args = self.get_install_args(str(bin_name), quiet=True) or [
+            str(bin_name),
+        ]
+        package = self._package_name_from_install_args(install_args)
         package_dir = self._installed_package_dir(str(bin_name))
         if package_dir is None:
-            return None
+            return self._refresh_pnpm_exec_link(
+                bin_name,
+                package or str(bin_name),
+                no_cache=no_cache,
+            )
         package_info = self._installed_package_json(str(bin_name))
         package_bins = package_info.get("bin", {})
         if isinstance(package_bins, str):
             package_bins = {package_info.get("name") or str(bin_name): package_bins}
         if not isinstance(package_bins, dict):
-            return None
+            return self._refresh_pnpm_exec_link(
+                bin_name,
+                package or str(bin_name),
+                no_cache=no_cache,
+            )
 
         for alt_bin_name, package_bin_path in package_bins.items():
             alt_abspath = bin_abspath(
@@ -1168,7 +1226,11 @@ class PnpmProvider(BinProvider):
                     bin_name,
                     TypeAdapter(HostBinPath).validate_python(package_abspath),
                 )
-        return None
+        return self._refresh_pnpm_exec_link(
+            bin_name,
+            package or str(bin_name),
+            no_cache=no_cache,
+        )
 
     def default_version_handler(
         self,
