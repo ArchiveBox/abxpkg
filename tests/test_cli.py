@@ -329,6 +329,98 @@ def test_env_deps_from_preserves_pnpm_package_launcher_execution(tmp_path):
     assert version.stdout.strip() == "8.8.5"
 
 
+def test_script_deps_from_loads_cached_binary_before_installing(tmp_path):
+    lib_dir = tmp_path / "lib"
+    package_root = lib_dir / "pnpm" / "packages" / "zx"
+    install_config_path = tmp_path / "install-config.json"
+    install_config_path.write_text(
+        json.dumps(
+            {
+                "properties": {"ZX_BINARY": {"default": "zx"}},
+                "required_binaries": [
+                    {
+                        "name": "{ZX_BINARY}",
+                        "binproviders": ["pnpm"],
+                        "min_version": "8.8.5",
+                        "min_release_age": 0,
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": str(package_root),
+                                "install_args": ["zx@8.8.5"],
+                                "postinstall_scripts": True,
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+
+    install = _run_abxpkg_cli(
+        f"--lib={lib_dir}",
+        "env",
+        "--install",
+        "--json",
+        f"--deps-from={install_config_path}:required_binaries",
+        timeout=120,
+    )
+    assert install.returncode == 0, install.stderr
+
+    script_config_path = tmp_path / "script-config.json"
+    script_config_path.write_text(
+        json.dumps(
+            {
+                "properties": {"ZX_BINARY": {"default": "zx"}},
+                "required_binaries": [
+                    {
+                        "name": "{ZX_BINARY}",
+                        "binproviders": ["pnpm"],
+                        "min_version": "8.8.5",
+                        "min_release_age": 0,
+                        "overrides": {
+                            "pnpm": {
+                                "install_root": str(package_root),
+                                "install_args": [
+                                    "archivebox-abxpkg-missing-package-for-cache-regression@0.0.0",
+                                ],
+                                "postinstall_scripts": True,
+                            },
+                        },
+                    },
+                ],
+            },
+        ),
+    )
+    script = tmp_path / "cached-dep.py"
+    script.write_text(
+        f"""#!/usr/bin/env -S abxpkg run --script --deps-from={script_config_path}:required_binaries python3
+# /// script
+# ///
+import os
+from pathlib import Path
+zx = Path(os.environ["ZX_BINARY"])
+assert zx.exists(), zx
+print("cached dependency loaded")
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+    proc = _run_cli(
+        script,
+        env_overrides={
+            "ABXPKG_LIB_DIR": str(lib_dir),
+            "PATH": os.pathsep.join(
+                [str(_abxpkg_executable().parent), os.environ.get("PATH", "")],
+            ),
+        },
+        timeout=30,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "cached dependency loaded"
+
+
 @pytest.fixture(autouse=True)
 def restore_abxpkg_logger():
     package_logger = logging.getLogger("abxpkg")

@@ -588,10 +588,14 @@ def _same_runtime_provider(provider, loaded_provider) -> bool:
 
 
 def _load_or_install_script_binary(binary_name: str, options: ScriptOptions):
-    return _build_binary(binary_name, options).install(
-        dry_run=options.dry_run,
-        no_cache=options.no_cache,
-    )
+    binary = _build_binary(binary_name, options)
+    try:
+        return binary.load(no_cache=options.no_cache)
+    except Exception:
+        return binary.install(
+            dry_run=options.dry_run,
+            no_cache=options.no_cache,
+        )
 
 
 def _run_script(argv: list[str]) -> int | None:
