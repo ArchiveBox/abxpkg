@@ -460,6 +460,9 @@ class TestBinProvider:
         bin_dir = install_root / "node_modules" / ".bin"
         package_dir.mkdir(parents=True)
         bin_dir.mkdir(parents=True)
+        (install_root / "package.json").write_text(
+            json.dumps({"dependencies": {"@postlight/parser": "2.2.3"}}),
+        )
         (package_dir / "package.json").write_text(
             json.dumps(
                 {

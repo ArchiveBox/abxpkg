@@ -777,6 +777,8 @@ class PnpmProvider(BinProvider):
         package_dir = modules_dir / package
         if package_dir.is_dir():
             return package_dir
+        if not self._project_declares_package(package):
+            return None
         virtual_store = modules_dir / ".pnpm"
         if not virtual_store.is_dir():
             return None
@@ -787,6 +789,27 @@ class PnpmProvider(BinProvider):
             if package_dir.is_dir():
                 return package_dir
         return None
+
+    def _project_declares_package(self, package: str) -> bool:
+        if self.install_root is None:
+            return True
+        package_json = self.install_root / "package.json"
+        try:
+            project = json.loads(package_json.read_text())
+        except (OSError, json.JSONDecodeError):
+            return False
+        if not isinstance(project, dict):
+            return False
+        dependency_groups = (
+            "dependencies",
+            "devDependencies",
+            "optionalDependencies",
+            "peerDependencies",
+        )
+        return any(
+            isinstance(project.get(group), dict) and package in project[group]
+            for group in dependency_groups
+        )
 
     def _installed_package_json(self, bin_name: str) -> dict:
         package_dir = self._installed_package_dir(bin_name)
