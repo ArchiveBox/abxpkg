@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import tempfile
 import threading
@@ -444,6 +445,48 @@ class TestBinProvider:
         assert str(
             providers[0].install_root / "node_modules",
         ) in env["NODE_PATH"].split(os.pathsep)
+
+    def test_pnpm_provider_projects_package_owned_bin_alias(self, tmp_path):
+        install_root = tmp_path / "pnpm" / "packages" / "mercury"
+        package_dir = install_root / "node_modules" / "postlight-parser"
+        bin_dir = install_root / "node_modules" / ".bin"
+        package_dir.mkdir(parents=True)
+        bin_dir.mkdir(parents=True)
+        (package_dir / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "postlight-parser",
+                    "version": "2.2.3",
+                    "bin": {
+                        "mercury-parser": "cli.js",
+                    },
+                },
+            ),
+        )
+        mercury_parser = bin_dir / "mercury-parser"
+        mercury_parser.write_text("#!/bin/sh\nexit 0\n")
+        mercury_parser.chmod(0o755)
+
+        provider = PnpmProvider(
+            install_root=install_root,
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        provider.setup_PATH()
+
+        abspath = provider.default_abspath_handler(BinName("postlight-parser"))
+
+        assert abspath == install_root / "node_modules" / ".bin" / "postlight-parser"
+        assert abspath.is_file()
+        assert os.access(abspath, os.X_OK)
+        assert (
+            subprocess.run(
+                [str(abspath), "--version"],
+                check=False,
+                capture_output=True,
+            ).returncode
+            == 0
+        )
 
     def test_build_exec_env_replaces_stale_ambient_js_module_alias(self, tmp_path):
         pnpm_provider = PnpmProvider(
