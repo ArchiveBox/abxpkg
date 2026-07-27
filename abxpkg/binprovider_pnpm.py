@@ -1104,6 +1104,9 @@ class PnpmProvider(BinProvider):
         if direct_abspath:
             return direct_abspath
 
+        package_dir = self._installed_package_dir(str(bin_name))
+        if package_dir is None:
+            return None
         package_info = self._installed_package_json(str(bin_name))
         package_bins = package_info.get("bin", {})
         if isinstance(package_bins, str):
@@ -1111,7 +1114,7 @@ class PnpmProvider(BinProvider):
         if not isinstance(package_bins, dict):
             return None
 
-        for alt_bin_name in package_bins:
+        for alt_bin_name, package_bin_path in package_bins.items():
             alt_abspath = bin_abspath(
                 alt_bin_name,
                 PATH=str(self.bin_dir) if self.bin_dir else self.PATH,
@@ -1123,6 +1126,14 @@ class PnpmProvider(BinProvider):
                 if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
                     return resolved_abspath
                 return self._refresh_bin_link(bin_name, resolved_abspath)
+            if not isinstance(package_bin_path, str) or self.bin_dir is None:
+                continue
+            package_abspath = (package_dir / package_bin_path).resolve(strict=False)
+            if package_abspath.is_file():
+                return self._refresh_bin_link(
+                    bin_name,
+                    TypeAdapter(HostBinPath).validate_python(package_abspath),
+                )
         return None
 
     def default_version_handler(

@@ -448,14 +448,14 @@ class TestBinProvider:
 
     def test_pnpm_provider_projects_package_owned_bin_alias(self, tmp_path):
         install_root = tmp_path / "pnpm" / "packages" / "mercury"
-        package_dir = install_root / "node_modules" / "postlight-parser"
+        package_dir = install_root / "node_modules" / "@postlight" / "parser"
         bin_dir = install_root / "node_modules" / ".bin"
         package_dir.mkdir(parents=True)
         bin_dir.mkdir(parents=True)
         (package_dir / "package.json").write_text(
             json.dumps(
                 {
-                    "name": "postlight-parser",
+                    "name": "@postlight/parser",
                     "version": "2.2.3",
                     "bin": {
                         "mercury-parser": "cli.js",
@@ -463,12 +463,20 @@ class TestBinProvider:
                 },
             ),
         )
-        mercury_parser = bin_dir / "mercury-parser"
+        mercury_parser = package_dir / "cli.js"
         mercury_parser.write_text("#!/bin/sh\nexit 0\n")
         mercury_parser.chmod(0o755)
 
         provider = PnpmProvider(
             install_root=install_root,
+            overrides={
+                "postlight-parser": {
+                    "install_args": (
+                        "--config.blockExoticSubdeps=false",
+                        "@postlight/parser",
+                    ),
+                },
+            },
             postinstall_scripts=True,
             min_release_age=0,
         )
