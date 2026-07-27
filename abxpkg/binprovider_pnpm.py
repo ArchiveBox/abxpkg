@@ -1058,7 +1058,10 @@ class PnpmProvider(BinProvider):
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         package = self._package_name_from_install_args(install_args)
-        if package:
+        linked_bin_path = self._linked_bin_path(
+            TypeAdapter(BinName).validate_python(bin_name),
+        )
+        if package and (linked_bin_path is None or not linked_bin_path.exists()):
             self._refresh_pnpm_exec_link(
                 TypeAdapter(BinName).validate_python(bin_name),
                 package,
