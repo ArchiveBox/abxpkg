@@ -507,6 +507,17 @@ class TestBinProvider:
             == 0
         )
 
+    def test_pnpm_provider_uses_package_arg_after_provider_flags(self):
+        install_args = (
+            "--config.blockExoticSubdeps=false",
+            "@postlight/parser",
+        )
+
+        assert (
+            PnpmProvider._package_name_from_install_args(install_args)
+            == "@postlight/parser"
+        )
+
     def test_build_exec_env_replaces_stale_ambient_js_module_alias(self, tmp_path):
         pnpm_provider = PnpmProvider(
             install_root=tmp_path / "pnpm" / "packages" / "target",

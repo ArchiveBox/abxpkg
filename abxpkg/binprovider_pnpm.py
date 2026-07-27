@@ -1199,12 +1199,9 @@ class PnpmProvider(BinProvider):
         install_args = self.get_install_args(str(bin_name), **context) or [
             str(bin_name),
         ]
-        main_package = install_args[0]
-        package = (
-            "@" + main_package[1:].split("@", 1)[0]
-            if main_package.startswith("@")
-            else main_package.split("@", 1)[0]
-        )
+        package = self._package_name_from_install_args(install_args)
+        if not package:
+            package = str(bin_name)
         if pnpm_abspath is not None:
             try:
                 json_output = self.exec(
