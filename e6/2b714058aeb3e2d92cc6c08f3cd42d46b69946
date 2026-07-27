@@ -1,0 +1,23 @@
+pyproject.toml
+  s_f8414d52051f83::t_51d9da0fbabd53 3
+tests/test_uvprovider.py
+  s_f8414d52051f83::t_4ca89ab836991b 378,393,395
+  s_f8414d52051f83::t_2e6c9d36c6abf9 392
+  s_f8414d52051f83::t_06a164b2a88a50 396-397
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "e62b714058aeb3e2d92cc6c08f3cd42d46b69946",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
