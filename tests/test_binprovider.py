@@ -404,6 +404,47 @@ class TestBinProvider:
             str(yarn_provider.install_root / "node_modules"),
         ]
 
+    def test_js_provider_node_path_layers_do_not_emit_empty_segments(self, tmp_path):
+        """Provider NODE_PATH values are merge layers, never literal empty cwd segments."""
+
+        providers = [
+            PnpmProvider(
+                install_root=tmp_path / "pnpm" / "packages" / "target",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ),
+            NpmProvider(
+                install_root=tmp_path / "npm" / "packages" / "target",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ),
+            YarnProvider(
+                install_root=tmp_path / "yarn" / "packages" / "target",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ),
+            BunProvider(
+                install_root=tmp_path / "bun" / "packages" / "target",
+                postinstall_scripts=True,
+                min_release_age=0,
+            ),
+        ]
+
+        for provider in providers:
+            node_path = provider.ENV["NODE_PATH"]
+            assert node_path
+            assert "" not in node_path.split(os.pathsep)
+
+        env = BinProvider.build_exec_env(
+            providers=providers,
+            base_env={"NODE_PATH": str(tmp_path / "ambient" / "node_modules")},
+        )
+
+        assert "" not in env["NODE_PATH"].split(os.pathsep)
+        assert str(
+            providers[0].install_root / "node_modules",
+        ) in env["NODE_PATH"].split(os.pathsep)
+
     def test_build_exec_env_replaces_stale_ambient_js_module_alias(self, tmp_path):
         pnpm_provider = PnpmProvider(
             install_root=tmp_path / "pnpm" / "packages" / "target",
