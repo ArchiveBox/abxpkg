@@ -266,6 +266,8 @@ class AptProvider(BinProvider):
             candidate = Path(package_path.strip())
             if candidate.name != str(bin_name):
                 continue
+            if candidate.parent.name not in {"bin", "sbin"}:
+                continue
             if candidate.is_file() and os.access(candidate, os.X_OK):
                 self.PATH = self._merge_PATH(
                     candidate.parent,
