@@ -879,11 +879,12 @@ class PnpmProvider(BinProvider):
         bin_name: BinName | HostBinPath,
         package: str,
         no_cache: bool = False,
+        require_declared: bool = True,
     ) -> HostBinPath | None:
         """Recreate a managed shim that asks this pnpm project to run a binary."""
         if self.bin_dir is None or self.install_root is None:
             return None
-        if not self._project_declares_package(package):
+        if require_declared and not self._project_declares_package(package):
             return None
         try:
             installer = self.INSTALLER_BINARY(no_cache=no_cache)
@@ -1056,6 +1057,14 @@ class PnpmProvider(BinProvider):
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
+        package = self._package_name_from_install_args(install_args)
+        if package:
+            self._refresh_pnpm_exec_link(
+                TypeAdapter(BinName).validate_python(bin_name),
+                package,
+                no_cache=no_cache,
+                require_declared=False,
+            )
         return format_subprocess_output(proc.stdout, proc.stderr)
 
     @remap_kwargs({"packages": "install_args"})
