@@ -35,15 +35,15 @@ _CORE_EXPORT_MODULES = (
 # helpers does not require keeping a second hand-written symbol table in sync.
 _PROVIDER_NAME_PRIORITY = (
     "env",
+    "apt",
+    "brew",
     "uv",
     "pnpm",
     "puppeteer",
     "gem",
     "goget",
     "cargo",
-    "brew",
     "playwright",
-    "apt",
     "nix",
     "docker",
     "pip",

@@ -375,7 +375,7 @@ class TestUvProvider:
             # And the cowsay CLI got wired up inside the venv.
             assert (install_root / "venv" / "bin" / "cowsay").exists()
 
-    def test_install_root_module_dependency_without_console_script_is_not_runnable(
+    def test_install_root_module_dependency_loads_without_console_script(
         self,
         test_machine,
     ):
@@ -389,12 +389,13 @@ class TestUvProvider:
                 overrides={"imagesize": {"install_args": ["imagesize>=2.0.0"]}},
             )
 
-            with pytest.raises(BinProviderInstallError):
-                provider.install("imagesize")
+            installed = provider.install("imagesize")
 
-            assert not (
-                install_root / "packages" / "imagesize" / "venv" / "bin" / "imagesize"
-            ).exists()
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_abspath.name in {"__init__.py", "imagesize.py"}
+            assert "site-packages" in str(installed.loaded_abspath)
+            assert installed.loaded_version is not None
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,

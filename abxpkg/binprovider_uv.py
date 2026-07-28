@@ -1080,6 +1080,31 @@ class UvProvider(BinProvider):
                 candidate = venv_root / "bin" / str(bin_name)
                 if candidate.exists():
                     return TypeAdapter(HostBinPath).validate_python(candidate)
+                site_packages_locations = [
+                    Path(line.split("Location: ", 1)[1])
+                    for line in proc.stdout.splitlines()
+                    if line.startswith("Location: ")
+                ]
+                module_names = [tool_name.replace("-", "_").replace(".", "_")]
+                for line in proc.stdout.splitlines():
+                    if line.startswith("Name: "):
+                        package_name = line.split("Name: ", 1)[1].strip()
+                        normalized_package_name = package_name.replace(
+                            "-",
+                            "_",
+                        ).replace(".", "_")
+                        if normalized_package_name not in module_names:
+                            module_names.append(normalized_package_name)
+                for location in site_packages_locations:
+                    for module_name in module_names:
+                        for module_candidate in (
+                            location / module_name / "__init__.py",
+                            location / f"{module_name}.py",
+                        ):
+                            if module_candidate.exists():
+                                return TypeAdapter(HostBinPath).validate_python(
+                                    module_candidate,
+                                )
         else:
             tool_name = self._package_name_for_bin(str(bin_name), **context)
             candidate = self.tool_dir / tool_name / "bin" / str(bin_name)

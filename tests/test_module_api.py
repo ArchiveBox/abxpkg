@@ -1,5 +1,5 @@
 from abxpkg import EnvProvider
-from abxpkg.__init__ import _provider_class
+from abxpkg.__init__ import _PROVIDER_NAME_PRIORITY, _provider_class
 
 
 class TestModuleApi:
@@ -37,3 +37,12 @@ class TestModuleApi:
         assert provider_names == ["env", "env"]
         assert provider_class_names == ["EnvProvider", "EnvProvider"]
         assert provider_class_by_name["env"] is EnvProvider
+
+    def test_os_package_providers_precede_python_package_provider(self):
+        assert _PROVIDER_NAME_PRIORITY.index("env") == 0
+        assert _PROVIDER_NAME_PRIORITY.index("apt") < _PROVIDER_NAME_PRIORITY.index(
+            "uv",
+        )
+        assert _PROVIDER_NAME_PRIORITY.index("brew") < _PROVIDER_NAME_PRIORITY.index(
+            "uv",
+        )
