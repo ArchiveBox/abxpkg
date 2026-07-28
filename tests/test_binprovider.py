@@ -229,6 +229,24 @@ class TestBinProvider:
         )
         test_machine.assert_shallow_binary_loaded(loaded_or_installed)
 
+    def test_env_provider_searches_common_host_chrome_names_for_chromium(self):
+        provider = EnvProvider()
+
+        assert provider._host_candidate_names("chromium") == (
+            "chromium",
+            "chromium-browser",
+            "google-chrome",
+            "google-chrome-stable",
+            "chrome",
+        )
+        assert provider._host_candidate_names("chrome") == (
+            "chrome",
+            "chromium",
+            "chromium-browser",
+            "google-chrome",
+            "google-chrome-stable",
+        )
+
     def test_provider_ENV_includes_runtime_and_installer_context(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmpdir_path = Path(tmpdir)
