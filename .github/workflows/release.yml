@@ -30,6 +30,7 @@ jobs:
       id-token: write
     outputs:
       version: ${{ steps.release.outputs.version }}
+      cascade_ready: ${{ steps.cascade-state.outputs.ready }}
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       RELEASE_BRANCH: main
@@ -62,9 +63,24 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_GH_TOKEN || github.token }}
         run: ./bin/release.sh
 
+      - name: Confirm this tested commit owns the release tag
+        id: cascade-state
+        run: |
+          set -Eeuo pipefail
+          TARGET=""
+          while read -r sha _; do
+            TARGET="$sha"
+          done < <(git ls-remote origin "refs/tags/v${{ steps.release.outputs.version }}")
+          if [[ "$TARGET" == "$RELEASE_SHA" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
   cascade:
     name: Cascade verified release
     needs: publish
+    if: needs.publish.outputs.cascade_ready == 'true'
     permissions:
       contents: read
     uses: ArchiveBox/monorepo/.github/workflows/cascade-release.yml@main
