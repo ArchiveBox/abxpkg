@@ -37,8 +37,8 @@ class GoGetProvider(BinProvider):
     INSTALLER_BIN: BinName = "go"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
         "env",
-        "apt",
         "brew",
+        "apt",
     )
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ("version",)
 

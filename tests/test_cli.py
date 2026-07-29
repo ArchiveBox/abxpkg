@@ -2329,6 +2329,11 @@ def test_installer_provider_chains_are_host_first(provider_name):
 
     assert installer_providers
     assert installer_providers[0] == "env"
+    if "apt" in installer_providers:
+        apt_index = installer_providers.index("apt")
+        for preferred_provider in ("node", "bash", "brew", "nix"):
+            if preferred_provider in installer_providers:
+                assert installer_providers.index(preferred_provider) < apt_index
 
 
 @pytest.mark.parametrize("binary_name", ["go", "brew", "npm"])

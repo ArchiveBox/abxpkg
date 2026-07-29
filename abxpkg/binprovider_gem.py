@@ -36,9 +36,9 @@ class GemProvider(BinProvider):
     INSTALLER_BIN: BinName = "gem"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
         "env",
-        "apt",
         "brew",
         "nix",
+        "apt",
     )
 
     PATH: PATHStr = DEFAULT_ENV_PATH  # Starts with ambient system PATH; setup_PATH() prepends/appends gem bin_dir depending on whether install_root/bin_dir were overridden.

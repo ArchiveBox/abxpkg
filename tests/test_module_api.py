@@ -38,11 +38,12 @@ class TestModuleApi:
         assert provider_class_names == ["EnvProvider", "EnvProvider"]
         assert provider_class_by_name["env"] is EnvProvider
 
-    def test_os_package_providers_precede_python_package_provider(self):
+    def test_default_provider_priority_prefers_nonroot_before_root_and_source(self):
         assert _PROVIDER_NAME_PRIORITY.index("env") == 0
-        assert _PROVIDER_NAME_PRIORITY.index("apt") < _PROVIDER_NAME_PRIORITY.index(
-            "uv",
-        )
-        assert _PROVIDER_NAME_PRIORITY.index("brew") < _PROVIDER_NAME_PRIORITY.index(
-            "uv",
-        )
+        apt_index = _PROVIDER_NAME_PRIORITY.index("apt")
+
+        for provider_name in ("brew", "uv", "pip", "node", "npm", "bash", "nix"):
+            assert _PROVIDER_NAME_PRIORITY.index(provider_name) < apt_index
+
+        for provider_name in ("gem", "goget", "cargo"):
+            assert apt_index < _PROVIDER_NAME_PRIORITY.index(provider_name)

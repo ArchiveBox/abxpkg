@@ -3,10 +3,12 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
+import abxpkg.binprovider_apt as apt_module
 from abxpkg import AptProvider, Binary, EnvProvider
 
 
@@ -51,6 +53,49 @@ class TestAptProviderConfig:
                 "create_home": False,
             },
         }
+
+    def test_provider_skips_unnecessary_update_when_apt_lists_are_recent(
+        self,
+        tmp_path,
+    ):
+        lists_dir = tmp_path / "lists"
+        lists_dir.mkdir()
+        list_file = lists_dir / "archive.ubuntu.com_ubuntu_dists_noble_InRelease"
+        list_file.write_text("Package list marker", encoding="utf-8")
+
+        previous_update_check = apt_module._LAST_UPDATE_CHECK
+        apt_module._LAST_UPDATE_CHECK = None
+        try:
+            provider = AptProvider()
+
+            assert provider.apt_lists_recent(lists_dir)
+            assert not provider.should_update_apt_cache(
+                custom_repositories_configured=False,
+                lists_dir=lists_dir,
+            )
+            assert provider.should_update_apt_cache(
+                custom_repositories_configured=True,
+                lists_dir=lists_dir,
+            )
+
+            stale_mtime = time.time() - apt_module.UPDATE_CHECK_INTERVAL - 60
+            os.utime(list_file, (stale_mtime, stale_mtime))
+            assert not provider.apt_lists_recent(lists_dir)
+            assert provider.should_update_apt_cache(
+                custom_repositories_configured=False,
+                lists_dir=lists_dir,
+            )
+        finally:
+            apt_module._LAST_UPDATE_CHECK = previous_update_check
+
+    def test_provider_updates_when_apt_lists_are_missing(self, tmp_path):
+        provider = AptProvider()
+
+        assert not provider.apt_lists_recent(tmp_path / "missing")
+        assert provider.should_update_apt_cache(
+            custom_repositories_configured=False,
+            lists_dir=tmp_path / "missing",
+        )
 
 
 @pytest.mark.root_required

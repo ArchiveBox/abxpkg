@@ -22,6 +22,7 @@ UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
 APT_LOCK_PATH = Path("/tmp/abxpkg-apt.lock")
 DEFAULT_APT_KEYRING_DIR = Path("/etc/apt/keyrings")
 DEFAULT_APT_SOURCES_DIR = Path("/etc/apt/sources.list.d")
+DEFAULT_APT_LISTS_DIR = Path("/var/lib/apt/lists")
 
 
 class AptProvider(BinProvider):
@@ -57,6 +58,33 @@ class AptProvider(BinProvider):
                 yield
             finally:
                 fcntl.flock(lock_file, fcntl.LOCK_UN)
+
+    def apt_lists_recent(self, lists_dir: Path = DEFAULT_APT_LISTS_DIR) -> bool:
+        """Return True when apt package lists already exist and were updated recently."""
+        try:
+            newest_list_mtime = max(
+                path.stat().st_mtime
+                for path in lists_dir.iterdir()
+                if path.is_file() and path.name != "lock"
+            )
+        except (OSError, ValueError):
+            return False
+        return (time.time() - newest_list_mtime) <= UPDATE_CHECK_INTERVAL
+
+    def should_update_apt_cache(
+        self,
+        *,
+        custom_repositories_configured: bool,
+        lists_dir: Path = DEFAULT_APT_LISTS_DIR,
+    ) -> bool:
+        if custom_repositories_configured:
+            return True
+        if (
+            _LAST_UPDATE_CHECK
+            and (time.time() - _LAST_UPDATE_CHECK) <= UPDATE_CHECK_INTERVAL
+        ):
+            return False
+        return not self.apt_lists_recent(lists_dir)
 
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH on first use from dpkg-discovered package runtime bin dirs, not from apt-get itself."""
@@ -441,10 +469,8 @@ class AptProvider(BinProvider):
             custom_repositories_configured = self.setup_apt_repositories(
                 no_cache=no_cache,
             )
-            if (
-                custom_repositories_configured
-                or not _LAST_UPDATE_CHECK
-                or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
+            if self.should_update_apt_cache(
+                custom_repositories_configured=custom_repositories_configured,
             ):
                 # only update if we haven't checked in the last day
                 self.exec(
@@ -499,10 +525,8 @@ class AptProvider(BinProvider):
             custom_repositories_configured = self.setup_apt_repositories(
                 no_cache=no_cache,
             )
-            if (
-                custom_repositories_configured
-                or not _LAST_UPDATE_CHECK
-                or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
+            if self.should_update_apt_cache(
+                custom_repositories_configured=custom_repositories_configured,
             ):
                 self.exec(
                     bin_name=installer_bin,

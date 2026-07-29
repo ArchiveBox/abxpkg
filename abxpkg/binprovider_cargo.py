@@ -32,8 +32,8 @@ class CargoProvider(BinProvider):
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
         "env",
         "brew",
-        "apt",
         "nix",
+        "apt",
     )
 
     PATH: PATHStr = ""  # Starts empty; setup_PATH() fills it with cargo_home/bin plus any install_root/bin override.
