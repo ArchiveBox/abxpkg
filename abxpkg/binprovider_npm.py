@@ -732,12 +732,55 @@ class NpmProvider(BinProvider):
         except Exception:
             return None
 
-        # fallback to using npm show to get alternate binary names based on the package, then try to find those in BinProvider.PATH
+        # Resolve alternate executable names from the package that was actually
+        # installed. This is both authoritative and available offline; a second
+        # registry request after a successful install makes entrypoint discovery
+        # needlessly flaky.
         try:
             install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
             main_package = install_args[
                 0
             ]  # assume first package in list is the main one
+            package = (
+                "@" + main_package[1:].split("@", 1)[0]
+                if main_package.startswith("@")
+                else main_package.split("@", 1)[0]
+            )
+            package_json = (
+                self.install_root / "node_modules" / package / "package.json"
+                if self.install_root
+                else None
+            )
+            package_info = (
+                json.loads(package_json.read_text(encoding="utf-8"))
+                if package_json and package_json.is_file()
+                else {}
+            )
+            package_bins = (
+                package_info.get("bin", {}) if isinstance(package_info, dict) else {}
+            )
+            if isinstance(package_bins, str):
+                package_bins = {package.rsplit("/", 1)[-1]: package_bins}
+
+            alt_bin_names = package_bins.keys()
+            for alt_bin_name in alt_bin_names:
+                abspath = bin_abspath(
+                    alt_bin_name,
+                    PATH=str(self.bin_dir) if self.bin_dir else self.PATH,
+                )
+                if abspath:
+                    direct_abspath = TypeAdapter(HostBinPath).validate_python(abspath)
+                    if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
+                        return direct_abspath
+                    return self._refresh_bin_link(bin_name, direct_abspath)
+        except Exception:
+            pass
+
+        # Before installation there is no local package metadata yet, so keep
+        # the registry lookup as the discovery fallback.
+        try:
+            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
+            main_package = install_args[0]
             package_info = json.loads(
                 self.exec(
                     bin_name=npm_abspath,
@@ -752,14 +795,6 @@ class NpmProvider(BinProvider):
                     quiet=True,
                 ).stdout.strip(),
             )
-            # { ...
-            #   "version": "2.2.3",
-            #   "bin": {
-            #     "mercury-parser": "cli.js",
-            #     "postlight-parser": "cli.js"
-            #   },
-            #   ...
-            # }
             alt_bin_names = (
                 package_info.get("bin", package_info)
                 if isinstance(package_info, dict)
