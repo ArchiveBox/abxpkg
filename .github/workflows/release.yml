@@ -13,10 +13,7 @@ on:
         required: true
         type: string
 
-permissions:
-  actions: read
-  contents: write
-  id-token: write
+permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -34,6 +31,10 @@ jobs:
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-24.04
     environment: pypi
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
     env:
       RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.release_sha }}
       RELEASE_BRANCH: main
