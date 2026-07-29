@@ -1247,6 +1247,102 @@ def test_env_command_installs_forum_dl_style_uv_required_binary(tmp_path):
     assert os.access(entrypoint, os.X_OK)
 
 
+def test_env_command_installs_uv_binary_under_sudo_uid_without_root_owned_state(
+    tmp_path,
+):
+    sudo = shutil.which("sudo")
+    assert sudo, "sudo is required to verify root-invoked user-owned installs"
+
+    home = tmp_path / "home"
+    lib = home / ".config" / "abx" / "lib"
+    package_root = lib / "uv" / "packages" / "forum-dl"
+    config = tmp_path / "forumdl.json"
+    home.mkdir(parents=True)
+    config.write_text(
+        json.dumps(
+            {
+                "properties": {
+                    "FORUMDL_BINARY": {"default": "forum-dl"},
+                },
+                "required_binaries": [
+                    {
+                        "name": "{FORUMDL_BINARY}",
+                        "binproviders": "env,uv",
+                        "min_release_age": 3,
+                        "overrides": {
+                            "uv": {
+                                "install_args": [
+                                    "--no-deps",
+                                    "forum-dl",
+                                    "chardet==5.2.0",
+                                    "pydantic==2.12.3",
+                                    "pydantic-core==2.41.4",
+                                    "typing-extensions>=4.14.1",
+                                    "annotated-types>=0.6.0",
+                                    "typing-inspection>=0.4.2",
+                                    "beautifulsoup4",
+                                    "soupsieve",
+                                    "lxml",
+                                    "requests",
+                                    "urllib3",
+                                    "certifi",
+                                    "idna",
+                                    "charset-normalizer",
+                                    "tenacity",
+                                    "python-dateutil",
+                                    "six",
+                                    "html2text",
+                                    "warcio",
+                                ],
+                                "postinstall_scripts": True,
+                            },
+                        },
+                    },
+                ],
+            },
+            indent=2,
+        ),
+    )
+
+    proc = subprocess.run(
+        [
+            sudo,
+            "-n",
+            "env",
+            f"HOME={home}",
+            f"XDG_CONFIG_HOME={home / '.config'}",
+            str(_abxpkg_executable()),
+            "--no-cache",
+            "env",
+            "--install",
+            "--json",
+            f"--lib={lib}",
+            f"--deps-from={config}:required_binaries",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=900,
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout)
+    entrypoint = package_root / "venv" / "bin" / "forum-dl"
+    projected_entrypoint = lib / "env" / "bin" / "forum-dl"
+    assert payload["FORUMDL_BINARY"] == str(projected_entrypoint)
+    assert projected_entrypoint.is_symlink()
+    assert projected_entrypoint.resolve() == entrypoint
+    assert os.access(entrypoint, os.X_OK)
+
+    abx_config = home / ".config" / "abx"
+    root_owned = [
+        path
+        for path in [abx_config, *abx_config.rglob("*")]
+        if path.lstat().st_uid == 0
+    ]
+    assert root_owned == []
+
+
 def test_env_command_exports_and_runs_projected_host_brew(
     tmp_path,
     test_machine,

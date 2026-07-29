@@ -111,6 +111,7 @@ class UvProvider(BinProvider):
         env: dict[str, str] = {
             "UV_ACTIVE": "1",
             "UV_CACHE_DIR": str(self.cache_dir),
+            "PYTHONDONTWRITEBYTECODE": "1",
         }
         if self.install_root:
             venv_root = self.install_root / "venv"
@@ -324,9 +325,7 @@ class UvProvider(BinProvider):
         )
 
     def _cache_args(self, *, no_cache: bool = False) -> list[str]:
-        if no_cache or not self._ensure_writable_cache_dir(self.cache_dir):
-            return ["--no-cache"]
-        return [f"--cache-dir={self.cache_dir}"]
+        return ["--no-cache"]
 
     @property
     def tool_dir(self) -> Path:
@@ -400,7 +399,6 @@ class UvProvider(BinProvider):
     ) -> None:
         if self.euid is None:
             self.euid = self._managed_install_euid()
-        self._ensure_writable_cache_dir(self.cache_dir)
         if self.install_root:
             self._ensure_venv(no_cache=no_cache)
         else:
@@ -408,12 +406,24 @@ class UvProvider(BinProvider):
             if self.bin_dir:
                 self.bin_dir.mkdir(parents=True, exist_ok=True)
 
+    def detect_euid(
+        self,
+        owner_paths=(),
+        preserve_root: bool = False,
+    ) -> int:
+        if self.install_root is not None:
+            return self._managed_install_euid()
+        return super().detect_euid(
+            owner_paths=owner_paths,
+            preserve_root=preserve_root,
+        )
+
     def _managed_install_euid(self) -> int:
         """Return the uid that should own uv-managed package environments."""
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
-        return self.detect_euid(
+        return super().detect_euid(
             owner_paths=(self.install_root, self.tool_dir, self.bin_dir),
             preserve_root=True,
         )
@@ -508,7 +518,8 @@ class UvProvider(BinProvider):
             # wheels such as pydantic-core at an incompatible ABI, so rebuild it
             # before any package install/load can leak those paths downstream.
             shutil.rmtree(venv_root, ignore_errors=True)
-        target_root.parent.mkdir(parents=True, exist_ok=True)
+        target_root.mkdir(parents=True, exist_ok=True)
+        self._ensure_managed_root_access(target_root)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         proc = self.exec(
@@ -555,6 +566,9 @@ class UvProvider(BinProvider):
             gid = os.getegid()
 
         paths = [
+            install_root.parent.parent,
+            install_root.parent,
+            root.parent,
             root,
             root / "venv",
             root / "venv" / "bin",
@@ -970,6 +984,7 @@ class UvProvider(BinProvider):
             uninstall_proc = self.exec(
                 bin_name=installer_bin,
                 cmd=[
+                    *self._cache_args(no_cache=no_cache),
                     "pip",
                     "uninstall",
                     "--python",
@@ -1014,6 +1029,36 @@ class UvProvider(BinProvider):
             self._ensure_managed_root_access(target_root)
         return format_subprocess_output(proc.stdout, proc.stderr)
 
+    def write_cached_binary(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+        loaded_version: SemVer,
+        loaded_sha256: str,
+        resolved_provider_name: str | None = None,
+        resolved_provider: BinProvider | None = None,
+        cache_kind: str = "binary",
+    ):
+        result = super().write_cached_binary(
+            bin_name,
+            abspath,
+            loaded_version,
+            loaded_sha256,
+            resolved_provider_name,
+            resolved_provider,
+            cache_kind,
+        )
+        if self.install_root is not None:
+            self._ensure_managed_root_access(self.install_root)
+            derived_env_path = self.derived_env_path
+            if os.geteuid() == 0 and derived_env_path and derived_env_path.exists():
+                try:
+                    pw_record = self.get_pw_record(self.EUID)
+                    os.chown(derived_env_path, self.EUID, pw_record.pw_gid)
+                except (PermissionError, OSError, KeyError):
+                    pass
+        return result
+
     @remap_kwargs({"packages": "install_args"})
     def default_uninstall_handler(
         self,
@@ -1043,6 +1088,7 @@ class UvProvider(BinProvider):
                 / "python"
             )
             cmd = [
+                *self._cache_args(no_cache=no_cache),
                 "pip",
                 "uninstall",
                 "--python",
@@ -1081,6 +1127,7 @@ class UvProvider(BinProvider):
                 proc = self.exec(
                     bin_name=installer_binary.loaded_abspath,
                     cmd=[
+                        *self._cache_args(no_cache=no_cache),
                         "pip",
                         "show",
                         "--python",

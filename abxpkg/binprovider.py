@@ -1194,6 +1194,12 @@ class BinProvider(BaseModel):
         ] = record
         try:
             save_derived_cache(derived_env_path, cache)
+            if os.geteuid() == 0:
+                try:
+                    pw_record = self.get_pw_record(self.EUID)
+                    os.chown(derived_env_path, self.EUID, pw_record.pw_gid)
+                except (PermissionError, OSError, KeyError):
+                    pass
         except Exception as err:
             logger.debug(
                 "Skipping cache write for %s via %s: %s",
@@ -3488,6 +3494,25 @@ class EnvProvider(BinProvider):
         },
     }
 
+    def detect_euid(
+        self,
+        owner_paths: Iterable[str | Path | None] = (),
+        preserve_root: bool = False,
+    ) -> int:
+        if os.geteuid() == 0:
+            sudo_uid = os.environ.get("SUDO_UID")
+            if sudo_uid:
+                try:
+                    uid = int(sudo_uid)
+                except ValueError:
+                    uid = 0
+                if uid > 0 and self.uid_has_passwd_entry(uid):
+                    return uid
+        return super().detect_euid(
+            owner_paths=owner_paths,
+            preserve_root=preserve_root,
+        )
+
     def set_projection_providers(
         self,
         providers: Iterable[BinProvider],
@@ -3532,6 +3557,7 @@ class EnvProvider(BinProvider):
             Path(str(bin_name)).name,
             binary.loaded_abspath,
         )
+        self._ensure_projection_owner(projected_abspath, binary.loaded_euid)
         if (
             binary.loaded_version is not None
             and binary.loaded_sha256 is not None
@@ -3547,6 +3573,37 @@ class EnvProvider(BinProvider):
                 cache_kind="projection",
             )
         return projected_abspath
+
+    def _ensure_projection_owner(
+        self,
+        projected_abspath: HostBinPath | Path,
+        uid: int | None,
+    ) -> None:
+        if uid is None or uid < 0 or os.geteuid() != 0:
+            return
+        try:
+            gid = self.get_pw_record(uid).pw_gid
+        except KeyError:
+            gid = os.getegid()
+        paths = [
+            self.install_root.parent.parent if self.install_root is not None else None,
+            self.install_root.parent if self.install_root is not None else None,
+            self.install_root,
+            self.bin_dir.parent if self.bin_dir is not None else None,
+            self.bin_dir,
+            Path(projected_abspath),
+            self.derived_env_path,
+        ]
+        for path in paths:
+            if path is None or not (path.exists() or path.is_symlink()):
+                continue
+            try:
+                if path.is_symlink():
+                    os.lchown(path, uid, gid)
+                else:
+                    os.chown(path, uid, gid)
+            except (NotImplementedError, PermissionError, OSError):
+                pass
 
     def execution_PATH(self) -> PATHStr:
         """Expose accepted host projections without elevating all discovery paths."""
@@ -4234,7 +4291,7 @@ class EnvProvider(BinProvider):
                     ),
                 ),
             )
-        return cast(Any, BinProvider.write_cached_binary).__wrapped__(
+        result = cast(Any, BinProvider.write_cached_binary).__wrapped__(
             self,
             bin_name,
             abspath,
@@ -4244,6 +4301,10 @@ class EnvProvider(BinProvider):
             resolved_provider,
             cache_kind,
         )
+        if result is not None:
+            _, loaded_euid = result
+            self._ensure_projection_owner(abspath, loaded_euid)
+        return result
 
 
 ############################################################################################################
