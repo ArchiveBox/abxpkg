@@ -328,16 +328,14 @@ main() {
     if gh release view "${TAG_PREFIX}${version}" --repo "${slug}" >/dev/null 2>&1; then
         github_release_exists=true
     fi
-    if [[ "${relation}" == "eq" && "${pypi_exists}" == true && "${github_release_exists}" == true && -n "${release_target}" ]]; then
-        if verify_release_outputs "${slug}" "${version}" "${release_sha}"; then
-            echo "${PYPI_PACKAGE} ${version} is already completely released; nothing to publish"
-            return
+    if [[ "${relation}" == "eq" ]]; then
+        if [[ "${pypi_exists}" != true || "${github_release_exists}" != true || -z "${release_target}" ]]; then
+            echo "${PYPI_PACKAGE} ${version} is already reserved but its release outputs are incomplete; bump the version after fixing the release" >&2
+            return 1
         fi
-        echo "${PYPI_PACKAGE} ${version} has incomplete release outputs; recovering from tested artifacts"
-    fi
-    if [[ "${relation}" == "eq" && ( -z "${release_target}" || "${release_target}" != "${release_sha}" ) ]]; then
-        echo "Refusing to recover partial release ${version}: no release tag anchors it to ${release_sha}" >&2
-        return 1
+        verify_release_outputs "${slug}" "${version}" "${release_target}"
+        echo "${PYPI_PACKAGE} ${version} is already completely released; nothing to publish"
+        return
     fi
 
     require_successful_workflows "${slug}" "${release_sha}"
