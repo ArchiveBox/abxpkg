@@ -4504,6 +4504,10 @@ class HandlerDict(TypedDict, total=False):
     min_release_age: float | None
     install_timeout: int
     version_timeout: int
+    apt_gpg_keys: dict[str, str]
+    apt_sources: dict[str, str]
+    apt_system_groups: dict[str, dict[str, Any]]
+    apt_system_users: dict[str, dict[str, Any]]
     abspath: AbspathHandlerValue
     version: VersionHandlerValue
     install_args: InstallArgsHandlerValue

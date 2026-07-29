@@ -5,10 +5,11 @@ import fcntl
 import os
 import sys
 import time
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 
-from pydantic import TypeAdapter, model_validator
+from pydantic import Field, TypeAdapter, model_validator
 from typing import ClassVar, Self
 
 from .base_types import BinProviderName, PATHStr, BinName, HostBinPath, InstallArgs
@@ -19,6 +20,8 @@ from .logging import format_subprocess_output
 _LAST_UPDATE_CHECK = None
 UPDATE_CHECK_INTERVAL = 60 * 60 * 24  # 1 day
 APT_LOCK_PATH = Path("/tmp/abxpkg-apt.lock")
+DEFAULT_APT_KEYRING_DIR = Path("/etc/apt/keyrings")
+DEFAULT_APT_SOURCES_DIR = Path("/etc/apt/sources.list.d")
 
 
 class AptProvider(BinProvider):
@@ -32,6 +35,10 @@ class AptProvider(BinProvider):
     euid: int | None = (
         0  # Import-time default that forces every apt subprocess through the root/sudo execution path.
     )
+    apt_gpg_keys: dict[str, str] = Field(default_factory=dict)
+    apt_sources: dict[str, str] = Field(default_factory=dict)
+    apt_system_groups: dict[str, dict[str, object]] = Field(default_factory=dict)
+    apt_system_users: dict[str, dict[str, object]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def add_package_aliases(self) -> Self:
@@ -153,6 +160,130 @@ class AptProvider(BinProvider):
             )
         # apt is debian-derived; fall back to ubuntu LTS for derivatives.
         return "ubuntu", codename or "noble"
+
+    @staticmethod
+    def _apt_key_path(path: str) -> Path:
+        candidate = Path(path)
+        return (
+            candidate
+            if candidate.is_absolute()
+            else DEFAULT_APT_KEYRING_DIR / candidate
+        )
+
+    @staticmethod
+    def _apt_source_path(path: str) -> Path:
+        candidate = Path(path)
+        return (
+            candidate
+            if candidate.is_absolute()
+            else DEFAULT_APT_SOURCES_DIR / candidate
+        )
+
+    def _write_apt_file(self, path: Path, content: str | bytes) -> None:
+        self.exec(
+            bin_name="install",
+            cmd=["-d", "-m", "0755", path.parent],
+            quiet=True,
+            should_log_command=False,
+        )
+        proc = self.exec(
+            bin_name="tee",
+            cmd=[path],
+            input=content,
+            text=isinstance(content, str),
+            quiet=True,
+            should_log_command=False,
+        )
+        if proc.returncode != 0:
+            self._raise_proc_error("install", [str(path)], proc)
+        chmod = self.exec(
+            bin_name="chmod",
+            cmd=["0644", path],
+            quiet=True,
+            should_log_command=False,
+        )
+        if chmod.returncode != 0:
+            self._raise_proc_error("install", [str(path)], chmod)
+
+    def setup_apt_system_accounts(self) -> None:
+        """Create system users/groups declared by apt provider overrides."""
+        for group_name, group_config in self.apt_system_groups.items():
+            exists = self.exec(
+                bin_name="getent",
+                cmd=["group", group_name],
+                quiet=True,
+                should_log_command=False,
+            )
+            if exists.returncode == 0:
+                continue
+
+            groupadd_args = ["--system"]
+            gid = group_config.get("gid")
+            if gid is not None:
+                groupadd_args.extend(["--gid", str(gid)])
+            groupadd_args.append(group_name)
+            proc = self.exec(bin_name="groupadd", cmd=groupadd_args, quiet=True)
+            if proc.returncode != 0:
+                self._raise_proc_error("install", groupadd_args, proc)
+
+        for user_name, user_config in self.apt_system_users.items():
+            exists = self.exec(
+                bin_name="id",
+                cmd=["-u", user_name],
+                quiet=True,
+                should_log_command=False,
+            )
+            if exists.returncode == 0:
+                continue
+
+            useradd_args = ["--system"]
+            uid = user_config.get("uid")
+            if uid is not None:
+                useradd_args.extend(["--uid", str(uid)])
+            gid = user_config.get("gid")
+            if gid is not None:
+                useradd_args.extend(["--gid", str(gid)])
+            home = user_config.get("home")
+            if home is not None:
+                useradd_args.extend(["--home-dir", str(home)])
+            shell = user_config.get("shell")
+            if shell is not None:
+                useradd_args.extend(["--shell", str(shell)])
+            groups = user_config.get("groups")
+            if isinstance(groups, (list, tuple)) and groups:
+                useradd_args.extend(
+                    ["--groups", ",".join(str(group) for group in groups)],
+                )
+            if bool(user_config.get("create_home", False)):
+                useradd_args.append("--create-home")
+            else:
+                useradd_args.append("--no-create-home")
+            useradd_args.append(user_name)
+
+            proc = self.exec(bin_name="useradd", cmd=useradd_args, quiet=True)
+            if proc.returncode != 0:
+                self._raise_proc_error("install", useradd_args, proc)
+
+    def setup_apt_repositories(self, no_cache: bool = False) -> bool:
+        """Install custom apt repository keys and source files declared by overrides."""
+        if not self.apt_gpg_keys and not self.apt_sources:
+            return False
+
+        for key_url, key_path in self.apt_gpg_keys.items():
+            with urllib.request.urlopen(
+                key_url,
+                timeout=self.install_timeout or 60,
+            ) as response:
+                key_bytes = response.read()
+            self._write_apt_file(self._apt_key_path(key_path), key_bytes)
+
+        for source_path, source in self.apt_sources.items():
+            self._write_apt_file(
+                self._apt_source_path(source_path),
+                source.rstrip() + "\n",
+            )
+
+        return True
 
     def default_docs_url_handler(
         self,
@@ -306,8 +437,13 @@ class AptProvider(BinProvider):
             )
 
         with self.apt_lock():
+            self.setup_apt_system_accounts()
+            custom_repositories_configured = self.setup_apt_repositories(
+                no_cache=no_cache,
+            )
             if (
-                not _LAST_UPDATE_CHECK
+                custom_repositories_configured
+                or not _LAST_UPDATE_CHECK
                 or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
             ):
                 # only update if we haven't checked in the last day
@@ -359,8 +495,13 @@ class AptProvider(BinProvider):
             )
 
         with self.apt_lock():
+            self.setup_apt_system_accounts()
+            custom_repositories_configured = self.setup_apt_repositories(
+                no_cache=no_cache,
+            )
             if (
-                not _LAST_UPDATE_CHECK
+                custom_repositories_configured
+                or not _LAST_UPDATE_CHECK
                 or (time.time() - _LAST_UPDATE_CHECK) > UPDATE_CHECK_INTERVAL
             ):
                 self.exec(
@@ -399,6 +540,21 @@ class AptProvider(BinProvider):
     ) -> list[ShallowBinary]:
         """Search apt's package index for packages whose name matches bin_name (substring)."""
         from .binary import Binary
+
+        with self.apt_lock():
+            custom_repositories_configured = self.setup_apt_repositories(
+                no_cache=bool(context.get("no_cache", False)),
+            )
+            if custom_repositories_configured:
+                installer_bin = self.INSTALLER_BINARY(
+                    no_cache=bool(context.get("no_cache", False)),
+                ).loaded_abspath
+                assert installer_bin
+                self.exec(
+                    bin_name=installer_bin,
+                    cmd=["update", "-qq"],
+                    timeout=timeout,
+                )
 
         # ``apt-cache search --names-only`` returns lines like ``<name> - <description>``.
         # Routing through ``self.exec`` lets apt's setup_PATH/INSTALLER_BINARY

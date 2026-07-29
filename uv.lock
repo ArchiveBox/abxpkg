@@ -2,11 +2,6 @@ version = 1
 revision = 3
 requires-python = ">=3.12, <3.15"
 
-[options]
-
-[options.exclude-newer-package]
-abxbus = { timestamp = "2026-07-29T17:23:01.075127717Z", span = "PT1S" }
-
 [[package]]
 name = "abxbus"
 version = "2.5.43"
@@ -23,7 +18,7 @@ wheels = [
 
 [[package]]
 name = "abxpkg"
-version = "1.12.31"
+version = "1.12.32"
 source = { editable = "." }
 dependencies = [
     { name = "pip" },

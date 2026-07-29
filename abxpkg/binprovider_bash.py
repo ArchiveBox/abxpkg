@@ -4,6 +4,7 @@ __package__ = "abxpkg"
 
 import os
 import shlex
+import sys
 from pathlib import Path
 from typing import Any, ClassVar, Self
 
@@ -210,6 +211,7 @@ class BashProvider(EnvProvider):
             timeout=timeout if timeout is not None else self.install_timeout,
             env={
                 **os.environ,
+                "ABXPKG_PYTHON": sys.executable,
                 "INSTALL_ROOT": str(install_root),
                 "BIN_DIR": str(bin_dir),
                 "BASH_INSTALL_ROOT": str(install_root),
@@ -254,6 +256,7 @@ class BashProvider(EnvProvider):
             timeout=timeout if timeout is not None else self.install_timeout,
             env={
                 **os.environ,
+                "ABXPKG_PYTHON": sys.executable,
                 "INSTALL_ROOT": str(install_root),
                 "BIN_DIR": str(bin_dir),
                 "BASH_INSTALL_ROOT": str(install_root),
@@ -288,6 +291,7 @@ class BashProvider(EnvProvider):
                 timeout=timeout if timeout is not None else self.install_timeout,
                 env={
                     **os.environ,
+                    "ABXPKG_PYTHON": sys.executable,
                     "INSTALL_ROOT": str(install_root),
                     "BIN_DIR": str(bin_dir),
                     "BASH_INSTALL_ROOT": str(install_root),

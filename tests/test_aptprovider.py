@@ -10,6 +10,49 @@ import pytest
 from abxpkg import AptProvider, Binary, EnvProvider
 
 
+class TestAptProviderConfig:
+    def test_provider_accepts_custom_repository_and_system_account_overrides(self):
+        provider = AptProvider().get_provider_with_overrides(
+            overrides={
+                "sonic": {
+                    "install_args": ["sonic"],
+                    "apt_gpg_keys": {
+                        "https://packagecloud.io/valeriansaliou/sonic/gpgkey": "valeriansaliou_sonic.asc",
+                    },
+                    "apt_sources": {
+                        "valeriansaliou_sonic.list": "deb [signed-by=/etc/apt/keyrings/valeriansaliou_sonic.asc] https://packagecloud.io/valeriansaliou/sonic/debian/ bookworm main",
+                    },
+                    "apt_system_groups": {"sonic": {}},
+                    "apt_system_users": {
+                        "sonic": {
+                            "gid": "sonic",
+                            "home": "/var/lib/sonic",
+                            "shell": "/usr/sbin/nologin",
+                            "create_home": False,
+                        },
+                    },
+                },
+            },
+        )
+
+        assert provider.get_install_args("sonic") == ("sonic",)
+        assert provider.apt_gpg_keys == {
+            "https://packagecloud.io/valeriansaliou/sonic/gpgkey": "valeriansaliou_sonic.asc",
+        }
+        assert provider.apt_sources == {
+            "valeriansaliou_sonic.list": "deb [signed-by=/etc/apt/keyrings/valeriansaliou_sonic.asc] https://packagecloud.io/valeriansaliou/sonic/debian/ bookworm main",
+        }
+        assert provider.apt_system_groups == {"sonic": {}}
+        assert provider.apt_system_users == {
+            "sonic": {
+                "gid": "sonic",
+                "home": "/var/lib/sonic",
+                "shell": "/usr/sbin/nologin",
+                "create_home": False,
+            },
+        }
+
+
 @pytest.mark.root_required
 class TestAptProvider:
     def test_env_command_projects_new_host_binary_into_env(
