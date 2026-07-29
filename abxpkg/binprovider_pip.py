@@ -81,7 +81,10 @@ class PipProvider(BinProvider):
         if not self.install_root:
             return {}
         venv_root = self.install_root / "venv"
-        env: dict[str, str] = {"VIRTUAL_ENV": str(venv_root)}
+        env: dict[str, str] = {
+            "VIRTUAL_ENV": str(venv_root),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
         # Add site-packages to PYTHONPATH so scripts can import installed pkgs
         for sp in sorted(
             (venv_root / "lib").glob("python*/site-packages"),
@@ -297,18 +300,45 @@ class PipProvider(BinProvider):
     ) -> None:
         """create pip venv dir if needed"""
         if self.euid is None:
-            self.euid = self.detect_euid(
-                owner_paths=(self.install_root,),
-                preserve_root=True,
-            )
+            self.euid = self.detect_euid(owner_paths=(self.install_root,))
         self._ensure_writable_cache_dir(self.cache_dir)
 
         if self.install_root:
             self._setup_venv(self.install_root / "venv", no_cache=no_cache)
 
+    def detect_euid(
+        self,
+        owner_paths=(),
+        preserve_root: bool = False,
+    ) -> int:
+        if self.install_root is not None:
+            sudo_uid = self._sudo_managed_install_euid()
+            if sudo_uid is not None:
+                return sudo_uid
+        return super().detect_euid(
+            owner_paths=owner_paths,
+            preserve_root=preserve_root,
+        )
+
+    def _sudo_managed_install_euid(self) -> int | None:
+        """Return SUDO_UID for root-invoked managed installs, when usable."""
+        if self.install_root is None or os.geteuid() != 0:
+            return None
+        sudo_uid = os.environ.get("SUDO_UID")
+        if not sudo_uid:
+            return None
+        try:
+            uid = int(sudo_uid)
+        except ValueError:
+            return None
+        if uid > 0 and self.uid_has_passwd_entry(uid):
+            return uid
+        return None
+
     def _setup_venv(self, pip_venv: Path, *, no_cache: bool = False) -> None:
         """Create the managed virtualenv and bootstrap pip/setuptools into it."""
         pip_venv.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_managed_root_access()
 
         # create new venv in pip_venv if it doesn't exist
         venv_pip_path = pip_venv / "bin" / "python"
@@ -329,6 +359,7 @@ class PipProvider(BinProvider):
             with_pip=True,
             upgrade_deps=True,
         )
+        self._ensure_managed_root_access()
         assert os.path.isfile(venv_pip_path) and os.access(
             venv_pip_path,
             os.X_OK,
@@ -360,6 +391,51 @@ class PipProvider(BinProvider):
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", ["pip", "setuptools"], proc)
+        self._ensure_managed_root_access()
+
+    def _ensure_managed_root_access(self) -> None:
+        """Keep pip-created managed venv/cache roots owned by this provider's runtime UID."""
+        if self.install_root is None or (os.geteuid() != 0 and os.getuid() != 0):
+            return
+
+        uid = self.EUID
+        try:
+            gid = self.get_pw_record(uid).pw_gid
+        except KeyError:
+            gid = os.getegid()
+
+        roots = [
+            self.install_root.parent.parent,
+            self.install_root.parent,
+            self.install_root,
+            self.cache_dir.parent,
+            self.cache_dir,
+        ]
+        for root in roots:
+            if not root.exists():
+                continue
+            try:
+                os.chown(root, uid, gid)
+            except (PermissionError, OSError):
+                pass
+
+        if not self.install_root.exists():
+            return
+
+        for current_root, dir_names, file_names in os.walk(self.install_root):
+            current_path = Path(current_root)
+            for path in [
+                current_path,
+                *[current_path / name for name in dir_names],
+                *[current_path / name for name in file_names],
+            ]:
+                try:
+                    if path.is_symlink():
+                        os.lchown(path, uid, gid)
+                    else:
+                        os.chown(path, uid, gid)
+                except (NotImplementedError, PermissionError, OSError):
+                    pass
 
     def _security_flags(
         self,
