@@ -120,8 +120,10 @@ require_clean_exact_checkout() {
         return 1
     fi
     git fetch --quiet --no-tags origin "+refs/heads/${release_branch}:refs/remotes/origin/${release_branch}"
-    if ! git merge-base --is-ancestor "${release_sha}" "refs/remotes/origin/${release_branch}"; then
-        echo "Refusing to release ${release_sha}: it is not on ${release_branch}" >&2
+    local branch_head
+    branch_head="$(git rev-parse "refs/remotes/origin/${release_branch}")"
+    if [[ "${release_sha}" != "${branch_head}" ]]; then
+        echo "Refusing to release ${release_sha}: current origin/${release_branch} is ${branch_head}" >&2
         return 1
     fi
 }
