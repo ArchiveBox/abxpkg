@@ -33,7 +33,7 @@ repo_slug() {
 }
 
 current_version() {
-    uv run --no-project python - <<'PY'
+    uv run --no-cache --no-project python - <<'PY'
 from pathlib import Path
 import re
 
@@ -46,7 +46,7 @@ PY
 }
 
 compare_versions() {
-    uv run --no-project python - "$1" "$2" <<'PY'
+    uv run --no-cache --no-project python - "$1" "$2" <<'PY'
 import re
 import sys
 
@@ -66,7 +66,7 @@ latest_release_version() {
     local slug="$1"
     local raw_tags
     raw_tags="$(gh api "repos/${slug}/releases?per_page=100" --jq '.[].tag_name' || true)"
-    RELEASE_TAGS="${raw_tags}" TAG_PREFIX_VALUE="${TAG_PREFIX}" uv run --no-project python - <<'PY'
+    RELEASE_TAGS="${raw_tags}" TAG_PREFIX_VALUE="${TAG_PREFIX}" uv run --no-cache --no-project python - <<'PY'
 import os
 import re
 
@@ -87,7 +87,7 @@ PY
 latest_pypi_version() {
     local releases
     releases="$(curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -r '.releases | keys[]' || true)"
-    RELEASE_TAGS="${releases}" uv run --no-project python - <<'PY'
+    RELEASE_TAGS="${releases}" uv run --no-cache --no-project python - <<'PY'
 import os
 import re
 
@@ -197,7 +197,7 @@ download_tested_artifacts() {
         --name "${TESTED_ARTIFACT_NAME_PREFIX}-${release_sha}" \
         --dir "${REPO_DIR}/dist"
 
-    RELEASE_VERSION="${version}" uv run --no-project python - <<'PY'
+    RELEASE_VERSION="${version}" uv run --no-cache --no-project python - <<'PY'
 from hashlib import sha256
 from pathlib import Path
 import os
@@ -243,7 +243,7 @@ publish_artifacts() {
     if curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null 2>&1; then
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
-        uv publish --trusted-publishing always "${artifacts[@]}"
+        uv publish --no-cache --trusted-publishing always "${artifacts[@]}"
     fi
 }
 
@@ -263,8 +263,39 @@ create_release() {
         --generate-notes
 }
 
+verify_release_outputs() {
+    local slug="$1"
+    local version="$2"
+    local release_sha="$3"
+    local release_target release_json
+
+    release_target="$(git ls-remote origin "refs/tags/${TAG_PREFIX}${version}" | cut -f1)"
+    [[ "${release_target}" == "${release_sha}" ]] || {
+        echo "Release tag ${TAG_PREFIX}${version} does not target ${release_sha}" >&2
+        return 1
+    }
+
+    release_json="$(gh release view "${TAG_PREFIX}${version}" --repo "${slug}" --json tagName,targetCommitish,assets)"
+    jq -e \
+        --arg tag "${TAG_PREFIX}${version}" \
+        --arg sha "${release_sha}" \
+        --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" \
+        --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
+        '
+          .tagName == $tag and
+          .targetCommitish == $sha and
+          ([.assets[].name] | sort) == ([$wheel, $sdist, "SHA256SUMS"] | sort)
+        ' <<<"${release_json}" >/dev/null
+
+    curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/${version}/json" |
+        jq -e \
+            --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" \
+            --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
+            '([.urls[].filename] | sort) == ([$wheel, $sdist] | sort)' >/dev/null
+}
+
 main() {
-    local slug release_sha release_branch version latest pypi_latest relation released_tag release_target pypi_exists github_release_exists
+    local slug release_sha release_branch version latest pypi_latest relation release_target pypi_exists github_release_exists
 
     source_optional_env
     slug="$(repo_slug)"
@@ -298,8 +329,11 @@ main() {
         github_release_exists=true
     fi
     if [[ "${relation}" == "eq" && "${pypi_exists}" == true && "${github_release_exists}" == true && -n "${release_target}" ]]; then
-        echo "${PYPI_PACKAGE} ${version} is already released; nothing to publish"
-        return
+        if verify_release_outputs "${slug}" "${version}" "${release_sha}"; then
+            echo "${PYPI_PACKAGE} ${version} is already completely released; nothing to publish"
+            return
+        fi
+        echo "${PYPI_PACKAGE} ${version} has incomplete release outputs; recovering from tested artifacts"
     fi
     if [[ "${relation}" == "eq" && ( -z "${release_target}" || "${release_target}" != "${release_sha}" ) ]]; then
         echo "Refusing to recover partial release ${version}: no release tag anchors it to ${release_sha}" >&2
@@ -310,17 +344,14 @@ main() {
     download_tested_artifacts "${slug}" "${release_sha}" "${version}" "${REQUIRED_TEST_RUN_ID}"
     create_release "${slug}" "${version}" "${release_sha}"
     publish_artifacts "${version}"
+    sleep 60
     gh release upload "${TAG_PREFIX}${version}" --repo "${slug}" \
         "${REPO_DIR}"/dist/abxpkg-*.whl \
         "${REPO_DIR}"/dist/abxpkg-*.tar.gz \
         "${REPO_DIR}"/dist/SHA256SUMS \
         --clobber
 
-    released_tag="$(gh release view "${TAG_PREFIX}${version}" --repo "${slug}" --json tagName,targetCommitish --jq '[.tagName, .targetCommitish] | @tsv')"
-    if [[ "${released_tag}" != $'v'"${version}"$'\t'"${release_sha}" ]]; then
-        echo "GitHub release does not target the tested SHA ${release_sha}: ${released_tag}" >&2
-        return 1
-    fi
+    verify_release_outputs "${slug}" "${version}" "${release_sha}"
     echo "Released ${PYPI_PACKAGE} ${version} from ${release_sha}"
 }
 
