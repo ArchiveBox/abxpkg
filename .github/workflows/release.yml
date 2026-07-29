@@ -30,7 +30,6 @@ jobs:
       id-token: write
     outputs:
       version: ${{ steps.release.outputs.version }}
-      release_sha: ${{ steps.release.outputs.release_sha }}
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       RELEASE_BRANCH: main
@@ -57,7 +56,6 @@ jobs:
           VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' pyproject.toml | head -n 1)"
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Publish tested commit
         env:
@@ -73,6 +71,5 @@ jobs:
     with:
       upstream_package: abxpkg
       upstream_version: ${{ needs.publish.outputs.version }}
-      upstream_sha: ${{ needs.publish.outputs.release_sha }}
     secrets:
       release_token: ${{ secrets.RELEASE_GH_TOKEN }}
