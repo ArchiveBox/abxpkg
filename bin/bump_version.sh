@@ -42,3 +42,5 @@ if parse(version) <= parse(current):
 path.write_text(re.sub(r'^version = "[^"]+"$', f'version = "{version}"', text, count=1, flags=re.MULTILINE))
 print(version)
 PY
+
+uv lock --no-cache
