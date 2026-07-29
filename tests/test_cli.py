@@ -3830,8 +3830,21 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
                 "required_binaries": [
                     {
                         "name": "{NODE_BINARY}",
-                        "binproviders": "env,apt,brew",
-                        "min_version": "18.0.0",
+                        "binproviders": "env,npm,apt,brew",
+                        "min_version": "22.12.0",
+                        "overrides": {
+                            "npm": {
+                                "install_root": "{ABXPKG_LIB_DIR}/npm/packages/node",
+                                "install_args": ["node@22.23.1"],
+                                "postinstall_scripts": True,
+                            },
+                            "apt": {
+                                "install_args": ["nodejs", "npm"],
+                            },
+                            "brew": {
+                                "install_args": ["node"],
+                            },
+                        },
                     },
                     {
                         "name": "{PYTHON_BINARY}",
@@ -3912,7 +3925,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
 
     assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert int(payload["nodeVersion"].split(".", 1)[0]) >= 18
+    assert int(payload["nodeVersion"].split(".", 1)[0]) >= 22
     assert payload["python"]["version"][:2] >= [3, 10]
     assert Path(payload["nodeBinary"]).is_file()
     assert Path(payload["pythonBinary"]).is_file()
@@ -3993,7 +4006,7 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
         "\n"
         "// /// script\n"
         "// dependencies = [\n"
-        '//     {name = "node", binproviders = ["env", "apt", "brew"], min_version = "22.0.0"},\n'
+        '//     {name = "node", binproviders = ["env", "npm", "apt", "brew"], min_version = "22.12.0"},\n'
         '//     {name = "playwright", binproviders = ["npm", "pnpm"], install_args = ["playwright@next"]},\n'
         '//     {name = "chromium", binproviders = ["playwright", "puppeteer", "apt"], min_version = "131.0.0"},\n'
         "// ]\n"

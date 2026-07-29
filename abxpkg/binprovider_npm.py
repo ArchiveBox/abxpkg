@@ -47,7 +47,11 @@ class NpmProvider(BinProvider):
     name: BinProviderName = "npm"
     _log_emoji = "📦"
     INSTALLER_BIN: BinName = "npm"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "apt",
+        "brew",
+    )
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ()
     FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
