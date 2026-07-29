@@ -104,13 +104,6 @@ dev = [
     "pytest-asyncio>=1.3.0",
 ]
 
-[tool.uv]
-# Pin lockfile resolution to a recent upstream cutoff so CI/test runs stay
-# reproducible. ``uv`` (as of 0.8.x) requires a literal RFC 3339 date/time
-# here, not a relative duration like ``"5 days"`` — passing an invalid value
-# silently disables the cutoff and regenerates the lockfile on every invoke.
-exclude-newer = "2026-06-01T00:00:00Z"
-
 [tool.mypy]
 mypy_path = "abxpkg"
 python_version = "3.12"
