@@ -35,6 +35,9 @@ jobs:
       actions: read
       contents: write
       id-token: write
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
     env:
       RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.release_sha }}
       RELEASE_BRANCH: main
@@ -54,7 +57,29 @@ jobs:
           version: "0.10.6"
           enable-cache: false
 
+      - name: Record verified release
+        id: release
+        run: |
+          set -Eeuo pipefail
+          VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' pyproject.toml | head -n 1)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Publish tested commit
         env:
           GH_TOKEN: ${{ secrets.RELEASE_GH_TOKEN || github.token }}
         run: ./bin/release.sh
+
+  cascade:
+    name: Cascade verified release
+    needs: publish
+    permissions:
+      contents: read
+    uses: ArchiveBox/monorepo/.github/workflows/cascade-release.yml@main
+    with:
+      upstream_package: abxpkg
+      upstream_version: ${{ needs.publish.outputs.version }}
+      upstream_sha: ${{ needs.publish.outputs.release_sha }}
+    secrets:
+      release_token: ${{ secrets.RELEASE_GH_TOKEN }}

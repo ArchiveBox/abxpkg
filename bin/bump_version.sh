@@ -6,7 +6,7 @@ IFS=$'\n\t'
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_DIR}"
 
-uv run --no-project python - "${1:-}" <<'PY'
+uv run --no-cache --no-project python - "${1:-}" <<'PY'
 from pathlib import Path
 import re
 import sys
