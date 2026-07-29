@@ -421,9 +421,7 @@ class PnpmProvider(BinProvider):
     def _pnpm_package_for_node(node_version: SemVer | None) -> str:
         """Select the newest pnpm major supported by the discovered Node runtime."""
         version = tuple(node_version) if node_version is not None else None
-        if version is None or version >= (22, 13, 0):
-            return "pnpm"
-        if version >= (18, 12, 0):
+        if version is None or version >= (18, 12, 0):
             return "pnpm@10.19.0"
         if version >= (16, 14, 0):
             return "pnpm@8"

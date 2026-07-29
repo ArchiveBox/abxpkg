@@ -114,8 +114,8 @@ class TestPnpmProvider:
     @pytest.mark.parametrize(
         ("node_version", "expected_package"),
         [
-            (SemVer(24, 0, 0), "pnpm"),
-            (SemVer(22, 13, 0), "pnpm"),
+            (SemVer(24, 0, 0), "pnpm@10.19.0"),
+            (SemVer(22, 13, 0), "pnpm@10.19.0"),
             (SemVer(22, 12, 0), "pnpm@10.19.0"),
             (SemVer(18, 12, 0), "pnpm@10.19.0"),
             (SemVer(18, 11, 0), "pnpm@8"),
