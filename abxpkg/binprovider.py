@@ -2243,6 +2243,10 @@ class BinProvider(BaseModel):
         """Return a provider-owned executable target for a host launcher."""
         return None
 
+    def env_projection_target(self, source_path: Path) -> Path | None:
+        """Return a provider-owned executable that EnvProvider may project."""
+        return None
+
     def _is_managed_by_other_provider(self, abspath: HostBinPath | Path) -> bool:
         return False
 
@@ -4053,7 +4057,15 @@ class EnvProvider(BinProvider):
                 continue
             if loaded is None or loaded.loaded_abspath is None:
                 continue
-            projected_abspath = self.project_binary(loaded, bin_name_str)
+            projection_target = provider.env_projection_target(
+                Path(loaded.loaded_abspath),
+            )
+            if projection_target is None:
+                continue
+            projected_abspath = self.project_binary(
+                loaded.model_copy(update={"loaded_abspath": projection_target}),
+                bin_name_str,
+            )
             if projected_abspath is None:
                 continue
             return projected_abspath

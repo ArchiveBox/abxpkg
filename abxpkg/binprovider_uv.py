@@ -90,6 +90,21 @@ class UvProvider(BinProvider):
     # tool mode may accept an explicit ``uv_tool_bin_dir`` override or leave it unset.
     bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
 
+    def env_projection_target(self, source_path: Path) -> Path | None:
+        """Uv-managed venv entrypoints are safe to expose through env/bin."""
+        if self.install_root is None:
+            return None
+        source_path = source_path.expanduser().absolute()
+        for venv_root in self._managed_venv_roots(source_path.name):
+            bin_dir = venv_root / "bin"
+            try:
+                source_path.relative_to(bin_dir)
+            except ValueError:
+                continue
+            if source_path.is_file() and os.access(source_path, os.X_OK):
+                return source_path
+        return None
+
     @computed_field
     @property
     def ENV(self) -> "dict[str, str]":
