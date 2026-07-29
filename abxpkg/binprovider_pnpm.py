@@ -320,17 +320,13 @@ class PnpmProvider(BinProvider):
         overrides: BinaryOverrides = {}
         min_version = None
         if str(bin_name) == "node":
-            provider_names = ("env", "npm", "apt", "brew")
+            provider_names = ("env", "node", "brew", "apt")
             min_version = SemVer.parse("22.12.0")
             overrides = cast(
                 BinaryOverrides,
                 {
-                    "npm": {
-                        "install_args": ["node@22.23.1"],
-                        "postinstall_scripts": True,
-                    },
                     "apt": {
-                        "install_args": ["nodejs", "npm"],
+                        "install_args": ["nodejs"],
                     },
                     "brew": {
                         "install_args": ["node"],
@@ -338,7 +334,7 @@ class PnpmProvider(BinProvider):
                 },
             )
         elif str(bin_name) == "npm":
-            provider_names = ("env", "apt", "brew")
+            provider_names = ("env", "node", "brew", "apt")
             overrides = cast(
                 BinaryOverrides,
                 {
@@ -354,16 +350,21 @@ class PnpmProvider(BinProvider):
             provider_names = ("env",)
 
         env_provider = self._managed_env_provider()
-        providers = cast(
-            list[BinProvider],
-            [
-                env_provider
-                if provider_name == "env"
-                else PROVIDER_CLASS_BY_NAME[provider_name]()
-                for provider_name in provider_names
-                if provider_name in PROVIDER_CLASS_BY_NAME
-            ],
-        )
+        managed_lib_dir = self._managed_lib_dir()
+        providers: list[BinProvider] = []
+        for provider_name in provider_names:
+            if provider_name not in PROVIDER_CLASS_BY_NAME:
+                continue
+            if provider_name == "env":
+                providers.append(env_provider)
+            elif provider_name == "node" and managed_lib_dir is not None:
+                providers.append(
+                    PROVIDER_CLASS_BY_NAME[provider_name](
+                        install_root=managed_lib_dir / "node",
+                    ),
+                )
+            else:
+                providers.append(PROVIDER_CLASS_BY_NAME[provider_name]())
         try:
             loaded = Binary(
                 name=bin_name,

@@ -262,6 +262,52 @@ class TestPnpmProvider:
                 == install_root / "node_modules" / ".bin" / "zx"
             )
 
+    @pytest.mark.docker_required
+    def test_self_bootstrap_uses_managed_node_without_host_node_or_root(
+        self,
+        test_machine,
+    ):
+        docker = test_machine.require_tool("docker")
+        repo_root = Path(__file__).resolve().parents[1]
+
+        result = subprocess.run(
+            [
+                docker,
+                "run",
+                "--rm",
+                "--platform",
+                "linux/amd64",
+                "--user",
+                "65534:65534",
+                "--volume",
+                f"{repo_root}:/src:ro",
+                "--workdir",
+                "/tmp",
+                "--env",
+                "HOME=/tmp",
+                "--env",
+                "UV_PROJECT_ENVIRONMENT=/tmp/venv",
+                "ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+                "sh",
+                "-lc",
+                (
+                    "uv run --no-cache --project /src -- "
+                    "abxpkg --lib /tmp/abxlib --binproviders=pnpm --no-cache "
+                    "install zx && "
+                    "test -x /tmp/abxlib/node/bin/node && "
+                    "test -L /tmp/abxlib/env/bin/node && "
+                    "test -L /tmp/abxlib/env/bin/npm && "
+                    "test -x /tmp/abxlib/npm/packages/pnpm/node_modules/.bin/pnpm && "
+                    "test -x /tmp/abxlib/pnpm/node_modules/.bin/zx"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+
+        assert result.returncode == 0, result.stderr
+
     def test_self_bootstrap_projects_host_dependencies_into_managed_env_bin(
         self,
         test_machine,
