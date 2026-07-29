@@ -720,7 +720,7 @@ class TestEnvProvider:
     @pytest.mark.parametrize(
         ("package", "requested_bin", "projected_bin"),
         [
-            ("@anthropic-ai/claude-code", "claude", "claude"),
+            ("prettier", "prettier", "prettier"),
             ("defuddle", "defuddle", "defuddle"),
             ("@llamaindex/liteparse", "lit", "liteparse"),
             (
