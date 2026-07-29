@@ -1,0 +1,21 @@
+abxpkg/binprovider_uv.py
+  s_f8414d52051f83::t_e00d2b7cadd244 93-107
+abxpkg/binprovider.py
+  s_f8414d52051f83::t_9b4f9d153d7e68 2246-2249,4060-4068
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "83df1429056966f1d13fc9f293a69f73785f63f4",
+  "prompts": {},
+  "sessions": {
+    "s_f8414d52051f83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f73c1-cded-7c63-bb8b-3b3c3e5de67d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
