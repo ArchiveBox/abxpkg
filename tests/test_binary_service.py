@@ -1,4 +1,5 @@
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
@@ -264,6 +265,81 @@ def test_binary_cache_service_stores_resolved_binary_event(tmp_path: Path) -> No
     assert "env" in cached.model_extra
     assert "extra_context" not in cached.model_extra
     assert request.extra_context == {"binary_id": "python-cache"}
+
+
+def test_binary_service_projects_managed_uv_install_through_env_bin(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import (
+        BinaryEvent,
+        BinaryRequestEvent,
+        BinaryService,
+    )
+
+    lib = tmp_path / "lib"
+    package_root = lib / "uv" / "packages" / "forum-dl"
+    projected_entrypoint = lib / "env" / "bin" / "forum-dl"
+    managed_entrypoint = package_root / "venv" / "bin" / "forum-dl"
+
+    async def run() -> tuple[Any, BinaryEvent]:
+        bus = abxbus.EventBus(name="test_binary_service_projects_uv_via_env")
+        BinaryService(bus)
+        request = await bus.emit(
+            BinaryRequestEvent(
+                name="forum-dl",
+                binproviders="env,uv",
+                lib_dir=lib,
+                min_release_age=3,
+                no_cache=True,
+                overrides={
+                    "uv": {
+                        "install_root": str(package_root),
+                        "install_args": [
+                            "--no-deps",
+                            "forum-dl",
+                            "chardet==5.2.0",
+                            "pydantic==2.12.3",
+                            "pydantic-core==2.41.4",
+                            "typing-extensions>=4.14.1",
+                            "annotated-types>=0.6.0",
+                            "typing-inspection>=0.4.2",
+                            "beautifulsoup4",
+                            "soupsieve",
+                            "lxml",
+                            "requests",
+                            "urllib3",
+                            "certifi",
+                            "idna",
+                            "charset-normalizer",
+                            "tenacity",
+                            "python-dateutil",
+                            "six",
+                            "html2text",
+                            "warcio",
+                        ],
+                        "postinstall_scripts": True,
+                    },
+                },
+            ),
+        ).now()
+        await request.event_results_list()
+        event = await bus.find(
+            BinaryEvent,
+            child_of=request,
+            past=True,
+            future=False,
+            name="forum-dl",
+        )
+        assert isinstance(event, BinaryEvent)
+        return request, event
+
+    _, event = asyncio.run(run())
+
+    assert event.abspath == str(projected_entrypoint)
+    assert event.binprovider == "env"
+    assert projected_entrypoint.is_symlink()
+    assert projected_entrypoint.resolve() == managed_entrypoint
+    assert os.access(managed_entrypoint, os.X_OK)
 
 
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:

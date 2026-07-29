@@ -3566,7 +3566,7 @@ class EnvProvider(BinProvider):
 
     def _cache_context(self, bin_name: BinName) -> str:
         provider_config = json.loads(super()._cache_context(bin_name))
-        provider_config["env_projection_version"] = 2
+        provider_config["env_projection_version"] = 3
         if str(bin_name) in {"python", "python3"}:
             provider_config["runtime_python"] = str(Path(sys.executable).absolute())
         return json.dumps(
@@ -4045,6 +4045,18 @@ class EnvProvider(BinProvider):
                         and link_path.readlink() == projected_target
                     ):
                         link_path.unlink()
+
+        for provider in self._projection_providers:
+            try:
+                loaded = provider.load(bin_name_str, no_cache=no_cache)
+            except Exception:
+                continue
+            if loaded is None or loaded.loaded_abspath is None:
+                continue
+            projected_abspath = self.project_binary(loaded, bin_name_str)
+            if projected_abspath is None:
+                continue
+            return projected_abspath
 
         managed_abspath = None
         if self.bin_dir is not None:
