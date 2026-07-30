@@ -13,7 +13,6 @@ from .config import build_exec_env, default_abxpkg_lib_dir
 from .exceptions import ABXPkgError
 from .logging import format_exception_with_output
 
-
 _NONE_STRINGS = frozenset({"", "none", "null"})
 _HANDLER_KEYS = frozenset({"abspath", "version", "install_args", "packages"})
 _VALUE_OPTIONS = frozenset(
@@ -109,7 +108,7 @@ def _parse_json_object(raw: str | None) -> dict[str, Any] | None:
     if parsed is None:
         return None
     if not isinstance(parsed, dict):
-        raise ValueError("expected a JSON object")
+        raise TypeError("expected a JSON object")
     return parsed
 
 
@@ -591,7 +590,7 @@ def _load_or_install_script_binary(binary_name: str, options: ScriptOptions):
     binary = _build_binary(binary_name, options)
     try:
         return binary.load(no_cache=options.no_cache)
-    except Exception:
+    except ABXPkgError:
         return binary.install(
             dry_run=options.dry_run,
             no_cache=options.no_cache,
@@ -620,9 +619,6 @@ def _run_script(argv: list[str]) -> int | None:
             continue
         os.environ.setdefault(str(key), str(value))
 
-    explicit_provider_selection = (
-        "--binproviders" in raw_options or "ABXPKG_BINPROVIDERS" in os.environ
-    )
     options = _script_options(raw_options)
     binary_options = options
 
@@ -634,21 +630,6 @@ def _run_script(argv: list[str]) -> int | None:
         runtime_provider_names = _parse_runtime_provider_names(
             tool_config.get("runtime_binproviders"),
         )
-        if (
-            not runtime_provider_names
-            and not dependencies
-            and not explicit_provider_selection
-            and not raw_options.get("--deps-from")
-        ):
-            # Preserve the default behavior of exposing previously installed
-            # sibling packages, but do not instantiate every managed provider
-            # on a cold script launch. Provider roots are the durable install
-            # state; an absent root cannot contribute anything to the runtime.
-            runtime_provider_names = [
-                provider_name
-                for provider_name in options.provider_names
-                if (options.lib_dir / provider_name).is_dir()
-            ]
         runtime_providers = _build_providers(runtime_provider_names, options)
         binary_env_key: str | None = None
         for dep in dependencies:

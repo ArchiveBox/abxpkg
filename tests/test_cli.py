@@ -3792,10 +3792,12 @@ def test_run_script_uses_default_lib_dir_without_env_override(tmp_path):
         "# /// script\n"
         '# requires-python = ">=3.12"\n'
         "# ///\n"
-        "import humanize, json, os\n"
+        "import json, os, sys\n"
         "print(json.dumps({\n"
         "    'abxpkg_lib_dir': os.environ.get('ABXPKG_LIB_DIR'),\n"
-        "    'humanize_file': humanize.__file__,\n"
+        "    'executable': sys.executable,\n"
+        "    'pythonpath': os.environ.get('PYTHONPATH', ''),\n"
+        "    'virtual_env': os.environ.get('VIRTUAL_ENV', ''),\n"
         "}))\n",
     )
     script.chmod(0o755)
@@ -3813,10 +3815,9 @@ def test_run_script_uses_default_lib_dir_without_env_override(tmp_path):
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert Path(payload["abxpkg_lib_dir"]) == default_lib
-    assert (
-        str(default_lib / "uv" / "packages" / "hook-runtime" / "venv")
-        in payload["humanize_file"]
-    )
+    assert Path(payload["executable"]).samefile(sys.executable)
+    assert str(default_lib / "uv") not in payload["pythonpath"]
+    assert str(default_lib / "uv") not in payload["virtual_env"]
 
 
 def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
