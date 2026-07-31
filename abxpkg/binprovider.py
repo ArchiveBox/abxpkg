@@ -2511,10 +2511,8 @@ class BinProvider(BaseModel):
         if not abspath or not os.access(abspath, os.R_OK):
             return None
 
-        hash_sha256 = hashlib.sha256()
         with open(abspath, "rb") as f:
-            for chunk in iter(lambda: f.read(4096), b""):
-                hash_sha256.update(chunk)
+            hash_sha256 = hashlib.file_digest(f, "sha256")
         return TypeAdapter(Sha256).validate_python(hash_sha256.hexdigest())
 
     @final
