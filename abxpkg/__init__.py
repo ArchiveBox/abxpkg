@@ -202,50 +202,78 @@ def _provider_class_literal_fields_by_name() -> dict[str, dict[str, Any]]:
     import ast
 
     metadata: dict[str, dict[str, Any]] = {}
-    parsed_modules = {}
+    source_modules: dict[str, list[str] | None] = {}
+    field_names = {
+        "DEFAULT_ENABLED",
+        "DEFAULT_SUPPORTED_PLATFORMS",
+        "INSTALLER_BIN",
+    }
     for provider_name, (
         module_name,
         class_name,
     ) in _provider_class_names_by_name().items():
         provider_metadata: dict[str, Any] = {}
-        if module_name not in parsed_modules:
+        if module_name not in source_modules:
             try:
                 with open(_module_path(module_name), encoding="utf-8") as source_file:
-                    parsed_modules[module_name] = ast.parse(source_file.read())
-            except (OSError, SyntaxError):
-                parsed_modules[module_name] = None
-        module = parsed_modules[module_name]
-        if module is None:
+                    source_modules[module_name] = source_file.readlines()
+            except OSError:
+                source_modules[module_name] = None
+        source_lines = source_modules[module_name]
+        if source_lines is None:
             metadata[provider_name] = provider_metadata
             continue
-        provider_class = next(
-            (
-                node
-                for node in module.body
-                if isinstance(node, ast.ClassDef) and node.name == class_name
-            ),
-            None,
-        )
-        if provider_class is not None:
-            for statement in provider_class.body:
-                if isinstance(statement, ast.AnnAssign):
-                    target, value = statement.target, statement.value
-                elif isinstance(statement, ast.Assign) and len(statement.targets) == 1:
-                    target, value = statement.targets[0], statement.value
-                else:
-                    continue
-                if not isinstance(target, ast.Name) or value is None:
-                    continue
-                if target.id not in {
-                    "DEFAULT_ENABLED",
-                    "DEFAULT_SUPPORTED_PLATFORMS",
-                    "INSTALLER_BIN",
-                }:
-                    continue
-                try:
-                    provider_metadata[target.id] = ast.literal_eval(value)
-                except (TypeError, ValueError):
-                    continue
+
+        in_provider_class = False
+        line_index = 0
+        while line_index < len(source_lines):
+            raw_line = source_lines[line_index]
+            if raw_line.startswith(f"class {class_name}("):
+                in_provider_class = True
+                line_index += 1
+                continue
+            if in_provider_class and raw_line.startswith("class "):
+                break
+            if (
+                not in_provider_class
+                or not raw_line.startswith("    ")
+                or raw_line.startswith("        ")
+            ):
+                line_index += 1
+                continue
+
+            stripped = raw_line.strip()
+            if stripped.startswith(("def ", "async def ")):
+                break
+            if stripped.startswith("class "):
+                line_index += 1
+                continue
+            target_text, separator, value_text = stripped.partition("=")
+            target_name = target_text.split(":", 1)[0].strip()
+            if not separator or target_name not in field_names:
+                line_index += 1
+                continue
+
+            literal_lines = [value_text.strip()]
+            delimiter_balance = sum(
+                literal_lines[0].count(opening) - literal_lines[0].count(closing)
+                for opening, closing in (("(", ")"), ("[", "]"), ("{", "}"))
+            )
+            while delimiter_balance > 0 and line_index + 1 < len(source_lines):
+                line_index += 1
+                continuation = source_lines[line_index].strip()
+                literal_lines.append(continuation)
+                delimiter_balance += sum(
+                    continuation.count(opening) - continuation.count(closing)
+                    for opening, closing in (("(", ")"), ("[", "]"), ("{", "}"))
+                )
+            try:
+                provider_metadata[target_name] = ast.literal_eval(
+                    "\n".join(literal_lines),
+                )
+            except (SyntaxError, TypeError, ValueError):
+                pass
+            line_index += 1
         metadata[provider_name] = provider_metadata
 
     _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE = metadata

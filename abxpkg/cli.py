@@ -5,7 +5,7 @@ import os
 import re
 import sys
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -517,8 +517,8 @@ def _build_binary(binary_name: str, options: ScriptOptions):
     from . import (
         DEFAULT_PROVIDER_NAMES,
         PROVIDER_CLASS_BY_INSTALLER_BIN,
-        Binary,
     )
+    from .binary import Binary
 
     provider_names = options.provider_names
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
@@ -587,14 +587,21 @@ def _same_runtime_provider(provider, loaded_provider) -> bool:
 
 
 def _load_or_install_script_binary(binary_name: str, options: ScriptOptions):
-    binary = _build_binary(binary_name, options)
-    try:
-        return binary.load(no_cache=options.no_cache)
-    except ABXPkgError:
-        return binary.install(
-            dry_run=options.dry_run,
-            no_cache=options.no_cache,
+    for provider_name in options.provider_names:
+        binary = _build_binary(
+            binary_name,
+            replace(options, provider_names=[provider_name]),
         )
+        try:
+            return binary.load(no_cache=options.no_cache)
+        except ABXPkgError:
+            continue
+
+    binary = _build_binary(binary_name, options)
+    return binary.install(
+        dry_run=options.dry_run,
+        no_cache=options.no_cache,
+    )
 
 
 def _run_script(argv: list[str]) -> int | None:

@@ -3950,7 +3950,23 @@ class EnvProvider(BinProvider):
             quiet=quiet,
             no_cache=no_cache,
         )
-        if result is None or projection_record is None:
+        if result is None:
+            if projection_record is not None:
+                projected_path = Path(installed_abspath)
+                with self.mutation_lock():
+                    projected_target = (
+                        projected_path.readlink()
+                        if projected_path.is_symlink()
+                        else None
+                    )
+                    if (
+                        projected_target is not None
+                        and projected_path.is_symlink()
+                        and projected_path.readlink() == projected_target
+                    ):
+                        projected_path.unlink()
+            return None
+        if projection_record is None:
             return result
 
         resolved_provider = self._resolved_provider_from_cache_record(
@@ -4020,28 +4036,12 @@ class EnvProvider(BinProvider):
                 and self._projection_cache_record(projected_abspath, str(bin_name))
                 is not None
             ):
-                projected_path = Path(projected_abspath)
-                with self.mutation_lock():
-                    projected_target = (
-                        projected_path.readlink()
-                        if projected_path.is_symlink()
-                        else None
-                    )
-                    if (
-                        self._get_version_at_abspath(
-                            bin_name_str,
-                            projected_abspath,
-                            quiet=True,
-                        )
-                        is not None
-                    ):
-                        return projected_abspath
-                    if (
-                        projected_target is not None
-                        and projected_path.is_symlink()
-                        and projected_path.readlink() == projected_target
-                    ):
-                        projected_path.unlink()
+                # load() immediately validates this candidate through
+                # _try_load_at_abspath(). Returning it here avoids executing
+                # the same external ``--version`` probe twice. The provider's
+                # _try_load_at_abspath() cleanup above removes a stale
+                # projection after that single validation fails.
+                return projected_abspath
 
         search_paths = []
         for entry in str(self.PATH or "").split(os.pathsep):
