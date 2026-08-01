@@ -336,7 +336,7 @@ def test_binary_service_projects_managed_uv_install_through_env_bin(
     _, event = asyncio.run(run())
 
     assert event.abspath == str(projected_entrypoint)
-    assert event.binprovider == "env"
+    assert event.binprovider == "uv"
     assert projected_entrypoint.is_symlink()
     assert projected_entrypoint.resolve() == managed_entrypoint
     assert os.access(managed_entrypoint, os.X_OK)
