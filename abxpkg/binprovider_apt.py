@@ -52,7 +52,21 @@ class AptProvider(BinProvider):
     @contextmanager
     def apt_lock(self):
         APT_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with APT_LOCK_PATH.open("w") as lock_file:
+        open_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            lock_fd = os.open(APT_LOCK_PATH, open_flags)
+        except FileNotFoundError:
+            try:
+                lock_fd = os.open(
+                    APT_LOCK_PATH,
+                    open_flags | os.O_CREAT | os.O_EXCL,
+                    0o644,
+                )
+                os.fchmod(lock_fd, 0o644)
+            except FileExistsError:
+                lock_fd = os.open(APT_LOCK_PATH, open_flags)
+
+        with os.fdopen(lock_fd) as lock_file:
             fcntl.flock(lock_file, fcntl.LOCK_EX)
             try:
                 yield

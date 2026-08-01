@@ -13,6 +13,58 @@ from abxpkg import AptProvider, Binary, EnvProvider
 
 
 class TestAptProviderConfig:
+    @pytest.mark.root_required
+    @pytest.mark.skipif(sys.platform != "linux", reason="Linux privilege-drop coverage")
+    def test_apt_lock_can_be_reused_after_root_drops_privileges(self):
+        lock_path = apt_module.APT_LOCK_PATH
+        lock_command = (
+            "from abxpkg import AptProvider\nwith AptProvider().apt_lock():\n    pass\n"
+        )
+
+        cleanup = ["rm", "-f", str(lock_path)]
+        if os.geteuid() != 0:
+            root_command_args = [
+                "sudo",
+                "-n",
+                sys.executable,
+                "-c",
+                lock_command,
+            ]
+            user_command_args = [sys.executable, "-c", lock_command]
+            cleanup = ["sudo", "-n", *cleanup]
+        else:
+            root_command_args = [sys.executable, "-c", lock_command]
+            user_command_args = [
+                "sudo",
+                "-n",
+                "-u",
+                "nobody",
+                sys.executable,
+                "-c",
+                lock_command,
+            ]
+
+        subprocess.run(cleanup, check=True)
+
+        try:
+            root_result = subprocess.run(
+                root_command_args,
+                capture_output=True,
+                text=True,
+            )
+            assert root_result.returncode == 0, root_result.stderr or root_result.stdout
+            assert lock_path.stat().st_uid == 0
+            assert lock_path.stat().st_mode & 0o777 == 0o644
+
+            user_result = subprocess.run(
+                user_command_args,
+                capture_output=True,
+                text=True,
+            )
+            assert user_result.returncode == 0, user_result.stderr or user_result.stdout
+        finally:
+            subprocess.run(cleanup, check=True)
+
     def test_provider_accepts_custom_repository_and_system_account_overrides(self):
         provider = AptProvider().get_provider_with_overrides(
             overrides={
