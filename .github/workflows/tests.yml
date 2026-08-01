@@ -119,6 +119,13 @@ jobs:
         version: "0.10.6"
         enable-cache: false
 
+    - name: Set up Go for CLI installer coverage
+      if: matrix.test.name == 'cli'
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version: '1.25.0'
+        cache: false
+
     - name: Setup venv and install pip dependencies
       run: |
         uv venv --python "${{ matrix.test.python_version }}"
