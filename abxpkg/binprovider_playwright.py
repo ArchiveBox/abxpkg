@@ -182,6 +182,11 @@ class PlaywrightProvider(BinProvider):
                 install_root=None,
                 bin_dir=None,
             )
+            from .binprovider_pnpm import PnpmProvider
+
+            env_provider.set_projection_providers(
+                [PnpmProvider(install_root=local_cli.parents[2])],
+            )
             loaded = env_provider.load(
                 bin_name=self.INSTALLER_BIN,
                 no_cache=no_cache,

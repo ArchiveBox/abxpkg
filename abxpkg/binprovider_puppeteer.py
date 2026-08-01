@@ -189,6 +189,9 @@ class PuppeteerProvider(BinProvider):
                 install_root=None,
                 bin_dir=None,
             )
+            env_provider.set_projection_providers(
+                [PnpmProvider(install_root=local_cli.parents[2])],
+            )
             loaded_local = env_provider.load(
                 bin_name=self.INSTALLER_BIN,
                 no_cache=no_cache,
