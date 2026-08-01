@@ -4,21 +4,21 @@ requires-python = ">=3.12, <3.15"
 
 [[package]]
 name = "abxbus"
-version = "2.5.43"
+version = "2.5.45"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
     { name = "uuid7" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/cb/cd5f870588d3e7a36c84f47574d90884b9c3b913beb4f114c1e8fcd1fad7/abxbus-2.5.43.tar.gz", hash = "sha256:5ef86280bf3031a9f86622240a90d6a05280049d18469314e65fbf1d817c25e0", size = 133586, upload-time = "2026-07-29T17:20:29.469Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/26/ab892912a11e67e37dcda10e4f77aefbc27bc28b8a24cd1b168758e52cc6/abxbus-2.5.45.tar.gz", hash = "sha256:04afa8038d90bbbf3155c52a3ba57aa06dae8ef01ea777fa1cfe80283038e3a4", size = 133577, upload-time = "2026-08-01T20:12:14.846251Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/27/d357481ca9db42c6d5c3c76ba91fe4c1b7801e4f33561c9f9c95b0e925a3/abxbus-2.5.43-py3-none-any.whl", hash = "sha256:be20bd60605a485d47d6385c73380a33b59c3c68dd2504c4f46272735c246973", size = 127340, upload-time = "2026-07-29T17:20:28.44Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/ad/4adc0ad417113682005f5bfe087fb0b4bf9803e2e59737c41ea60f478e31/abxbus-2.5.45-py3-none-any.whl", hash = "sha256:3619b37e18bd47315b4d467d30aaee362a51273ceb875febcabcb6564498d361", size = 127340, upload-time = "2026-08-01T20:12:13.380632Z" },
 ]
 
 [[package]]
 name = "abxpkg"
-version = "1.12.44"
+version = "1.12.45"
 source = { editable = "." }
 dependencies = [
     { name = "pip" },
