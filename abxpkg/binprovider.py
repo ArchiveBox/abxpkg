@@ -3611,6 +3611,14 @@ class EnvProvider(BinProvider):
             else self.PATH
         )
 
+    def exec_env_providers(self) -> list["BinProvider"]:
+        providers: list[BinProvider] = []
+        for provider in self._projection_providers:
+            self._append_unique_provider(providers, provider)
+        for provider in super().exec_env_providers():
+            self._append_unique_provider(providers, provider)
+        return providers
+
     def setup_PATH(self, no_cache: bool = False) -> None:
         """Populate PATH lazily with install_root/bin ahead of the ambient PATH."""
         if self.bin_dir is None and self.install_root is not None:
@@ -3942,6 +3950,13 @@ class EnvProvider(BinProvider):
             installed_abspath,
             bin_name,
         )
+        resolved_provider = (
+            self._resolved_provider_from_cache_record(projection_record)
+            if projection_record is not None
+            else None
+        )
+        if resolved_provider is not None:
+            self.set_projection_providers([resolved_provider])
         result = super()._try_load_at_abspath(
             bin_name,
             installed_abspath,
@@ -3967,9 +3982,7 @@ class EnvProvider(BinProvider):
         if projection_record is None:
             return result
 
-        resolved_provider = self._resolved_provider_from_cache_record(
-            projection_record,
-        )
+        assert resolved_provider is not None
         if result.loaded_version is not None and result.loaded_sha256 is not None:
             self.write_cached_binary(
                 bin_name,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, NpmProvider, PnpmProvider, SemVer
+from abxpkg import Binary, EnvProvider, NpmProvider, PnpmProvider, SemVer
 from abxpkg.base_types import bin_abspath
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import (
@@ -417,6 +417,29 @@ class TestPnpmProvider:
             assert projected_pnpm.resolve() == Path(pnpm_binary).resolve()
             assert version.returncode == 0, version.stderr
             assert not (lib_dir / "bin").exists()
+
+    def test_env_projection_exec_env_includes_projected_pnpm_owner(self, tmp_path):
+        lib_dir = tmp_path / "lib"
+        env_provider = EnvProvider(
+            install_root=lib_dir / "env",
+            PATH="/usr/bin:/bin",
+        )
+        owner = PnpmProvider(
+            install_root=lib_dir / "pnpm" / "packages" / "chrome",
+            postinstall_scripts=False,
+            min_release_age=0,
+        )
+
+        env_provider.set_projection_providers([owner])
+        exec_env = env_provider.build_exec_env(
+            providers=env_provider.exec_env_providers(),
+            base_env={"PATH": "/usr/bin:/bin"},
+        )
+
+        path_entries = exec_env["PATH"].split(os.pathsep)
+        assert str(lib_dir / "env" / "bin") in path_entries
+        assert str(owner.bin_dir) in path_entries
+        assert exec_env["NODE_PATH"] == str(owner.install_root / "node_modules")
 
     def test_self_bootstrap_uses_host_npm_when_top_level_provider_excludes_env(
         self,
