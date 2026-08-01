@@ -88,39 +88,63 @@ class TestBinProvider:
     @pytest.mark.root_required
     @pytest.mark.skipif(sys.platform != "linux", reason="Linux privilege-drop coverage")
     def test_mutation_lock_can_be_reused_after_root_drops_privileges(self):
-        if os.geteuid() != 0:
-            pytest.skip()
-
-        import pwd
-
-        nobody = pwd.getpwnam("nobody")
         install_root = Path("/tmp") / f"abxpkg-cross-user-lock-{os.getpid()}"
         provider = NpmProvider(install_root=install_root)
         lock_path = provider.mutation_lock_path()
         assert lock_path is not None
-        lock_path.unlink(missing_ok=True)
+        root_command = (
+            "import sys\n"
+            "from pathlib import Path\n"
+            "from abxpkg import NpmProvider\n"
+            "with NpmProvider(install_root=Path(sys.argv[1])).mutation_lock():\n"
+            "    pass\n"
+        )
+
+        cleanup = ["rm", "-f", str(lock_path)]
+        if os.geteuid() != 0:
+            root_command_args = [
+                "sudo",
+                "-n",
+                sys.executable,
+                "-c",
+                root_command,
+                str(install_root),
+            ]
+            user_command_args = [sys.executable, "-c", root_command, str(install_root)]
+            cleanup = ["sudo", "-n", *cleanup]
+        else:
+            root_command_args = [sys.executable, "-c", root_command, str(install_root)]
+            user_command_args = [
+                "sudo",
+                "-n",
+                "-u",
+                "nobody",
+                sys.executable,
+                "-c",
+                root_command,
+                str(install_root),
+            ]
+
+        subprocess.run(cleanup, check=True)
 
         try:
-            with provider.mutation_lock():
-                pass
+            root_result = subprocess.run(
+                root_command_args,
+                capture_output=True,
+                text=True,
+            )
+            assert root_result.returncode == 0, root_result.stderr or root_result.stdout
             assert lock_path.stat().st_uid == 0
             assert lock_path.stat().st_mode & 0o777 == 0o644
 
-            child_pid = os.fork()
-            if child_pid == 0:
-                try:
-                    os.setgid(nobody.pw_gid)
-                    os.setuid(nobody.pw_uid)
-                    with NpmProvider(install_root=install_root).mutation_lock():
-                        pass
-                except BaseException:
-                    os._exit(1)
-                os._exit(0)
-
-            _, child_status = os.waitpid(child_pid, 0)
-            assert os.waitstatus_to_exitcode(child_status) == 0
+            user_result = subprocess.run(
+                user_command_args,
+                capture_output=True,
+                text=True,
+            )
+            assert user_result.returncode == 0, user_result.stderr or user_result.stdout
         finally:
-            lock_path.unlink(missing_ok=True)
+            subprocess.run(cleanup, check=True)
 
     def test_default_env_path_keeps_ambient_and_standard_package_dirs(
         self,
