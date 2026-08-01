@@ -618,11 +618,15 @@ class BinProvider(BaseModel):
                 held[lock_key] = (lock_file, depth - 1)
             return
 
-        lock_fd = os.open(
-            lock_path,
-            os.O_RDONLY | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0),
-            0o666,
-        )
+        open_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            lock_fd = os.open(lock_path, open_flags)
+        except FileNotFoundError:
+            try:
+                lock_fd = os.open(lock_path, open_flags | os.O_CREAT | os.O_EXCL, 0o644)
+                os.fchmod(lock_fd, 0o644)
+            except FileExistsError:
+                lock_fd = os.open(lock_path, open_flags)
         lock_file = os.fdopen(lock_fd)
         contended = False
         try:
