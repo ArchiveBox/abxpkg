@@ -1,0 +1,26 @@
+abxpkg/binprovider_apt.py
+  s_69ddf154c10e6f::t_febbe84a56348c 55-69
+tests/test_aptprovider.py
+  s_69ddf154c10e6f::t_febbe84a56348c 38
+  s_69ddf154c10e6f::t_0db9c6dd928f38 16-18,20-21,23-34,36-37,39-61
+  s_69ddf154c10e6f::t_9614132f028a13 19,22,35
+  s_69ddf154c10e6f::t_636423a55486d0 62-67
+pyproject.toml
+  s_69ddf154c10e6f::t_febbe84a56348c 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.19",
+  "base_commit_sha": "7fa1a0690ad6e4eaa83455271d2ba94ce5e39bbc",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
