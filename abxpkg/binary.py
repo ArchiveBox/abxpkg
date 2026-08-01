@@ -332,7 +332,7 @@ class Binary(ShallowBinary):
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     installed = self._validated_loaded_copy(
-                        provider,
+                        installed_bin.loaded_binprovider or provider,
                         abspath=installed_bin.loaded_abspath,
                         version=installed_bin.loaded_version,
                         sha256=installed_bin.loaded_sha256,
@@ -395,7 +395,7 @@ class Binary(ShallowBinary):
                 installed_bin = provider.load(self.name, no_cache=no_cache)
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     return self._validated_loaded_copy(
-                        provider,
+                        installed_bin.loaded_binprovider or provider,
                         abspath=installed_bin.loaded_abspath,
                         version=installed_bin.loaded_version,
                         sha256=installed_bin.loaded_sha256,
@@ -462,7 +462,7 @@ class Binary(ShallowBinary):
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:
                     return self._validated_loaded_copy(
-                        provider,
+                        updated_bin.loaded_binprovider or provider,
                         abspath=updated_bin.loaded_abspath,
                         version=updated_bin.loaded_version,
                         sha256=updated_bin.loaded_sha256,

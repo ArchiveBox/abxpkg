@@ -836,6 +836,38 @@ class TestEnvProvider:
             reloaded.loaded_binprovider.ENV["NODE_PATH"].split(os.pathsep)
         )
 
+    def test_binary_load_preserves_cached_projection_owner(self, tmp_path):
+        managed_provider = PnpmProvider(
+            install_root=tmp_path / "lib" / "pnpm" / "packages" / "zx",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"zx": {"install_args": ["zx"]}},
+        )
+        managed = managed_provider.install("zx")
+        assert managed is not None
+
+        env_root = tmp_path / "lib" / "env"
+        projection_provider = EnvProvider(install_root=env_root)
+        projected = projection_provider.project_binary(managed, "zx")
+        assert projected is not None
+
+        loaded = Binary(
+            name="zx",
+            binproviders=[EnvProvider(install_root=env_root)],
+        ).load()
+
+        assert loaded.loaded_binprovider is not None
+        assert loaded.loaded_binprovider.name == "pnpm"
+        assert loaded.loaded_binprovider.install_root == managed_provider.install_root
+        exec_env = loaded.loaded_binprovider.build_exec_env(
+            providers=loaded.loaded_binprovider.exec_env_providers(),
+            base_env={"PATH": "/usr/bin:/bin"},
+        )
+        assert exec_env["NODE_MODULES_DIR"] == str(
+            managed_provider.install_root / "node_modules",
+        )
+
     def test_search_returns_empty_for_env_provider(self):
         # EnvProvider has no package index — it just exposes ambient PATH —
         # so search must be an empty list rather than a crash or fallback.
