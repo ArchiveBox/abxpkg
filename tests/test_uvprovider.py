@@ -1,6 +1,7 @@
 import logging
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 
@@ -142,6 +143,39 @@ class TestUvProvider:
             assert path_entries.index(str(package_bin)) < path_entries.index(
                 str(shared_bin),
             )
+
+    def test_env_excludes_site_packages_from_foreign_python_minors(self, tmp_path):
+        install_root = tmp_path / "uv"
+        python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        foreign_python_lib = (
+            f"python{sys.version_info.major}.{sys.version_info.minor + 1}"
+        )
+        active_site_packages = (
+            install_root / "venv" / "lib" / python_lib / "site-packages"
+        )
+        foreign_site_packages = (
+            install_root
+            / "packages"
+            / "forum-dl"
+            / "venv"
+            / "lib"
+            / foreign_python_lib
+            / "site-packages"
+        )
+        package_bin = foreign_site_packages.parents[2] / "bin"
+        active_site_packages.mkdir(parents=True)
+        foreign_site_packages.mkdir(parents=True)
+        package_bin.mkdir(parents=True)
+
+        env = UvProvider(
+            install_root=install_root,
+            postinstall_scripts=True,
+            min_release_age=3,
+        ).ENV
+
+        assert str(active_site_packages) in env["PYTHONPATH"].split(os.pathsep)
+        assert str(foreign_site_packages) not in env["PYTHONPATH"].split(os.pathsep)
+        assert str(package_bin) in env["PATH"].split(os.pathsep)
 
     def test_managed_package_venv_repair_restores_entrypoint_access(self):
         with tempfile.TemporaryDirectory() as tmpdir:

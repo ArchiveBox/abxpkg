@@ -115,12 +115,11 @@ class UvProvider(BinProvider):
         }
         if self.install_root:
             venv_root = self.install_root / "venv"
+            python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
             env["VIRTUAL_ENV"] = str(venv_root)
-            for sp in sorted(
-                (venv_root / "lib").glob("python*/site-packages"),
-            ):
-                env["PYTHONPATH"] = ":" + str(sp)
-                break
+            site_packages = venv_root / "lib" / python_lib / "site-packages"
+            if site_packages.is_dir():
+                env["PYTHONPATH"] = ":" + str(site_packages)
             # `uv` can install side dependencies into package-scoped venvs under
             # the same provider root. They are still part of this provider's
             # runtime surface, so expose them here instead of making callers know
@@ -133,11 +132,9 @@ class UvProvider(BinProvider):
                     package_bin = package_venv / "bin"
                     if package_bin.is_dir():
                         env["PATH"] = f"{env.get('PATH', '')}:{package_bin}"
-                    for sp in sorted(
-                        (package_venv / "lib").glob("python*/site-packages"),
-                    ):
-                        package_paths.append(str(sp))
-                        break
+                    site_packages = package_venv / "lib" / python_lib / "site-packages"
+                    if site_packages.is_dir():
+                        package_paths.append(str(site_packages))
             if package_paths:
                 env["PYTHONPATH"] = (
                     f"{env.get('PYTHONPATH', '')}:{os.pathsep.join(package_paths)}"
