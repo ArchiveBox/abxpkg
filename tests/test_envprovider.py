@@ -10,7 +10,15 @@ from threading import Barrier
 
 import pytest
 
-from abxpkg import Binary, BrewProvider, EnvProvider, PipProvider, PnpmProvider, SemVer
+from abxpkg import (
+    Binary,
+    BrewProvider,
+    EnvProvider,
+    PipProvider,
+    PnpmProvider,
+    SemVer,
+    UvProvider,
+)
 from abxpkg.base_types import UNKNOWN_SHA256, bin_abspaths
 from abxpkg.config import load_derived_cache, save_derived_cache
 from abxpkg.exceptions import BinaryUninstallError
@@ -313,6 +321,16 @@ class TestEnvProvider:
     ):
         host_brew = Path(test_machine.require_tool("brew")).resolve()
         host_prefix = host_brew.parent.parent
+        python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        uv_site_packages = (
+            tmp_path / "lib" / "uv" / "venv" / "lib" / python_lib / "site-packages"
+        )
+        uv_site_packages.mkdir(parents=True)
+        uv_provider = UvProvider(
+            install_root=tmp_path / "lib" / "uv",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
         clean_env = {
             key: value
             for key, value in os.environ.items()
@@ -324,11 +342,16 @@ class TestEnvProvider:
             postinstall_scripts=True,
             min_release_age=0,
         )
-        env_provider.set_projection_providers([BrewProvider()])
+        env_provider.set_projection_providers([BrewProvider(), uv_provider])
         loaded = env_provider.load("brew", no_cache=True)
         assert loaded is not None
         assert loaded.loaded_abspath == tmp_path / "lib" / "env" / "bin" / "brew"
         assert loaded.loaded_abspath.is_symlink()
+        exec_env = loaded.loaded_binprovider.build_exec_env(
+            providers=loaded.loaded_binprovider.exec_env_providers(),
+            base_env={},
+        )
+        assert str(uv_site_packages) not in exec_env.get("PYTHONPATH", "")
 
         contaminated_env = {
             **clean_env,

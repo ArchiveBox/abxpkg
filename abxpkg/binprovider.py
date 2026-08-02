@@ -4085,7 +4085,20 @@ class EnvProvider(BinProvider):
                 if abspath not in candidates:
                     candidates.append(abspath)
 
+        projection_providers = list(self._projection_providers)
         for abspath in candidates:
+            # Keep only a provider that explicitly claims this launcher. Plain
+            # host binaries bring their own runtime; unrelated provider paths
+            # can corrupt host Python tools with foreign site-packages.
+            owner = next(
+                (
+                    provider
+                    for provider in projection_providers
+                    if provider.host_projection_target(Path(abspath)) is not None
+                ),
+                None,
+            )
+            self.set_projection_providers([owner] if owner is not None else [])
             version = self._get_version_at_abspath(
                 bin_name_str,
                 abspath,
