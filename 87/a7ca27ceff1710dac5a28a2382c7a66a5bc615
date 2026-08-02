@@ -1,0 +1,24 @@
+tests/test_envprovider.py
+  s_69ddf154c10e6f::t_8caa8c6e22b342 324-333,345,350-354
+  s_69ddf154c10e6f::t_21f959808867fd 13-21
+abxpkg/binprovider.py
+  s_69ddf154c10e6f::t_e5113ae62202a7 4088,4090-4101
+pyproject.toml
+  s_69ddf154c10e6f::t_29ad65f0d15bbe 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "87a7ca27ceff1710dac5a28a2382c7a66a5bc615",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
