@@ -797,7 +797,7 @@ class PlaywrightProvider(BinProvider):
         # When ``playwright install --with-deps`` runs through the
         # base ``BinProvider.exec`` sudo path on a non-root host, the
         # downloaded browser tree ends up owned by root. Hand it back
-        # to the calling user so subsequent file operations (notably
+        # to the calling effective user so subsequent file operations (notably
         # ``tempfile.TemporaryDirectory`` cleanup in tests) don't hit
         # ``PermissionError``. The chown itself routes through the
         # same euid=0 → sudo path, so it gets root permission for
@@ -817,7 +817,8 @@ class PlaywrightProvider(BinProvider):
                 bin_name=chown.loaded_abspath,
                 cmd=[
                     "-R",
-                    f"{os.getuid()}:{os.getgid()}",
+                    # ArchiveBox can retain ruid=0 while running as its service user.
+                    f"{os.geteuid()}:{os.getegid()}",
                     str(self.install_root),
                 ],
                 quiet=True,

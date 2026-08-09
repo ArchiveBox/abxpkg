@@ -790,8 +790,9 @@ class PuppeteerProvider(BinProvider):
         if proc.returncode == 0 and self.install_root is not None:
             cache_dir = self.install_root / "cache"
             if cache_dir.exists():
-                uid = os.getuid()
-                gid = os.getgid()
+                # ArchiveBox can retain ruid=0 while running as its service user.
+                uid = os.geteuid()
+                gid = os.getegid()
                 chown_proc = self.exec(
                     bin_name=sudo_binary.loaded_abspath,
                     cmd=["chown", "-R", f"{uid}:{gid}", str(cache_dir)],
