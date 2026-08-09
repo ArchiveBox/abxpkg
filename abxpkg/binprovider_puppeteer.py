@@ -299,6 +299,18 @@ class PuppeteerProvider(BinProvider):
             min_release_age=min_release_age,
         ).install(no_cache=no_cache)
 
+    def unzip_binary(self) -> Binary:
+        """Resolve Puppeteer's archive extractor through native system providers."""
+        from . import PROVIDER_CLASS_BY_NAME
+
+        return Binary(
+            name="unzip",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in ("env", "brew", "apt")
+            ],
+        )
+
     @log_method_call()
     def setup(
         self,
@@ -891,6 +903,10 @@ class PuppeteerProvider(BinProvider):
 
         if self.dry_run:
             return f"DRY_RUN would install {browser_name} via @puppeteer/browsers"
+
+        unzip = self.unzip_binary().install(no_cache=no_cache)
+        if not unzip.loaded_abspath:
+            raise RuntimeError("abxpkg could not resolve or install unzip")
 
         installer_binary = self._INSTALLER_BINARY
         if installer_binary is None or installer_binary.loaded_abspath is None:

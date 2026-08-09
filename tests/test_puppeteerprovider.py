@@ -11,6 +11,16 @@ PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 
 class TestPuppeteerProvider:
+    def test_browser_install_uses_native_unzip_providers(self):
+        unzip = PuppeteerProvider().unzip_binary()
+
+        assert unzip.name == "unzip"
+        assert [provider.name for provider in unzip.binproviders] == [
+            "env",
+            "brew",
+            "apt",
+        ]
+
     def test_min_release_age_is_enforced_during_cli_bootstrap(self, test_machine):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
