@@ -1,0 +1,22 @@
+tests/test_puppeteerprovider.py
+  s_69ddf154c10e6f::t_1ac25aa314611d 14-23
+abxpkg/binprovider_puppeteer.py
+  s_69ddf154c10e6f::t_639e0054699b88 302-313,907-909
+  s_69ddf154c10e6f::t_04701aac7b638c 910
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "84e8d44e526bde952ff5d233444fbf06d1c4deda",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
