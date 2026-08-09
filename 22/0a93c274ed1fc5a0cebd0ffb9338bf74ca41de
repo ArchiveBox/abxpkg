@@ -1,0 +1,23 @@
+abxpkg/binprovider_playwright.py
+  s_69ddf154c10e6f::t_b9d1dd29f53800 800,820
+  s_69ddf154c10e6f::t_a333b70dd00c1c 821
+abxpkg/binprovider_puppeteer.py
+  s_69ddf154c10e6f::t_b9d1dd29f53800 793
+  s_69ddf154c10e6f::t_a333b70dd00c1c 794-795
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "220a93c274ed1fc5a0cebd0ffb9338bf74ca41de",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
