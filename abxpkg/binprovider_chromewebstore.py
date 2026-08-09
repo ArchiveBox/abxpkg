@@ -330,6 +330,19 @@ class ChromeWebstoreProvider(BinProvider):
         manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         return str(manifest.get("version") or "")
 
+    def unzip_binary(self):
+        """Resolve the extension unpacker through native system package providers."""
+        from . import PROVIDER_CLASS_BY_NAME
+        from .binary import Binary
+
+        return Binary(
+            name="unzip",
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[provider_name]()
+                for provider_name in ("env", "brew", "apt")
+            ],
+        )
+
     @remap_kwargs({"packages": "install_args"})
     def chromewebstore_install_handler(
         self,
@@ -348,9 +361,7 @@ class ChromeWebstoreProvider(BinProvider):
         extension_name = self._extension_name(bin_name, install_args)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
-        from .binary import Binary
-
-        unzip = Binary(name="unzip").install(no_cache=no_cache)
+        unzip = self.unzip_binary().install(no_cache=no_cache)
         if not unzip.loaded_abspath:
             raise RuntimeError("abxpkg could not resolve or install unzip")
         install_root = self.install_root

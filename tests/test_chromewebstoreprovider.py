@@ -50,6 +50,17 @@ def restore_signed_store_metadata_from_real_crx(
 
 
 class TestChromeWebstoreProvider:
+    def test_unzip_dependency_uses_native_system_package_providers(self):
+        provider = ChromeWebstoreProvider()
+
+        unzip = provider.unzip_binary()
+
+        assert [binprovider.name for binprovider in unzip.binproviders] == [
+            "env",
+            "brew",
+            "apt",
+        ]
+
     def test_install_root_alias_without_explicit_bin_dir_uses_root_extensions(
         self,
         test_machine,
