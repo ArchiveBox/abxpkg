@@ -39,7 +39,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "pip>=26.0.1",
     "typing-extensions>=4.15.0",
     "platformdirs>=4.9.2",
     "pydantic>=2.12.5",

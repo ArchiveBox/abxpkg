@@ -1,10 +1,24 @@
 import tempfile
+import tomllib
 from pathlib import Path
+
+from packaging.requirements import Requirement
 
 from abxpkg import Binary, EnvProvider, NpmProvider, PipProvider
 
 
 class TestInstall:
+    def test_runtime_metadata_does_not_require_pip(self):
+        pyproject = tomllib.loads(
+            (Path(__file__).parents[1] / "pyproject.toml").read_text(),
+        )
+        runtime_dependencies = {
+            Requirement(requirement).name
+            for requirement in pyproject["project"]["dependencies"]
+        }
+
+        assert "pip" not in runtime_dependencies
+
     def test_env_provider_install_surface_uses_real_python(self, test_machine):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
         loaded = provider.load("python")
