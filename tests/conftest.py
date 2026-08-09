@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import subprocess
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -27,6 +30,31 @@ def _ensure_test_machine_dependencies() -> None:
 
 
 class TestMachine:
+    def assert_npm_release_age_gate(
+        self,
+        package: str,
+        installed_version: SemVer,
+        min_days: int,
+    ) -> None:
+        with urllib.request.urlopen(
+            f"https://registry.npmjs.org/{package}",
+            timeout=30,
+        ) as response:
+            metadata = json.load(response)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=min_days)
+        installed = str(installed_version)
+        latest = metadata["dist-tags"]["latest"]
+        published = {
+            version: datetime.fromisoformat(
+                metadata["time"][version].replace("Z", "+00:00"),
+            )
+            for version in (installed, latest)
+        }
+        assert installed != latest
+        assert published[installed] <= cutoff
+        assert published[latest] > cutoff
+
     def require_tool(self, tool_name: str) -> str:
         loaded = Binary(name=tool_name).install(no_cache=True)
         self.assert_shallow_binary_loaded(loaded, assert_version_command=False)

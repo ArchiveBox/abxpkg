@@ -257,7 +257,7 @@ class TestYarnProvider:
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
 
-    def test_min_release_age_pins_to_older_version_when_strict(self):
+    def test_min_release_age_pins_to_older_version_when_strict(self, test_machine):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = self._berry_provider(
                 install_root=Path(tmpdir) / "yarn",
@@ -268,10 +268,11 @@ class TestYarnProvider:
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
-            ceiling = SemVer.parse("8.8.0")
-            assert ceiling is not None
-            # zx 8.8.x was published too recently to clear a 365-day gate.
-            assert installed.loaded_version < ceiling
+            test_machine.assert_npm_release_age_gate(
+                "zx",
+                installed.loaded_version,
+                365,
+            )
             # Side effect: the .yarnrc.yml records the gate.
             yarnrc = Path(tmpdir) / "yarn" / ".yarnrc.yml"
             assert yarnrc.exists()

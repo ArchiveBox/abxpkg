@@ -213,7 +213,7 @@ class TestBunProvider:
             installed = binary.install()
             test_machine.assert_shallow_binary_loaded(installed)
 
-    def test_min_release_age_pins_to_older_version_when_strict(self):
+    def test_min_release_age_pins_to_older_version_when_strict(self, test_machine):
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = BunProvider(
                 install_root=Path(tmpdir) / "bun",
@@ -224,9 +224,11 @@ class TestBunProvider:
             installed = strict_provider.install("zx")
             assert installed is not None
             assert installed.loaded_version is not None
-            ceiling = SemVer.parse("8.8.0")
-            assert ceiling is not None
-            assert installed.loaded_version < ceiling
+            test_machine.assert_npm_release_age_gate(
+                "zx",
+                installed.loaded_version,
+                365,
+            )
 
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(
         self,
