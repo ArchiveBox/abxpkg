@@ -644,25 +644,73 @@ class TestEnvProvider:
                 postinstall_scripts=True,
                 min_release_age=3,
             )
-            loaded = provider.load("python3")
+            original_override = os.environ.pop("PYTHON3_BINARY", None)
+            try:
+                loaded = provider.load("python3")
 
-            assert loaded is not None
-            assert loaded.loaded_abspath is not None
-            derived_env_path = install_root / "derived.env"
-            cache = load_derived_cache(derived_env_path)
-            assert cache
-            cache_key, cached_record = next(iter(cache.items()))
-            assert isinstance(cached_record["cache_context"], str)
-            assert cached_record["install_args"] == ["python3"]
-            cached_record["cache_context"] = "old-cache-context"
-            save_derived_cache(derived_env_path, cache)
+                assert loaded is not None
+                assert loaded.loaded_abspath is not None
+                derived_env_path = install_root / "derived.env"
+                cache = load_derived_cache(derived_env_path)
+                assert cache
+                cached_record = next(iter(cache.values()))
+                assert isinstance(cached_record["cache_context"], str)
+                assert cached_record["install_args"] == ["python3"]
+                default_context = cached_record["cache_context"]
 
-            reloaded = provider.load("python3")
+                os.environ["PYTHON3_BINARY"] = str(loaded.loaded_abspath)
+                overridden = provider.load("python3")
+                os.environ.pop("PYTHON3_BINARY")
+                reloaded = provider.load("python3")
 
-            assert reloaded is not None
-            assert reloaded.loaded_abspath == loaded.loaded_abspath
-            refreshed = load_derived_cache(derived_env_path)
-            assert refreshed[cache_key]["cache_context"] != "old-cache-context"
+                assert overridden is not None
+                assert reloaded is not None
+                assert overridden.loaded_abspath == loaded.loaded_abspath
+                assert reloaded.loaded_abspath == loaded.loaded_abspath
+                contexts = {
+                    context
+                    for record in load_derived_cache(derived_env_path).values()
+                    if record.get("provider_name") == provider.name
+                    and record.get("bin_name") == "python3"
+                    and isinstance((context := record.get("cache_context")), str)
+                }
+                assert default_context in contexts
+                assert any(
+                    json.loads(context).get("manual_binary_env")
+                    == {"PYTHON3_BINARY": str(loaded.loaded_abspath)}
+                    for context in contexts
+                )
+
+                cache = load_derived_cache(derived_env_path)
+                default_key = next(
+                    key
+                    for key, record in cache.items()
+                    if record.get("cache_context") == default_context
+                )
+                cache[default_key]["cache_context"] = "old-cache-context"
+                save_derived_cache(derived_env_path, cache)
+
+                repaired = provider.load("python3")
+
+                assert repaired is not None
+                refreshed = load_derived_cache(derived_env_path)
+                assert refreshed[default_key]["cache_context"] == default_context
+                assert (
+                    len(
+                        {
+                            record.get("cache_context_hash")
+                            for record in refreshed.values()
+                            if record.get("provider_name") == provider.name
+                            and record.get("bin_name") == "python3"
+                        },
+                    )
+                    == 2
+                )
+            finally:
+                if original_override is None:
+                    os.environ.pop("PYTHON3_BINARY", None)
+                else:
+                    os.environ["PYTHON3_BINARY"] = original_override
 
     def test_provider_does_not_claim_binaries_managed_by_other_providers(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -847,9 +895,19 @@ class TestEnvProvider:
             for record in load_derived_cache(env_root / "derived.env").values()
             if record.get("bin_name") == "zx"
         ]
-        assert len(projection_records) == 1
-        assert projection_records[0]["cache_kind"] == "projection"
-        assert projection_records[0]["resolved_provider_name"] == "pnpm"
+        assert len(projection_records) == 2
+        assert (
+            len(
+                {record["cache_context_hash"] for record in projection_records},
+            )
+            == 2
+        )
+        assert all(
+            record["cache_kind"] == "projection" for record in projection_records
+        )
+        assert all(
+            record["resolved_provider_name"] == "pnpm" for record in projection_records
+        )
 
         reloaded = consumer.load("zx")
         assert reloaded is not None

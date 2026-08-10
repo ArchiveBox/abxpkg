@@ -1033,21 +1033,7 @@ class BinProvider(BaseModel):
             or cached_record.get("cache_context") != cache_context
             or cached_record_key != cache_key
         ):
-            cache = {
-                current_cache_key: current_cache_value
-                for current_cache_key, current_cache_value in cache.items()
-                if not (
-                    isinstance(current_cache_value, dict)
-                    and current_cache_value.get("provider_name") == self.name
-                    and current_cache_value.get("bin_name") == str(bin_name)
-                    and str(
-                        Path(str(current_cache_value.get("abspath") or ""))
-                        .expanduser()
-                        .resolve(strict=False),
-                    )
-                    == resolved_abspath
-                )
-            }
+            cache.pop(cached_record_key, None)
             cached_record = {
                 "fingerprint": fingerprints,
                 "cache_context": cache_context,
@@ -1147,7 +1133,6 @@ class BinProvider(BaseModel):
             return None
 
         original_abspath = str(Path(abspath).expanduser().absolute())
-        resolved_abspath = str(Path(abspath).expanduser().resolve(strict=False))
         primary_fingerprint = fingerprints[0]
         cache_context = self._cache_context(bin_name)
         cache_context_hash = self._cache_context_hash(bin_name, cache_context)
@@ -1178,21 +1163,8 @@ class BinProvider(BaseModel):
         ):
             derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
-        cache = {
-            cache_key: cache_value
-            for cache_key, cache_value in cache.items()
-            if not (
-                isinstance(cache_value, dict)
-                and cache_value.get("provider_name") == self.name
-                and cache_value.get("bin_name") == str(bin_name)
-                and str(
-                    Path(str(cache_value.get("abspath") or ""))
-                    .expanduser()
-                    .resolve(strict=False),
-                )
-                == resolved_abspath
-            )
-        }
+        # The same binary path can have valid cache entries for multiple
+        # override contexts. The context hash in the key keeps them distinct.
         cache[
             self._cache_key(bin_name, abspath, cache_context_hash=cache_context_hash)
         ] = record
