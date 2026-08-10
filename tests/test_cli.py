@@ -273,8 +273,21 @@ def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
         for record in load_derived_cache(lib_dir / "env" / "derived.env").values()
         if record.get("bin_name") == "pnpm" and record.get("cache_kind") == "projection"
     ]
-    assert len(refreshed_projection_records) == 1
-    assert refreshed_projection_records[0]["resolved_provider_name"] == "npm"
+    assert len(refreshed_projection_records) == 2
+    assert (
+        len({record["cache_context_hash"] for record in refreshed_projection_records})
+        == 2
+    )
+    assert {record["abspath"] for record in refreshed_projection_records} == {
+        str(projected),
+    }
+    assert all(
+        record["provider_name"] == "env" for record in refreshed_projection_records
+    )
+    assert all(
+        record["resolved_provider_name"] == "npm"
+        for record in refreshed_projection_records
+    )
 
 
 def test_env_deps_from_preserves_pnpm_package_launcher_execution(tmp_path):
