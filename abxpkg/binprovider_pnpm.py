@@ -712,10 +712,12 @@ class PnpmProvider(BinProvider):
     def _managed_install_euid(self) -> int:
         """Return the uid that should own pnpm-managed package installs."""
         if self.install_root is not None and self.install_root.is_dir():
-            return self.detect_euid(
+            existing_owner = self.detect_euid(
                 owner_paths=(self.install_root,),
                 preserve_root=True,
             )
+            if existing_owner != 0:
+                return existing_owner
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
