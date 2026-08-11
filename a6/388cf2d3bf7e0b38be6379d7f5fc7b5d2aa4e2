@@ -1,0 +1,30 @@
+abxpkg/cli.py
+  s_69ddf154c10e6f::t_f9a4735b35f3e6 474
+abxpkg/binprovider_uv.py
+  s_69ddf154c10e6f::t_7c7c71440120eb 496,505,509-516,730,1168
+  s_69ddf154c10e6f::t_40c3eb58ff3118 1185-1186
+tests/test_cli.py
+  s_69ddf154c10e6f::t_f9a4735b35f3e6 906
+abxpkg/binprovider.py
+  s_69ddf154c10e6f::t_f9a4735b35f3e6 1396
+  s_69ddf154c10e6f::t_23f33f2623a180 4249-4256,4265
+  s_69ddf154c10e6f::t_0429cac2b10c98 4257-4264
+tests/test_uvprovider.py
+  s_69ddf154c10e6f::t_7c7c71440120eb 200-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a6388cf2d3bf7e0b38be6379d7f5fc7b5d2aa4e2",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
