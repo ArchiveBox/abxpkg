@@ -27,6 +27,24 @@ from abxpkg.binprovider import ShallowBinary
 
 
 class TestBinProvider:
+    def test_invalidate_cache_clears_every_in_process_context(self, tmp_path):
+        provider = EnvProvider(install_root=tmp_path / "env")
+
+        first = provider.get_install_args("python3")
+        second = provider.get_install_args("python3", quiet=True)
+
+        assert first == second
+        assert provider._cache
+        assert any(provider._cache.values())
+
+        provider.invalidate_cache("python3")
+
+        assert all(
+            cache_key[0] != "python3"
+            for method_cache in provider._cache.values()
+            for cache_key in method_cache
+        )
+
     def test_mutation_lock_is_root_keyed_reentrant_and_setup_neutral(self, tmp_path):
         install_root = tmp_path / "not-created"
         first = NpmProvider(install_root=install_root)

@@ -7,6 +7,7 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
+from typing import Any, cast
 
 import pytest
 
@@ -161,6 +162,50 @@ class TestEnvProvider:
             record.get("bin_name")
             for record in load_derived_cache(derived_env_path).values()
         } >= {"first", "second"}
+
+    def test_stale_fallback_cache_record_is_removed_by_its_actual_key(self, tmp_path):
+        provider = EnvProvider(install_root=tmp_path / "lib" / "env")
+        loaded = provider.load("python3")
+        assert loaded is not None
+        assert loaded.loaded_abspath is not None
+
+        derived_env_path = provider.install_root / "derived.env"
+        cache = load_derived_cache(derived_env_path)
+        cache_key, record = next(iter(cache.items()))
+        record = cast(dict[str, Any], record)
+        record["fingerprint"][0]["mtime_ns"] = -1
+        cache["legacy-cache-key"] = record
+        cache.pop(cache_key)
+        save_derived_cache(derived_env_path, cache)
+
+        assert provider.load_cached_binary("python3", loaded.loaded_abspath) is None
+        assert "legacy-cache-key" not in load_derived_cache(derived_env_path)
+
+    def test_unchanged_projection_does_not_replace_cache_file(self, tmp_path):
+        provider = EnvProvider(install_root=tmp_path / "lib" / "env")
+        loaded = provider.load("python3")
+        assert loaded is not None
+
+        derived_env_path = provider.install_root / "derived.env"
+        provider.project_binary(loaded, "python3")
+        first_stat = derived_env_path.stat()
+        provider.project_binary(loaded, "python3")
+        second_stat = derived_env_path.stat()
+
+        assert second_stat.st_ino == first_stat.st_ino
+        assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
+
+    def test_cache_fingerprint_includes_unix_change_time(self, tmp_path):
+        provider = EnvProvider(install_root=tmp_path / "lib" / "env")
+        loaded = provider.load("python3")
+        assert loaded is not None
+        assert loaded.loaded_abspath is not None
+
+        cache = load_derived_cache(provider.derived_env_path)
+        cache_key, record = next(iter(cache.items()))
+        record = cast(dict[str, Any], record)
+
+        assert record["fingerprint"][0]["ctime_ns"] > 0
 
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
@@ -839,6 +884,11 @@ class TestEnvProvider:
         assert projected.readlink().is_absolute()
         assert projected.resolve().is_relative_to(
             host_provider.install_root / "node_modules" / ".pnpm",
+        )
+        assert loaded.loaded_sha256 == env_provider.get_sha256(
+            projected_bin,
+            abspath=projected,
+            no_cache=True,
         )
         assert not (tmp_path / "lib" / "env" / ".pnpm").exists()
         result = subprocess.run(

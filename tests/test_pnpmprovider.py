@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import os
+import pwd
 import subprocess
 import tempfile
 import traceback
@@ -154,8 +155,9 @@ class TestPnpmProvider:
         assert provider._store_dir() == expected_store
 
     def test_root_managed_install_uses_sudo_invoking_uid(self, tmp_path):
-        invoking_uid = os.getuid()
-        assert invoking_uid > 0
+        invoking_uid = next(
+            entry.pw_uid for entry in pwd.getpwall() if entry.pw_uid > 0
+        )
         provider = PnpmProvider(
             install_root=tmp_path / "pnpm",
             postinstall_scripts=True,
@@ -277,8 +279,6 @@ class TestPnpmProvider:
                 "--rm",
                 "--platform",
                 "linux/amd64",
-                "--user",
-                "65534:65534",
                 "--volume",
                 f"{repo_root}:/src:ro",
                 "--workdir",
@@ -287,6 +287,8 @@ class TestPnpmProvider:
                 "HOME=/tmp",
                 "--env",
                 "UV_PROJECT_ENVIRONMENT=/tmp/venv",
+                "--env",
+                "SUDO_UID=65534",
                 "ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
                 "sh",
                 "-lc",
@@ -298,7 +300,13 @@ class TestPnpmProvider:
                     "test -L /tmp/abxlib/env/bin/node && "
                     "test -L /tmp/abxlib/env/bin/npm && "
                     "test -x /tmp/abxlib/npm/packages/pnpm/node_modules/.bin/pnpm && "
-                    "test -x /tmp/abxlib/pnpm/node_modules/.bin/zx"
+                    "test -x /tmp/abxlib/pnpm/node_modules/.bin/zx && "
+                    'test "$(stat -c %u /tmp/abxlib/pnpm)" = 65534 && '
+                    'test "$(stat -c %u /tmp/abxlib/pnpm/node_modules)" = 65534 && '
+                    "rm /tmp/abxlib/env/bin/node && "
+                    "uv run --no-cache --project /src -- "
+                    "abxpkg --lib /tmp/abxlib --binproviders=pnpm "
+                    "run zx --version"
                 ),
             ],
             capture_output=True,
@@ -418,8 +426,15 @@ class TestPnpmProvider:
             assert version.returncode == 0, version.stderr
             assert not (lib_dir / "bin").exists()
 
-    def test_env_projection_exec_env_includes_projected_pnpm_owner(self, tmp_path):
+    def test_env_projection_exec_env_includes_projected_pnpm_owner(
+        self,
+        tmp_path,
+        test_machine,
+    ):
         lib_dir = tmp_path / "lib"
+        managed_node = lib_dir / "node" / "bin" / "node"
+        managed_node.parent.mkdir(parents=True)
+        managed_node.symlink_to(Path(test_machine.require_tool("node")).absolute())
         env_provider = EnvProvider(
             install_root=lib_dir / "env",
             PATH="/usr/bin:/bin",
@@ -439,7 +454,10 @@ class TestPnpmProvider:
         path_entries = exec_env["PATH"].split(os.pathsep)
         assert str(lib_dir / "env" / "bin") in path_entries
         assert str(owner.bin_dir) in path_entries
-        assert exec_env["NODE_PATH"] == str(owner.install_root / "node_modules")
+        assert str(managed_node.parent) in path_entries
+        node_paths = exec_env["NODE_PATH"].split(os.pathsep)
+        assert node_paths[0] == str(owner.install_root / "node_modules")
+        assert str(lib_dir / "node" / "lib" / "node_modules") in node_paths
 
     def test_self_bootstrap_uses_host_npm_when_top_level_provider_excludes_env(
         self,

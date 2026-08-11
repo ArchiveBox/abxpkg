@@ -322,7 +322,20 @@ class UvProvider(BinProvider):
         )
 
     def _cache_args(self, *, no_cache: bool = False) -> list[str]:
-        return ["--no-cache"]
+        return ["--no-cache"] if no_cache else []
+
+    def _cache_context(self, bin_name: BinName) -> str:
+        provider_config = json.loads(super()._cache_context(bin_name))
+        provider_config["runtime_python"] = {
+            "executable": str(Path(sys.executable).absolute()),
+            "cache_tag": sys.implementation.cache_tag,
+        }
+        return json.dumps(
+            provider_config,
+            default=str,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
 
     @property
     def tool_dir(self) -> Path:
@@ -366,25 +379,6 @@ class UvProvider(BinProvider):
             self.PATH = self._merge_PATH(default_bin, PATH=self.PATH, prepend=True)
         super().setup_PATH(no_cache=no_cache)
 
-    @log_method_call(include_result=True)
-    def exec(
-        self,
-        bin_name,
-        cmd=(),
-        cwd: Path | str = ".",
-        quiet=False,
-        should_log_command: bool = True,
-        **kwargs,
-    ):
-        return super().exec(
-            bin_name=bin_name,
-            cmd=cmd,
-            cwd=cwd,
-            quiet=quiet,
-            should_log_command=should_log_command,
-            **kwargs,
-        )
-
     @log_method_call()
     def setup(
         self,
@@ -417,11 +411,17 @@ class UvProvider(BinProvider):
 
     def _managed_install_euid(self) -> int:
         """Return the uid that should own uv-managed package environments."""
+        owner_paths = (self.install_root,)
+        if self.install_root is not None and self.install_root.is_dir():
+            return super().detect_euid(
+                owner_paths=owner_paths,
+                preserve_root=True,
+            )
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
         return super().detect_euid(
-            owner_paths=(self.install_root, self.tool_dir, self.bin_dir),
+            owner_paths=owner_paths,
             preserve_root=True,
         )
 
@@ -563,8 +563,6 @@ class UvProvider(BinProvider):
             gid = os.getegid()
 
         paths = [
-            install_root.parent.parent,
-            install_root.parent,
             root.parent,
             root,
             root / "venv",
@@ -702,12 +700,28 @@ class UvProvider(BinProvider):
 
         package_name = self._package_name_for_bin(str(bin_name))
         normalized_name = package_name.lower().replace("-", "_")
+        venv_roots = self._managed_venv_roots(str(bin_name))
+        owning_venv = next(
+            (
+                venv_root
+                for venv_root in venv_roots
+                if Path(abspath)
+                .resolve(strict=False)
+                .is_relative_to(
+                    venv_root.resolve(strict=False),
+                )
+            ),
+            venv_roots[0] if venv_roots else self.install_root / "venv",
+        )
+        venv_python = owning_venv / "bin" / "python"
+        if venv_python.exists():
+            cache_info["fingerprint_paths"].append(venv_python)
         metadata_files = sorted(
-            ((self.install_root / "venv") / "lib").glob(
+            (owning_venv / "lib").glob(
                 f"python*/site-packages/{normalized_name}*.dist-info/METADATA",
             ),
         ) or sorted(
-            ((self.install_root / "venv") / "lib").glob(
+            (owning_venv / "lib").glob(
                 f"python*/site-packages/{normalized_name}*.dist-info/PKG-INFO",
             ),
         )

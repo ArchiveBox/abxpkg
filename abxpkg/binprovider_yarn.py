@@ -296,6 +296,10 @@ class YarnProvider(BinProvider):
             **kwargs,
         )
 
+    def supports_cached_exec(self) -> bool:
+        # Yarn intentionally changes the default cwd to its managed project.
+        return False
+
     @log_method_call()
     def setup(
         self,

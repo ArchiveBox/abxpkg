@@ -12,6 +12,7 @@ import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import cast
 
 import pytest
 import rich_click as click
@@ -45,6 +46,7 @@ def _run_cli(
     *args: str,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 600,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke a console script with a clean ABXPKG_* environment."""
 
@@ -61,6 +63,7 @@ def _run_cli(
         text=True,
         env=env,
         timeout=timeout,
+        cwd=cwd,
     )
 
 
@@ -68,6 +71,7 @@ def _run_abxpkg_cli(
     *args: str,
     env_overrides: dict[str, str] | None = None,
     timeout: float = 600,
+    cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Invoke the real `abxpkg` console script with a clean env."""
 
@@ -76,6 +80,7 @@ def _run_abxpkg_cli(
         *args,
         env_overrides=env_overrides,
         timeout=timeout,
+        cwd=cwd,
     )
 
 
@@ -878,6 +883,249 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
     assert proc.stderr == ""
 
 
+def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path):
+    args = (
+        f"--lib={tmp_path}",
+        "--binproviders=env",
+        "run",
+        "python3",
+        "--version",
+    )
+    first = _run_abxpkg_cli(*args)
+    derived_env = tmp_path / "env" / "derived.env"
+    first_stat = derived_env.stat()
+    records = load_derived_cache(derived_env).values()
+
+    assert first.returncode == 0, first.stderr
+    assert any(record.get("exec_plan") for record in records)
+
+    second = _run_abxpkg_cli(
+        *args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    second_stat = derived_env.stat()
+
+    assert second.returncode == 0, second.stderr
+    assert second.stdout.strip().startswith("Python ")
+    assert "rich_click" not in second.stderr
+    assert "pydantic" not in second.stderr
+    assert second_stat.st_ino == first_stat.st_ino
+    assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
+
+    derived_env.chmod(0o666)
+    insecure_cache = _run_abxpkg_cli(
+        *args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    derived_env.chmod(0o600)
+
+    assert insecure_cache.returncode == 0, insecure_cache.stderr
+    assert "rich_click" in insecure_cache.stderr
+
+    derived_env.unlink()
+    os.mkfifo(derived_env)
+    fifo_cache = _run_abxpkg_cli(*args, timeout=5)
+
+    assert fifo_cache.returncode == 0, fifo_cache.stderr
+    assert derived_env.is_file()
+
+    default_args = (f"--lib={tmp_path / 'default-lib'}", "run", "python3", "--version")
+    default_first = _run_abxpkg_cli(*default_args)
+    default_second = _run_abxpkg_cli(
+        *default_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert default_first.returncode == 0, default_first.stderr
+    assert default_second.returncode == 0, default_second.stderr
+    assert "rich_click" not in default_second.stderr
+    assert "pydantic" not in default_second.stderr
+
+    script = tmp_path / "warm-script.py"
+    script.write_text(
+        '# /// script\n# dependencies = ["python3"]\n# ///\nprint("warm-script")\n',
+    )
+    script_args = (
+        f"--lib={tmp_path / 'script-lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(script),
+    )
+    script_first = _run_abxpkg_cli(*script_args)
+    script_second = _run_abxpkg_cli(
+        *script_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert script_first.returncode == 0, script_first.stderr
+    assert script_second.returncode == 0, script_second.stderr
+    assert script_second.stdout.strip() == "warm-script"
+    assert "rich_click" not in script_second.stderr
+    assert "pydantic" not in script_second.stderr
+
+    script.write_text(
+        '# /// script\n# dependencies = ["python3"]\n# ///\nprint("updated-script")\n',
+    )
+    script_changed = _run_abxpkg_cli(*script_args)
+    script_rewarmed = _run_abxpkg_cli(
+        *script_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert script_changed.returncode == 0, script_changed.stderr
+    assert script_changed.stdout.strip() == "updated-script"
+    assert script_rewarmed.returncode == 0, script_rewarmed.stderr
+    assert script_rewarmed.stdout.strip() == "updated-script"
+    assert "rich_click" not in script_rewarmed.stderr
+    assert "pydantic" not in script_rewarmed.stderr
+
+    mutable_bin = tmp_path / "mutable-bin"
+    mutable_bin.mkdir()
+    mutable_path_args = (
+        f"--lib={tmp_path / 'mutable-path-lib'}",
+        "--binproviders=env",
+        "run",
+        "git",
+        "status",
+        "--short",
+    )
+    mutable_env = {"PATH": f"{mutable_bin}{os.pathsep}{os.environ['PATH']}"}
+    dependency_script = tmp_path / "dependency-script.py"
+    dependency_script.write_text(
+        "# /// script\n"
+        '# dependencies = ["python3", "git"]\n'
+        "# ///\n"
+        'print("dependency-script")\n',
+    )
+    dependency_script_args = (
+        f"--lib={tmp_path / 'dependency-script-lib'}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(dependency_script),
+    )
+    dependency_first = _run_abxpkg_cli(
+        *dependency_script_args,
+        env_overrides=mutable_env,
+    )
+    before_addition = _run_abxpkg_cli(
+        *mutable_path_args,
+        env_overrides=mutable_env,
+    )
+    mutable_target = mutable_bin / "git"
+    mutable_target.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "git version 9.9.9"; '
+        "else echo added-to-existing-path; fi\n",
+    )
+    mutable_target.chmod(0o755)
+    after_addition = _run_abxpkg_cli(
+        *mutable_path_args,
+        env_overrides=mutable_env,
+    )
+    dependency_changed = _run_abxpkg_cli(
+        *dependency_script_args,
+        env_overrides=mutable_env,
+    )
+    dependency_cache = load_derived_cache(
+        tmp_path / "dependency-script-lib" / "env" / "derived.env",
+    )
+    dependency_resolutions: list[dict[str, object]] = []
+    for record in dependency_cache.values():
+        plans = record.get("script_exec_plans")
+        if not isinstance(plans, dict):
+            continue
+        for plan in plans.values():
+            if not isinstance(plan, dict):
+                continue
+            resolutions = cast(dict[str, object], plan).get("resolutions")
+            if not isinstance(resolutions, list):
+                continue
+            dependency_resolutions.extend(
+                cast(dict[str, object], resolution)
+                for resolution in resolutions
+                if isinstance(resolution, dict)
+            )
+
+    assert dependency_first.returncode == 0, dependency_first.stderr
+    assert before_addition.returncode == 0, before_addition.stderr
+    assert after_addition.returncode == 0, after_addition.stderr
+    assert after_addition.stdout.strip() == "added-to-existing-path"
+    assert dependency_changed.returncode == 0, dependency_changed.stderr
+    assert dependency_changed.stdout.strip() == "dependency-script"
+    assert any(
+        resolution.get("name") == "git"
+        and Path(str(resolution.get("ambient_abspath"))).resolve()
+        == mutable_target.resolve()
+        for resolution in dependency_resolutions
+    )
+
+    relative_a = tmp_path / "relative-a"
+    relative_b = tmp_path / "relative-b"
+    relative_a.mkdir()
+    relative_b.mkdir()
+    for directory, output in ((relative_a, "relative-a"), (relative_b, "relative-b")):
+        target = directory / "git"
+        target.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then echo "git version 9.9.9"; '
+            f"else echo {output}; fi\n",
+        )
+        target.chmod(0o755)
+    relative_args = (
+        f"--lib={tmp_path / 'relative-path-lib'}",
+        "--binproviders=env",
+        "run",
+        "git",
+    )
+    relative_env = {"PATH": f".{os.pathsep}{os.environ['PATH']}"}
+    from_a = _run_abxpkg_cli(
+        *relative_args,
+        env_overrides=relative_env,
+        cwd=relative_a,
+    )
+    from_b = _run_abxpkg_cli(
+        *relative_args,
+        env_overrides=relative_env,
+        cwd=relative_b,
+    )
+
+    assert from_a.returncode == 0, from_a.stderr
+    assert from_a.stdout.strip() == "relative-a"
+    assert from_b.returncode == 0, from_b.stderr
+    assert from_b.stdout.strip() == "relative-b"
+
+    alternate_bin = tmp_path / "alternate-bin"
+    alternate_bin.mkdir()
+    alternate_target = alternate_bin / "git"
+    alternate_target.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then echo "git version 9.9.9"; '
+        "else echo alternate-target; fi\n",
+    )
+    alternate_target.chmod(0o755)
+    path_args = (
+        f"--lib={tmp_path / 'path-lib'}",
+        "--binproviders=env",
+        "run",
+        "git",
+        "status",
+        "--short",
+    )
+    original_path = _run_abxpkg_cli(*path_args)
+    changed_path = _run_abxpkg_cli(
+        *path_args,
+        env_overrides={"PATH": f"{alternate_bin}{os.pathsep}{os.environ['PATH']}"},
+    )
+
+    assert original_path.returncode == 0, original_path.stderr
+    assert changed_path.returncode == 0, changed_path.stderr
+    assert changed_path.stdout.strip() == "alternate-target"
+
+
 def test_run_help_flag_shows_run_subcommand_help():
     proc = _run_abxpkg_cli("run", "--help")
 
@@ -926,6 +1174,26 @@ def test_run_update_skips_env_for_the_update_step(tmp_path):
     assert result.exit_code == 0
     assert "Updating shellcheck via brew" in result.output
     assert "via env" not in result.output
+
+    script = tmp_path / "hook.sh"
+    script.write_text("# /// script\n# ///\n")
+    script_result = CliRunner().invoke(
+        cli_module.cli,
+        [
+            f"--lib={tmp_path}",
+            "--binproviders=env,brew",
+            "--dry-run=True",
+            "run",
+            "--update",
+            "--script",
+            "shellcheck",
+            str(script),
+        ],
+    )
+
+    assert script_result.exit_code == 0
+    assert "Updating shellcheck via brew" in script_result.output
+    assert "via env" not in script_result.output
 
 
 def test_run_stdout_stderr_are_separated_and_not_buffered():
@@ -1768,6 +2036,8 @@ def test_abx_debug_env_provider_uses_derived_env_on_second_run(tmp_path):
         "python3",
         "--version",
     )
+    derived_env = tmp_path / "env" / "derived.env"
+    first_stat = derived_env.stat()
     second = _run_abx_cli(
         "--debug",
         f"--lib={tmp_path}",
@@ -1780,6 +2050,11 @@ def test_abx_debug_env_provider_uses_derived_env_on_second_run(tmp_path):
     assert second.returncode == 0, second.stderr
     assert "EnvProvider.get_version('python3'" in first.stderr
     assert "EnvProvider.get_version('python3'" not in second.stderr
+    assert "EnvProvider.get_sha256('python3'" in first.stderr
+    assert "EnvProvider.get_sha256('python3'" not in second.stderr
+    second_stat = derived_env.stat()
+    assert second_stat.st_ino == first_stat.st_ino
+    assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
 
 
 def test_list_command_reads_provider_local_derived_env(tmp_path):
@@ -3931,19 +4206,24 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
     )
     script.chmod(0o755)
 
+    script_env = {
+        "ABXPKG_LIB_DIR": str(lib),
+        "ABXPKG_BINPROVIDERS": "env,pnpm",
+        "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
+        "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
+    }
     proc = _run_cli(
         script,
-        env_overrides={
-            "ABXPKG_LIB_DIR": str(lib),
-            "ABXPKG_BINPROVIDERS": "env,pnpm",
-            "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
-            "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
-        },
+        env_overrides=script_env,
         timeout=900,
     )
+    warm_proc = _run_cli(script, env_overrides=script_env, timeout=60)
 
     assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    assert warm_proc.returncode == 0, warm_proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    warm_payload = json.loads(warm_proc.stdout.strip().splitlines()[-1])
+    assert warm_payload == payload
     assert int(payload["nodeVersion"].split(".", 1)[0]) >= 22
     assert payload["python"]["version"][:2] >= [3, 10]
     assert Path(payload["nodeBinary"]).is_file()

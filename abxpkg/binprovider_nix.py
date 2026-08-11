@@ -28,6 +28,7 @@ from .binprovider import (
     DEFAULT_ENV_PATH,
     ShallowBinary,
     log_method_call,
+    mutation_locked,
     remap_kwargs,
 )
 from .logging import format_subprocess_output, get_logger
@@ -245,6 +246,7 @@ class NixProvider(BinProvider):
             "",
         )
 
+    @mutation_locked
     def download_nix_installer(self) -> Path:
         artifact = nix_installer_artifact()
         install_root = self.install_root
@@ -260,12 +262,10 @@ class NixProvider(BinProvider):
                 no_cache=True,
             )
             if existing_sha256 != artifact.sha256:
-                raise RuntimeError(
-                    f"Refusing cached {installer_path}: expected SHA256 "
-                    f"{artifact.sha256}, got {existing_sha256}",
-                )
-            installer_path.chmod(0o755)
-            return installer_path
+                installer_path.unlink()
+            else:
+                installer_path.chmod(0o755)
+                return installer_path
 
         temp_fd, temp_name = tempfile.mkstemp(
             dir=cache_dir,
@@ -289,6 +289,8 @@ class NixProvider(BinProvider):
                 for chunk in iter(lambda: response.read(1024 * 1024), b""):
                     digest.update(chunk)
                     installer_file.write(chunk)
+                installer_file.flush()
+                os.fsync(installer_file.fileno())
 
             downloaded_sha256 = digest.hexdigest()
             if downloaded_sha256 != artifact.sha256:

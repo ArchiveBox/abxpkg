@@ -4,6 +4,7 @@ import ast
 import json
 import os
 import shlex
+import stat
 import tempfile
 from collections.abc import Iterable, Mapping, MutableMapping
 from functools import lru_cache
@@ -231,12 +232,9 @@ def build_exec_env(
     return env
 
 
-def load_dotenv_values(dotenv_path: Path) -> dict[str, str]:
-    if not dotenv_path.exists():
-        return {}
-
+def parse_dotenv_values(contents: str) -> dict[str, str]:
     values: dict[str, str] = {}
-    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+    for raw_line in contents.splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -270,6 +268,32 @@ def load_dotenv_values(dotenv_path: Path) -> dict[str, str]:
     return values
 
 
+def _read_regular_file(path: Path) -> str | None:
+    try:
+        fd = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0),
+        )
+    except OSError:
+        return None
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return None
+        with os.fdopen(fd, encoding="utf-8") as file:
+            fd = -1
+            return file.read()
+    except OSError:
+        return None
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
+
+def load_dotenv_values(dotenv_path: Path) -> dict[str, str]:
+    contents = _read_regular_file(dotenv_path)
+    return parse_dotenv_values(contents) if contents is not None else {}
+
+
 def write_dotenv_values(
     dotenv_path: Path,
     values: Mapping[str, str],
@@ -282,7 +306,7 @@ def write_dotenv_values(
     contents = "".join(
         f"{key}={shlex.quote(str(value))}\n" for key, value in sorted(values.items())
     )
-    file_mode = dotenv_path.stat().st_mode & 0o777 if dotenv_path.exists() else 0o600
+    file_mode = dotenv_path.stat().st_mode & 0o755 if dotenv_path.exists() else 0o600
     temp_fd, temp_name = tempfile.mkstemp(
         dir=dotenv_path.parent,
         prefix=f".{dotenv_path.name}.",
@@ -301,8 +325,8 @@ def write_dotenv_values(
             temp_path.unlink()
 
 
-def load_derived_cache(dotenv_path: Path) -> dict[str, dict[str, object]]:
-    raw_value = load_dotenv_values(dotenv_path).get(DERIVED_CACHE_KEY, "").strip()
+def load_derived_cache_text(contents: str) -> dict[str, dict[str, object]]:
+    raw_value = parse_dotenv_values(contents).get(DERIVED_CACHE_KEY, "").strip()
     if not raw_value:
         return {}
     try:
@@ -315,6 +339,11 @@ def load_derived_cache(dotenv_path: Path) -> dict[str, dict[str, object]]:
         except json.JSONDecodeError:
             return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def load_derived_cache(dotenv_path: Path) -> dict[str, dict[str, object]]:
+    contents = _read_regular_file(dotenv_path)
+    return load_derived_cache_text(contents) if contents is not None else {}
 
 
 def save_derived_cache(

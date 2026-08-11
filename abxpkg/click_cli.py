@@ -31,7 +31,13 @@ from .logging import (
     get_logger,
     summarize_value,
 )
-from .cli import merge_binary_overrides, normalize_binary_overrides
+from .cli import (
+    _script_cache_context,
+    merge_binary_overrides,
+    normalize_binary_overrides,
+    parse_script_metadata as _parse_script_metadata,
+    warm_run_context,
+)
 
 if TYPE_CHECKING:
     from .binary import Binary
@@ -183,60 +189,10 @@ def parse_script_metadata(
     script_path: Path,
     max_lines: int = 50,
 ) -> dict[str, Any] | None:
-    """Extract inline ``/// script`` metadata from a script file.
-
-    Scans the first *max_lines* lines for a ``/// script`` opening marker
-    and a closing ``///``.  Content lines between the markers are stripped
-    of their leading comment prefix (everything up to and including the
-    first whitespace) and the resulting text is parsed as TOML.
-
-    Works with any single-token comment prefix (``#``, ``//``, ``--``,
-    ``;``, ``/*``, …) — the prefix is never hard-coded; we simply discard
-    the first whitespace-delimited token on each content line.
-    """
-
     try:
-        text = script_path.read_text(encoding="utf-8", errors="replace")
-    except OSError as err:
-        raise click.ClickException(f"cannot read script {script_path}: {err}") from err
-
-    lines = text.splitlines()
-    scan_limit = min(len(lines), max_lines)
-
-    block_start: int | None = None
-    for i in range(scan_limit):
-        if "/// script" in lines[i]:
-            block_start = i + 1
-            break
-
-    if block_start is None:
-        return None
-
-    block_end: int | None = None
-    for i in range(block_start, len(lines)):
-        stripped = lines[i].strip()
-        if stripped.endswith("///") and "/// script" not in stripped:
-            block_end = i
-            break
-
-    if block_end is None:
-        return None
-
-    toml_lines: list[str] = []
-    for i in range(block_start, block_end):
-        stripped = lines[i].strip()
-        parts = stripped.split(None, 1)
-        if len(parts) < 2:
-            toml_lines.append("")
-        else:
-            toml_lines.append(parts[1])
-
-    try:
-        return tomllib.loads("\n".join(toml_lines))
-    except Exception as err:
-        raise click.ClickException(
-            f"invalid TOML in /// script block of {script_path}: {err}",
-        ) from err
+        return _parse_script_metadata(script_path, max_lines=max_lines)
+    except RuntimeError as err:
+        raise click.ClickException(str(err)) from err
 
 
 def get_package_version() -> str:
@@ -1487,6 +1443,40 @@ def resolve_runtime_binary(
     )
 
 
+def resolve_script_runtime_binary(
+    binary_name: str,
+    options: CliOptions,
+    *,
+    update_before_run: bool = False,
+) -> Binary:
+    if update_before_run:
+        binary, _ = resolve_runtime_binary(
+            binary_name,
+            options=options,
+            install_before_run=True,
+            update_before_run=True,
+        )
+        return binary
+    for provider_name in options.provider_names:
+        try:
+            binary, _ = resolve_runtime_binary(
+                binary_name,
+                options=replace(options, provider_names=[provider_name]),
+                install_before_run=False,
+                update_before_run=False,
+            )
+            return binary
+        except click.ClickException:
+            continue
+    binary, _ = resolve_runtime_binary(
+        binary_name,
+        options=options,
+        install_before_run=True,
+        update_before_run=False,
+    )
+    return binary
+
+
 def get_runtime_exec_providers(
     binary: Binary,
     runtime_binproviders: Iterable[BinProvider] = (),
@@ -2039,6 +2029,7 @@ def _run_command_impl(
     command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
     command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
     script_mode = bool(shared_kwargs.pop("script_mode"))
+    deps_from = tuple(shared_kwargs.pop("deps_from") or ())
     binary_name = cast(str, shared_kwargs.pop("binary_name"))
     binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
 
@@ -2058,6 +2049,10 @@ def _run_command_impl(
     configure_cli_logging(debug=run_options.debug)
 
     runtime_binproviders: list[BinProvider] = []
+    resolved_script_binaries: list[tuple[str, Path, BinProvider]] = []
+    script_cache_context: tuple[str, list[Path]] | None = None
+    script_cache_base_env: dict[str, str] | None = None
+    binary_env_key: str | None = None
     binary_options = run_options
 
     # --script: the OS appends the script path as binary_args[0] via the
@@ -2089,7 +2084,36 @@ def _run_command_impl(
             tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
         )
         for key, value in tool_config.items():
-            os.environ.setdefault(key, str(value))
+            if key != "runtime_binproviders":
+                os.environ.setdefault(key, str(value))
+
+        runtime_provider_names = tool_config.get("runtime_binproviders")
+        if runtime_provider_names:
+            runtime_binproviders = build_providers(
+                parse_provider_names(
+                    ",".join(runtime_provider_names)
+                    if isinstance(runtime_provider_names, list)
+                    else str(runtime_provider_names),
+                ),
+                dry_run=run_options.dry_run,
+                install_root=run_options.install_root,
+                bin_dir=run_options.bin_dir,
+                euid=run_options.euid,
+                install_timeout=run_options.install_timeout,
+                version_timeout=run_options.version_timeout,
+            )
+        script_cache_base_env = os.environ.copy()
+        script_cache_context = _script_cache_context(
+            {
+                "--deps-from": ",".join(deps_from),
+            }
+            if deps_from
+            else {},
+            binary_name,
+            script_path,
+            meta,
+            run_options,
+        )
 
         # Resolve all declared dependencies and collect their runtime ENV for
         # the final script execution. Provider resolution remains hermetic:
@@ -2097,19 +2121,32 @@ def _run_command_impl(
         explicit_provider_selection = shared_kwargs.get(
             "binproviders",
         ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
-        for dep in meta.get("dependencies", []):
+        dependencies = [
+            *meta.get("dependencies", []),
+            *_deps_from_config_specs(
+                deps_from,
+                base_path=script_path.parent,
+                options=run_options,
+            ),
+        ]
+        for dep in dependencies:
             if isinstance(dep, str):
                 dep_name = dep
                 dep_options = run_options
             elif isinstance(dep, dict):
                 if "name" not in dep:
                     continue
-                dep_name = dep["name"]
+                dep_name = str(dep["name"])
                 dep_options = run_options
                 if "binproviders" in dep:
+                    raw_provider_names = dep["binproviders"]
                     dep_options = replace(
                         dep_options,
-                        provider_names=dep["binproviders"],
+                        provider_names=parse_provider_names(
+                            ",".join(raw_provider_names)
+                            if isinstance(raw_provider_names, list)
+                            else str(raw_provider_names),
+                        ),
                     )
                 dep_options = apply_script_dependency_options(dep_options, dep)
             else:
@@ -2118,30 +2155,44 @@ def _run_command_impl(
             if dep_name == binary_name:
                 if not isinstance(dep, dict):
                     continue
+                if dep.get("_abxpkg_env_key"):
+                    binary_env_key = str(dep["_abxpkg_env_key"])
                 if (
                     not explicit_provider_selection
                     and "binproviders" in dep
                     and binary_options.provider_names == run_options.provider_names
                 ):
+                    raw_provider_names = dep["binproviders"]
                     binary_options = replace(
                         binary_options,
-                        provider_names=dep["binproviders"],
+                        provider_names=parse_provider_names(
+                            ",".join(raw_provider_names)
+                            if isinstance(raw_provider_names, list)
+                            else str(raw_provider_names),
+                        ),
                     )
                 binary_options = apply_script_dependency_options(binary_options, dep)
                 continue
 
             try:
-                dep_binary = build_binary(
+                dep_binary = resolve_script_runtime_binary(
                     dep_name,
                     dep_options,
-                    dry_run=run_options.dry_run,
-                )
-                dep_binary = dep_binary.install(
-                    dry_run=run_options.dry_run,
-                    no_cache=run_options.no_cache,
                 )
                 if dep_binary.loaded_binprovider:
                     runtime_binproviders.append(dep_binary.loaded_binprovider)
+                    if dep_binary.loaded_abspath:
+                        resolved_script_binaries.append(
+                            (
+                                dep_name,
+                                Path(dep_binary.loaded_abspath),
+                                dep_binary.loaded_binprovider,
+                            ),
+                        )
+                        if isinstance(dep, dict) and dep.get("_abxpkg_env_key"):
+                            os.environ[str(dep["_abxpkg_env_key"])] = str(
+                                dep_binary.loaded_abspath,
+                            )
             except ABXPkgError as err:
                 _echo(
                     f"abxpkg: failed to resolve dependency {dep_name}: "
@@ -2155,12 +2206,19 @@ def _run_command_impl(
         install_before_run = True
 
     try:
-        binary, _ = resolve_runtime_binary(
-            binary_name,
-            options=binary_options,
-            install_before_run=install_before_run,
-            update_before_run=update_before_run,
-        )
+        if script_mode:
+            binary = resolve_script_runtime_binary(
+                binary_name,
+                binary_options,
+                update_before_run=update_before_run,
+            )
+        else:
+            binary, _ = resolve_runtime_binary(
+                binary_name,
+                options=binary_options,
+                install_before_run=install_before_run,
+                update_before_run=update_before_run,
+            )
     except click.ClickException as err:
         _echo(str(err), err=True)
         ctx.exit(1)
@@ -2187,6 +2245,28 @@ def _run_command_impl(
     # binary.is_valid guarantees both fields are set; narrow for pyright.
     assert binary.loaded_binprovider is not None
     assert binary.loaded_abspath is not None
+    if script_mode:
+        if binary_env_key:
+            os.environ[binary_env_key] = str(binary.loaded_abspath)
+        resolved_script_binaries.append(
+            (binary_name, Path(binary.loaded_abspath), binary.loaded_binprovider),
+        )
+    else:
+        run_context = warm_run_context(run_options)
+        if run_context is not None:
+            cache_providers = [*binary.binproviders]
+            if all(
+                provider is not binary.loaded_binprovider
+                for provider in cache_providers
+            ):
+                cache_providers.append(binary.loaded_binprovider)
+            for provider in cache_providers:
+                provider.write_cached_exec_plan(
+                    binary.name,
+                    binary.loaded_abspath,
+                    exec_provider=binary.loaded_binprovider,
+                    run_context=run_context,
+                )
     exec_kwargs: dict[str, Any] = {"capture_output": False}
     other_runtime_binproviders = get_runtime_exec_providers(
         binary,
@@ -2198,6 +2278,41 @@ def _run_command_impl(
         exec_kwargs["env"] = build_provider_exec_env(
             providers=other_runtime_binproviders,
             base_env=os.environ.copy(),
+        )
+    if (
+        script_mode
+        and script_cache_context is not None
+        and script_cache_base_env is not None
+    ):
+        import hashlib
+        from .config import build_exec_env as build_provider_exec_env
+
+        run_context, fingerprint_paths = script_cache_context
+        target_runtime_providers = binary.loaded_binprovider.exec_env_providers()
+        all_exec_providers = [
+            *other_runtime_binproviders,
+            *target_runtime_providers,
+        ]
+        dependency_exec_env = exec_kwargs.get("env")
+        final_exec_env = build_provider_exec_env(
+            providers=target_runtime_providers,
+            base_env=(
+                cast(dict[str, str], dependency_exec_env)
+                if dependency_exec_env is not None
+                else os.environ.copy()
+            ),
+        )
+        binary.loaded_binprovider.write_cached_exec_plan(
+            binary.name,
+            binary.loaded_abspath,
+            exec_provider=binary.loaded_binprovider,
+            run_context=run_context,
+            plan_key=hashlib.sha256(run_context.encode()).hexdigest(),
+            runtime_providers=all_exec_providers,
+            base_env=script_cache_base_env,
+            exec_env=final_exec_env,
+            extra_fingerprint_paths=fingerprint_paths,
+            resolution_binaries=resolved_script_binaries,
         )
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,
@@ -2239,6 +2354,7 @@ def _run_command_impl(
     default=False,
     help="Parse inline /// script metadata from the script file and resolve dependencies before running.",
 )
+@click.option("--deps-from", multiple=True, default=())
 @click.argument("binary_name")
 @click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context
@@ -2286,6 +2402,7 @@ def run_command(
     is_flag=True,
     default=False,
 )
+@click.option("--deps-from", multiple=True, default=())
 @click.argument("binary_name")
 @click.argument("binary_args", nargs=-1, type=click.UNPROCESSED)
 @click.pass_context

@@ -58,8 +58,8 @@ class TestNixProvider:
         ):
             nix_installer_artifact(system="plan9", machine="mips64")
 
-    def test_managed_nix_installer_artifact_is_verified_and_executable(self):
-        provider = NixProvider()
+    def test_managed_nix_installer_artifact_is_verified_and_executable(self, tmp_path):
+        provider = NixProvider(install_root=tmp_path / "nix-profile")
         artifact = nix_installer_artifact()
         installer_path = provider.download_nix_installer()
 
@@ -79,6 +79,19 @@ class TestNixProvider:
         )
         assert proc.returncode == 0, proc.stderr or proc.stdout
         assert proc.stdout.strip() == f"nix-installer {NIX_INSTALLER_VERSION}"
+
+        installer_path.write_bytes(b"corrupt cached installer")
+        repaired_path = provider.download_nix_installer()
+
+        assert repaired_path == installer_path
+        assert (
+            provider.get_sha256(
+                "nix-installer",
+                abspath=repaired_path,
+                no_cache=True,
+            )
+            == artifact.sha256
+        )
 
     def test_nix_installer_command_is_noninteractive_and_disables_diagnostics(self):
         assert NixProvider.nix_installer_install_command() == (

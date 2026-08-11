@@ -3,15 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+import stat
 import sys
 import tomllib
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-from .config import build_exec_env, default_abxpkg_lib_dir
-from .exceptions import ABXPkgError
-from .logging import format_exception_with_output
+from typing import Any, cast
 
 _NONE_STRINGS = frozenset({"", "none", "null"})
 _HANDLER_KEYS = frozenset({"abspath", "version", "install_args", "packages"})
@@ -65,107 +62,28 @@ def _env_flag_is_true(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _parse_bool(raw: str | None) -> bool | None:
-    stripped = _none_or_stripped(raw)
-    if stripped is None:
-        return None
-    lowered = stripped.lower()
-    if lowered in {"1", "true", "yes", "on"}:
-        return True
-    if lowered in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"expected bool, got {raw!r}")
-
-
-def _parse_float(raw: str | None) -> float | None:
-    stripped = _none_or_stripped(raw)
-    return None if stripped is None else float(stripped)
-
-
-def _parse_int(raw: str | None) -> int | None:
-    stripped = _none_or_stripped(raw)
-    if stripped is None:
-        return None
-    as_float = float(stripped)
-    as_int = int(as_float)
-    if as_float != as_int:
-        raise ValueError(f"expected int, got {raw!r}")
-    return as_int
-
-
-def _parse_json_or_string(raw: str | None) -> Any:
-    stripped = _none_or_stripped(raw)
-    if stripped is None:
-        return None
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError:
-        return stripped
-
-
-def _parse_json_object(raw: str | None) -> dict[str, Any] | None:
-    parsed = _parse_json_or_string(raw)
-    if parsed is None:
-        return None
-    if not isinstance(parsed, dict):
-        raise TypeError("expected a JSON object")
-    return parsed
-
-
 def _resolve_lib_dir(raw_value: str | None) -> Path:
     env_value = os.environ.get("ABXPKG_LIB_DIR")
     if _none_or_stripped(raw_value) is None and raw_value is not None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
+        from .config import default_abxpkg_lib_dir
+
         return default_abxpkg_lib_dir().expanduser().resolve()
     if _none_or_stripped(env_value) is None and env_value is not None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
+        from .config import default_abxpkg_lib_dir
+
         return default_abxpkg_lib_dir().expanduser().resolve()
 
-    lib_dir = Path(
-        raw_value or _none_or_stripped(env_value) or default_abxpkg_lib_dir(),
-    )
+    if raw_value or _none_or_stripped(env_value):
+        lib_dir = Path(raw_value or str(env_value))
+    else:
+        from .config import default_abxpkg_lib_dir
+
+        lib_dir = default_abxpkg_lib_dir()
     resolved = lib_dir.expanduser().resolve()
     os.environ["ABXPKG_LIB_DIR"] = str(resolved)
     return resolved
-
-
-def _default_provider_names() -> list[str]:
-    from . import DEFAULT_PROVIDER_NAMES
-
-    return list(DEFAULT_PROVIDER_NAMES)
-
-
-def _parse_provider_names(raw_value: str | None) -> list[str]:
-    from . import ALL_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
-
-    explicit_selection = raw_value is not None
-    if raw_value is None:
-        env_value = os.environ.get("ABXPKG_BINPROVIDERS")
-        explicit_selection = env_value is not None
-        raw_value = (
-            env_value if env_value is not None else ",".join(_default_provider_names())
-        )
-
-    provider_names: list[str] = []
-    seen: set[str] = set()
-    for raw_name in raw_value.split(","):
-        name = raw_name.strip()
-        if not name or name in seen:
-            continue
-        provider_names.append(name)
-        seen.add(name)
-
-    invalid = [name for name in provider_names if name not in PROVIDER_CLASS_BY_NAME]
-    if invalid:
-        valid = ", ".join(ALL_PROVIDER_NAMES)
-        raise ValueError(
-            f"unknown provider name(s): {', '.join(invalid)}. Valid providers: {valid}",
-        )
-    if explicit_selection:
-        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
-    else:
-        os.environ.pop("ABXPKG_BINPROVIDERS", None)
-    return provider_names
 
 
 def merge_binary_overrides(
@@ -274,7 +192,9 @@ def _parse_script_argv(
         if token in {"run", "exec"}:
             i += 1
             break
-        if token == "--install" or token == "--update":
+        if token == "--update":
+            return None
+        if token == "--install":
             i += 1
             continue
         if token.startswith("--"):
@@ -300,6 +220,8 @@ def _parse_script_argv(
         if token == "--install":
             i += 1
             continue
+        if token == "--update":
+            return None
         if token.startswith("--"):
             name = token.split("=", 1)[0]
             if name in _VALUE_OPTIONS:
@@ -318,402 +240,438 @@ def _parse_script_argv(
     return options, binary_name, Path(script_args[0]), script_args
 
 
-def _script_options(raw_options: dict[str, str]) -> ScriptOptions:
-    provider_names = _parse_provider_names(raw_options.get("--binproviders"))
-    handler_overrides = {
-        key: value
-        for key, value in (
-            ("abspath", _parse_json_or_string(raw_options.get("--abspath"))),
-            ("version", _parse_json_or_string(raw_options.get("--version"))),
-            ("install_args", _parse_json_or_string(raw_options.get("--install-args"))),
-            ("packages", _parse_json_or_string(raw_options.get("--packages"))),
-        )
-        if value is not None
-    }
-    return ScriptOptions(
-        lib_dir=_resolve_lib_dir(raw_options.get("--lib")),
-        provider_names=provider_names,
-        dry_run=_parse_bool(raw_options.get("--dry-run"))
-        or _env_flag_is_true("ABXPKG_DRY_RUN")
-        or _env_flag_is_true("DRY_RUN"),
-        debug=_parse_bool(raw_options.get("--debug"))
-        or _env_flag_is_true("ABXPKG_DEBUG"),
-        no_cache=_parse_bool(raw_options.get("--no-cache"))
-        or _env_flag_is_true("ABXPKG_NO_CACHE"),
-        postinstall_scripts=_parse_bool(raw_options.get("--postinstall-scripts")),
-        min_release_age=_parse_float(raw_options.get("--min-release-age")),
-        overrides=normalize_binary_overrides(
-            provider_names,
-            overrides=_parse_json_object(raw_options.get("--overrides")),
-            handler_overrides=handler_overrides or None,
-        ),
-        install_timeout=_parse_int(raw_options.get("--install-timeout")),
-        version_timeout=_parse_int(raw_options.get("--version-timeout")),
-    )
-
-
-def _build_providers(provider_names: list[str], options: ScriptOptions):
-    from . import PROVIDER_CLASS_BY_NAME
-
-    providers = []
-    for provider_name in provider_names:
-        provider_kwargs: dict[str, Any] = {"dry_run": options.dry_run}
-        for key in (
-            "install_root",
-            "bin_dir",
-            "euid",
-            "install_timeout",
-            "version_timeout",
-        ):
-            value = getattr(options, key)
-            if value is not None:
-                provider_kwargs[key] = value
-        providers.append(PROVIDER_CLASS_BY_NAME[provider_name](**provider_kwargs))
-    return providers
-
-
-def _expand_script_value(
-    value: Any,
-    options: ScriptOptions,
-    properties: dict[str, Any] | None = None,
-) -> Any:
-    properties = properties or {}
-    if isinstance(value, str):
-        return re.sub(
-            r"\{([A-Z0-9_]+)\}",
-            lambda match: str(
-                os.environ.get(match.group(1))
-                or properties.get(match.group(1), {}).get("default")
-                or (
-                    str(options.lib_dir)
-                    if match.group(1) == "ABXPKG_LIB_DIR"
-                    else match.group(0)
-                ),
-            ),
-            value,
-        )
-    if isinstance(value, list):
-        return [_expand_script_value(item, options, properties) for item in value]
-    if isinstance(value, dict):
-        return {
-            str(key): _expand_script_value(item, options, properties)
-            for key, item in value.items()
-        }
-    return value
-
-
-def _parse_runtime_provider_names(value: Any) -> list[str]:
-    if isinstance(value, str):
-        raw_names = value.split(",")
-    elif isinstance(value, list):
-        raw_names = [str(name) for name in value]
-    else:
-        return []
-    names: list[str] = []
-    for raw_name in raw_names:
-        name = str(raw_name).strip()
-        if name and name not in names:
-            names.append(name)
-    return names
-
-
-def _dependency_options(dep: dict[str, Any], options: ScriptOptions) -> ScriptOptions:
-    dep = _expand_script_value(dep, options)
-    provider_names = options.provider_names
-    if isinstance(dep.get("binproviders"), list):
-        provider_names = [str(name) for name in dep["binproviders"]]
-    elif isinstance(dep.get("binproviders"), str):
-        provider_names = [
-            name.strip() for name in dep["binproviders"].split(",") if name.strip()
-        ]
-
-    handler_overrides: dict[str, Any] = {}
-    dep_overrides = (
-        dep.get("overrides") if isinstance(dep.get("overrides"), dict) else None
-    )
-    values: dict[str, Any] = {
-        "lib_dir": options.lib_dir,
-        "provider_names": provider_names,
-        "dry_run": options.dry_run,
-        "debug": options.debug,
-        "no_cache": options.no_cache,
-        "min_version": options.min_version,
-        "postinstall_scripts": options.postinstall_scripts,
-        "min_release_age": options.min_release_age,
-        "overrides": options.overrides,
-        "install_root": options.install_root,
-        "bin_dir": options.bin_dir,
-        "euid": options.euid,
-        "install_timeout": options.install_timeout,
-        "version_timeout": options.version_timeout,
-    }
-
-    for key, value in dep.items():
-        if value is None or key in {"name", "binproviders"}:
-            continue
-        if key in _HANDLER_KEYS:
-            handler_overrides[key] = value
-        elif key == "overrides":
-            continue
-        elif key in values and values[key] is None:
-            values[key] = (
-                Path(value).expanduser().resolve()
-                if key in {"install_root", "bin_dir"}
-                else value
-            )
-    dep_binary_overrides = normalize_binary_overrides(
-        provider_names,
-        overrides=dep_overrides,
-        handler_overrides=handler_overrides or None,
-    )
-    # Dependency metadata is the closest statement of intent for that binary.
-    # Merge caller-wide overrides first so per-dependency install/version/path
-    # values always win and both CLI aliases and JSON overrides hit one cache key.
-    values["overrides"] = merge_binary_overrides(
-        options.overrides,
-        dep_binary_overrides,
-    )
-    return ScriptOptions(**values)
-
-
-def _script_deps_from(
+def _script_dependency_paths(
     raw_value: str | None,
     script_path: Path,
-    options: ScriptOptions,
-) -> list[Any]:
-    deps: list[Any] = []
-    properties: dict[str, Any] = {}
+) -> list[Path]:
+    paths: list[Path] = []
     for raw_spec in (raw_value or "").split(","):
         spec = raw_spec.strip()
         if not spec:
             continue
-        raw_path, _, selector = spec.partition(":")
-        deps_path = Path(raw_path)
-        if not deps_path.is_absolute():
-            deps_path = script_path.parent / deps_path
-        root = json.loads(deps_path.read_text())
-        selected: Any = root
-        for part in (selector or "dependencies").split("."):
-            selected = selected[part]
-        if isinstance(root, dict):
-            properties.update(root.get("properties", {}))
-        selected_items = selected if isinstance(selected, list) else [selected]
-        for selected_item in selected_items:
-            expanded = _expand_script_value(selected_item, options, properties)
-            if isinstance(selected_item, dict) and isinstance(expanded, dict):
-                template_name = str(selected_item.get("name") or "").strip()
-                template_match = re.fullmatch(
-                    r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
-                    template_name,
-                )
-                if template_match:
-                    expanded = dict(expanded)
-                    expanded["_abxpkg_env_key"] = template_match.group(1)
-            deps.append(expanded)
-    return deps
+        raw_path, _, _selector = spec.partition(":")
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = script_path.parent / path
+        paths.append(path.expanduser().resolve(strict=False))
+    return paths
 
 
-def _build_binary(binary_name: str, options: ScriptOptions):
-    from . import (
-        DEFAULT_PROVIDER_NAMES,
-        PROVIDER_CLASS_BY_INSTALLER_BIN,
-    )
-    from .binary import Binary
-
-    provider_names = options.provider_names
-    if provider_names == list(DEFAULT_PROVIDER_NAMES):
-        owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(binary_name)
-        preferred = (
-            owner_class.INSTALLER_BINPROVIDERS if owner_class is not None else None
-        )
-        if preferred:
-            provider_names = [
-                name for name in preferred if name in options.provider_names
-            ]
-
-    providers = _build_providers(provider_names, options)
-    explicit_abspath = Path(binary_name).expanduser()
-    inferred_overrides: dict[str, Any] | None = None
-    if explicit_abspath.is_absolute():
-        for provider in providers:
-            inferred_overrides = merge_binary_overrides(
-                inferred_overrides,
-                provider.explicit_abspath_overrides(explicit_abspath),
-            )
-
-    kwargs: dict[str, Any] = {
-        "name": binary_name,
-        "binproviders": providers,
-    }
-    for key in ("min_version", "postinstall_scripts", "min_release_age"):
-        value = getattr(options, key)
-        if value is not None:
-            kwargs[key] = value
-    overrides = merge_binary_overrides(inferred_overrides, options.overrides)
-    if overrides is not None:
-        kwargs["overrides"] = overrides
-    return Binary(**kwargs)
-
-
-def _format_error(err: Exception) -> str:
-    return format_exception_with_output(err)
-
-
-def _runtime_exec_providers(binary, runtime_providers):
-    if not binary.loaded_binprovider:
-        return []
-    return [
-        provider
-        for provider in runtime_providers
-        if not _same_runtime_provider(provider, binary.loaded_binprovider)
-    ]
-
-
-def _same_runtime_provider(provider, loaded_provider) -> bool:
-    # Runtime env merging only needs to dedupe providers by the fields that
-    # change their filesystem/env surface. Some caller-provided provider-like
-    # objects only implement the execution protocol, so missing optional layout
-    # fields must compare as absent instead of failing before the command runs.
-    if provider.name != loaded_provider.name:
-        return False
-    loaded_install_root = getattr(loaded_provider, "install_root", None)
-    loaded_bin_dir = getattr(loaded_provider, "bin_dir", None)
-    if loaded_install_root is None and loaded_bin_dir is None:
-        return True
-    return (
-        getattr(provider, "install_root", None) == loaded_install_root
-        and getattr(provider, "bin_dir", None) == loaded_bin_dir
-    )
-
-
-def _load_or_install_script_binary(binary_name: str, options: ScriptOptions):
-    for provider_name in options.provider_names:
-        binary = _build_binary(
-            binary_name,
-            replace(options, provider_names=[provider_name]),
-        )
-        try:
-            return binary.load(no_cache=options.no_cache)
-        except ABXPkgError:
-            continue
-
-    binary = _build_binary(binary_name, options)
-    return binary.install(
-        dry_run=options.dry_run,
-        no_cache=options.no_cache,
-    )
-
-
-def _run_script(argv: list[str]) -> int | None:
-    parsed = _parse_script_argv(argv)
-    if parsed is None:
+def _script_cache_context(
+    raw_options: dict[str, str],
+    binary_name: str,
+    script_path: Path,
+    meta: dict[str, Any],
+    options: Any,
+) -> tuple[str, list[Path]] | None:
+    if set(raw_options) - {"--lib", "--binproviders", "--deps-from"}:
         return None
-    raw_options, binary_name, script_path, script_args = parsed
-    if not script_path.is_file():
-        print(f"abxpkg: script not found: {script_path}", file=sys.stderr)
-        return 1
-    meta = parse_script_metadata(script_path)
-    if meta is None:
-        print(f"abxpkg: no /// script metadata found in {script_path}", file=sys.stderr)
-        return 1
+    base_context = warm_run_context(options)
+    if base_context is None:
+        return None
 
+    resolved_script = script_path.expanduser().resolve(strict=False)
+    dependency_paths = _script_dependency_paths(
+        raw_options.get("--deps-from"),
+        resolved_script,
+    )
+    template_text = json.dumps(meta, separators=(",", ":"), sort_keys=True)
+    try:
+        template_text += "".join(
+            path.read_text(encoding="utf-8", errors="replace")
+            for path in dependency_paths
+        )
+    except OSError:
+        return None
+    template_env_names = sorted(
+        set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", template_text)),
+    )
     tool_section = meta.get("tool")
     tool_config = (
         tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
     )
-    for key, value in tool_config.items():
-        if key == "runtime_binproviders":
-            continue
-        os.environ.setdefault(str(key), str(value))
+    tool_env_names = sorted(
+        str(key) for key in tool_config if key != "runtime_binproviders"
+    )
+    context = json.dumps(
+        {
+            "base": json.loads(base_context),
+            "binary_name": binary_name,
+            "script_path": str(resolved_script),
+            "deps_from": raw_options.get("--deps-from"),
+            "template_env": {name: os.environ.get(name) for name in template_env_names},
+            "tool_env": {name: os.environ.get(name) for name in tool_env_names},
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return context, [resolved_script, *dependency_paths]
 
-    options = _script_options(raw_options)
-    binary_options = options
 
-    try:
-        dependencies = [
-            *meta.get("dependencies", []),
-            *_script_deps_from(raw_options.get("--deps-from"), script_path, options),
-        ]
-        runtime_provider_names = _parse_runtime_provider_names(
-            tool_config.get("runtime_binproviders"),
-        )
-        runtime_providers = _build_providers(runtime_provider_names, options)
-        binary_env_key: str | None = None
-        for dep in dependencies:
-            if isinstance(dep, str):
-                dep_name = dep
-                dep_options = options
-            elif isinstance(dep, dict) and dep.get("name"):
-                dep_name = str(dep["name"])
-                dep_options = _dependency_options(dep, options)
-            else:
-                continue
-
-            if dep_name == binary_name:
-                binary_options = dep_options
-                if isinstance(dep, dict) and dep.get("_abxpkg_env_key"):
-                    binary_env_key = str(dep["_abxpkg_env_key"])
-                continue
-
-            dep_binary = _load_or_install_script_binary(dep_name, dep_options)
-            if (
-                isinstance(dep, dict)
-                and dep.get("_abxpkg_env_key")
-                and dep_binary.loaded_abspath
-            ):
-                os.environ[str(dep["_abxpkg_env_key"])] = str(dep_binary.loaded_abspath)
-            if dep_binary.loaded_binprovider:
-                runtime_providers.append(dep_binary.loaded_binprovider)
-
-        binary = _load_or_install_script_binary(binary_name, binary_options)
-        if binary_env_key and binary.loaded_abspath:
-            os.environ[binary_env_key] = str(binary.loaded_abspath)
-    except ABXPkgError as err:
-        print(
-            f"abxpkg: failed to resolve dependency: {_format_error(err)}",
-            file=sys.stderr,
-        )
-        return 1
-
-    if options.dry_run:
-        return 0
-    if (
-        not binary.is_valid
-        or not binary.loaded_binprovider
-        or not binary.loaded_abspath
+def warm_run_context(options: Any) -> str | None:
+    """Return the canonical context for CLI runs eligible for direct cache exec."""
+    if any(
+        (
+            options.dry_run,
+            options.debug,
+            options.no_cache,
+            options.min_version is not None,
+            options.postinstall_scripts is not None,
+            options.min_release_age is not None,
+            options.overrides is not None,
+            options.install_root is not None,
+            options.bin_dir is not None,
+            options.euid is not None,
+            options.install_timeout is not None,
+            options.version_timeout is not None,
+        ),
     ):
-        print(f"abxpkg: {binary_name}: binary could not be loaded", file=sys.stderr)
-        return 1
+        return None
+    return json.dumps(
+        {
+            "lib_dir": str(options.lib_dir),
+            "provider_names": list(options.provider_names),
+            "abxpkg_env": {
+                key: value
+                for key, value in sorted(os.environ.items())
+                if key.startswith("ABXPKG_")
+                and key not in {"ABXPKG_LIB_DIR", "ABXPKG_BINPROVIDERS"}
+            },
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
-    exec_providers = _runtime_exec_providers(binary, runtime_providers)
-    final_env = build_exec_env(
-        # The loaded provider owns the target executable. Merge it before
-        # sibling dependency providers so single-value runtime aliases like
-        # NODE_MODULES_DIR describe the target provider, while NODE_PATH/PATH
-        # still include the full dependency chain.
-        providers=[
-            binary.loaded_binprovider,
-            *binary.loaded_binprovider.exec_env_providers(),
-            *exec_providers,
-        ],
-        base_env=os.environ.copy(),
-    )
-    exec_abspath = binary.loaded_binprovider._exec_bin_abspath(
-        Path(binary.loaded_abspath),
-    )
-    argv = [str(exec_abspath), *script_args]
+
+def _parse_warm_run_argv(
+    argv: list[str],
+) -> tuple[str | None, str | None, str, list[str]] | None:
+    lib_dir: str | None = None
+    provider_names: str | None = None
+    command_seen = False
+    i = 0
+    while i < len(argv):
+        token = argv[i]
+        if not command_seen and token in {"run", "exec"}:
+            command_seen = True
+            i += 1
+            continue
+        if token.startswith("--lib") or token.startswith("--binproviders"):
+            name = token.split("=", 1)[0]
+            if name not in {"--lib", "--binproviders"}:
+                return None
+            value, i = _pop_option_value(argv, i)
+            if value is None:
+                return None
+            if name == "--lib":
+                lib_dir = value
+            else:
+                provider_names = value
+            continue
+        if token.startswith("-") or not command_seen:
+            return None
+        return lib_dir, provider_names, token, argv[i + 1 :]
+    return None
+
+
+def _fingerprints_match(raw_fingerprints: object) -> bool:
+    if not isinstance(raw_fingerprints, list) or not raw_fingerprints:
+        return False
+    for raw_fingerprint in raw_fingerprints:
+        if not isinstance(raw_fingerprint, dict):
+            return False
+        fingerprint = cast(dict[str, object], raw_fingerprint)
+        raw_path = fingerprint.get("path")
+        if not isinstance(raw_path, str):
+            return False
+        try:
+            stat_result = Path(raw_path).stat()
+        except OSError:
+            return False
+        if fingerprint != {
+            "path": str(Path(raw_path).expanduser().resolve(strict=False)),
+            "inode": stat_result.st_ino,
+            "size": stat_result.st_size,
+            "mtime_ns": stat_result.st_mtime_ns,
+            "ctime_ns": stat_result.st_ctime_ns,
+            "euid": stat_result.st_uid,
+        }:
+            return False
+    return True
+
+
+def _cached_records(
+    lib_dir: Path,
+    provider_names: list[str],
+    binary_name: str,
+):
+    from .config import load_derived_cache_text
+
+    for provider_name in provider_names:
+        derived_env_path = lib_dir / provider_name / "derived.env"
+        try:
+            fd = os.open(
+                derived_env_path,
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0),
+            )
+        except OSError:
+            continue
+        try:
+            before = os.fstat(fd)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.geteuid()
+                or before.st_mode & 0o022
+            ):
+                continue
+            with os.fdopen(fd, encoding="utf-8") as cache_file:
+                fd = -1
+                contents = cache_file.read()
+                after = os.fstat(cache_file.fileno())
+            stable_fields = (
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+                "st_uid",
+                "st_mode",
+            )
+            if any(
+                getattr(before, field) != getattr(after, field)
+                for field in stable_fields
+            ):
+                continue
+            cache = load_derived_cache_text(contents)
+        except OSError:
+            continue
+        finally:
+            if fd >= 0:
+                os.close(fd)
+        for record in cache.values():
+            if (
+                isinstance(record, dict)
+                and record.get("provider_name") == provider_name
+                and record.get("bin_name") == binary_name
+                and _fingerprints_match(record.get("fingerprint"))
+            ):
+                yield record
+
+
+def _exec_cached_plan(
+    raw_plan: object,
+    run_context: str,
+    binary_args: list[str],
+) -> int | None:
+    if os.getuid() != os.geteuid():
+        return None
+    if not isinstance(raw_plan, dict):
+        return None
+    exec_plan = cast(dict[str, object], raw_plan)
+    if (
+        exec_plan.get("version") != 1
+        or exec_plan.get("run_context") != run_context
+        or exec_plan.get("euid") != os.geteuid()
+        or not _fingerprints_match(exec_plan.get("fingerprint"))
+    ):
+        return None
+    exec_abspath = exec_plan.get("abspath")
+    env = exec_plan.get("env")
+    env_base = exec_plan.get("env_base")
+    resolutions = exec_plan.get("resolutions")
+    if (
+        not isinstance(exec_abspath, str)
+        or not Path(exec_abspath).is_absolute()
+        or not os.access(exec_abspath, os.X_OK)
+        or not isinstance(env, dict)
+        or not isinstance(env_base, dict)
+        or not isinstance(resolutions, list)
+        or not resolutions
+        or any(not isinstance(key, str) for key in env)
+        or any(not isinstance(value, str) for value in env.values())
+        or any(not isinstance(key, str) for key in env_base)
+        or any(
+            value is not None and not isinstance(value, str)
+            for value in env_base.values()
+        )
+    ):
+        return None
+    typed_env = cast(dict[str, str], env)
+    typed_env_base = cast(dict[str, str | None], env_base)
+    if any(os.environ.get(key) != value for key, value in typed_env_base.items()):
+        return None
+    final_env = os.environ.copy()
+    final_env.update(typed_env)
+    final_env["PWD"] = os.getcwd()
+    import shutil
+
+    for raw_resolution in resolutions:
+        if not isinstance(raw_resolution, dict):
+            return None
+        resolution = cast(dict[str, object], raw_resolution)
+        name = resolution.get("name")
+        abspath = resolution.get("abspath")
+        selected_path = resolution.get("selected_path")
+        ambient_abspath = resolution.get("ambient_abspath")
+        if (
+            not isinstance(name, str)
+            or not isinstance(abspath, str)
+            or not isinstance(selected_path, str)
+            or (ambient_abspath is not None and not isinstance(ambient_abspath, str))
+        ):
+            return None
+        selected_command = shutil.which(name, path=selected_path)
+        if selected_command is None or Path(selected_command).resolve(
+            strict=False,
+        ) != Path(abspath).resolve(strict=False):
+            return None
+        current_ambient = shutil.which(name, path=os.environ.get("PATH", ""))
+        resolved_ambient = (
+            str(Path(current_ambient).resolve(strict=False))
+            if current_ambient is not None
+            else None
+        )
+        if resolved_ambient != ambient_abspath:
+            return None
     try:
-        os.execvpe(str(exec_abspath), argv, final_env)
+        os.execvpe(
+            exec_abspath,
+            [exec_abspath, *binary_args],
+            final_env,
+        )
     except OSError as err:
         print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
         return 1
     return 1
 
 
+def _run_cached(argv: list[str]) -> int | None:
+    if any(
+        _env_flag_is_true(name)
+        for name in ("ABXPKG_DRY_RUN", "DRY_RUN", "ABXPKG_DEBUG", "ABXPKG_NO_CACHE")
+    ):
+        return None
+
+    script_parsed = _parse_script_argv(argv)
+    if script_parsed is not None:
+        raw_options, binary_name, script_path, script_args = script_parsed
+        if not script_path.is_file():
+            return None
+        try:
+            meta = parse_script_metadata(script_path)
+        except RuntimeError:
+            return None
+        if meta is None:
+            return None
+        raw_lib_dir = raw_options.get("--lib")
+        lib_dir = _resolve_lib_dir(raw_lib_dir)
+        raw_names = raw_options.get("--binproviders")
+        if raw_names is None:
+            raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
+        if raw_names is None:
+            import abxpkg as package
+
+            provider_names = list(package.DEFAULT_PROVIDER_NAMES)
+        else:
+            provider_names = [
+                name.strip() for name in raw_names.split(",") if name.strip()
+            ]
+        if not provider_names or any(
+            re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
+        ):
+            return None
+        os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+        if raw_names is not None:
+            os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+        else:
+            os.environ.pop("ABXPKG_BINPROVIDERS", None)
+
+        tool_section = meta.get("tool")
+        tool_config = (
+            tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
+        )
+        for key, value in tool_config.items():
+            if key != "runtime_binproviders":
+                os.environ.setdefault(str(key), str(value))
+        cache_context = _script_cache_context(
+            raw_options,
+            binary_name,
+            script_path,
+            meta,
+            ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+        )
+        if cache_context is None:
+            return None
+        import hashlib
+        import abxpkg as package
+
+        run_context, _fingerprint_paths = cache_context
+        plan_key = hashlib.sha256(run_context.encode()).hexdigest()
+        for record in _cached_records(
+            lib_dir,
+            list(package.ALL_PROVIDER_NAMES),
+            binary_name,
+        ):
+            raw_plans = record.get("script_exec_plans")
+            if not isinstance(raw_plans, dict):
+                continue
+            result = _exec_cached_plan(
+                raw_plans.get(plan_key),
+                run_context,
+                script_args,
+            )
+            if result is not None:
+                return result
+        return None
+
+    parsed = _parse_warm_run_argv(argv)
+    if parsed is None:
+        return None
+    raw_lib_dir, raw_provider_names, binary_name, binary_args = parsed
+    lib_dir = _resolve_lib_dir(raw_lib_dir)
+
+    raw_names = raw_provider_names
+    if raw_names is None:
+        raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
+    if raw_names is None:
+        import abxpkg as package
+
+        provider_names = list(package.DEFAULT_PROVIDER_NAMES)
+    else:
+        provider_names = [name.strip() for name in raw_names.split(",") if name.strip()]
+    if not provider_names or any(
+        re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
+    ):
+        return None
+    os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+    if raw_names is not None:
+        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    else:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
+
+    context = warm_run_context(
+        ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+    )
+    if context is None:
+        return None
+
+    for record in _cached_records(lib_dir, provider_names, binary_name):
+        result = _exec_cached_plan(
+            record.get("exec_plan"),
+            context,
+            binary_args,
+        )
+        if result is not None:
+            return result
+    return None
+
+
 def main() -> None:
-    script_returncode = _run_script(sys.argv[1:])
-    if script_returncode is not None:
-        raise SystemExit(script_returncode)
+    cached_returncode = _run_cached(sys.argv[1:])
+    if cached_returncode is not None:
+        raise SystemExit(cached_returncode)
 
     from .click_cli import main as click_main
 

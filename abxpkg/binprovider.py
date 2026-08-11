@@ -675,6 +675,10 @@ class BinProvider(BaseModel):
         self._append_unique_provider(providers, self)
         return providers
 
+    def supports_cached_exec(self) -> bool:
+        """Whether a cached plan can replace this provider's exec() wrapper."""
+        return type(self).exec is BinProvider.exec
+
     def set_projection_providers(
         self,
         providers: Iterable["BinProvider"],
@@ -760,6 +764,7 @@ class BinProvider(BaseModel):
         inode: int
         size: int
         mtime_ns: int
+        ctime_ns: int
         euid: int
 
     class CacheRecord(TypedDict):
@@ -882,6 +887,7 @@ class BinProvider(BaseModel):
                     "inode": stat_result.st_ino,
                     "size": stat_result.st_size,
                     "mtime_ns": stat_result.st_mtime_ns,
+                    "ctime_ns": stat_result.st_ctime_ns,
                     "euid": stat_result.st_uid,
                 },
             )
@@ -964,7 +970,7 @@ class BinProvider(BaseModel):
         if not isinstance(cached_record, dict):
             return None
         if cached_record.get("fingerprint") != fingerprints:
-            cache.pop(cache_key, None)
+            cache.pop(cached_record_key or cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
 
@@ -976,7 +982,7 @@ class BinProvider(BaseModel):
             or not isinstance(loaded_sha256, str)
             or not isinstance(loaded_euid, int)
         ):
-            cache.pop(cache_key, None)
+            cache.pop(cached_record_key or cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
 
@@ -987,7 +993,7 @@ class BinProvider(BaseModel):
             mtime = TypeAdapter(MTimeNs).validate_python(fingerprints[0]["mtime_ns"])
             euid = TypeAdapter(EUID).validate_python(loaded_euid)
         except Exception:
-            cache.pop(cache_key, None)
+            cache.pop(cached_record_key or cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
 
@@ -1003,7 +1009,7 @@ class BinProvider(BaseModel):
                 "dependency" if str(bin_name) == str(self.INSTALLER_BIN) else "binary"
             )
         if not isinstance(cached_abspath, str):
-            cache.pop(cache_key, None)
+            cache.pop(cached_record_key or cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
         if self.cached_binary_options_mismatch(
@@ -1014,7 +1020,7 @@ class BinProvider(BaseModel):
         ):
             return None
         if self.cached_binary_state_mismatch(bin_name, cached_record):
-            cache.pop(cache_key, None)
+            cache.pop(cached_record_key or cache_key, None)
             save_derived_cache(derived_env_path, cache)
             return None
         primary_fingerprint = fingerprints[0]
@@ -1165,9 +1171,23 @@ class BinProvider(BaseModel):
         cache = load_derived_cache(derived_env_path)
         # The same binary path can have valid cache entries for multiple
         # override contexts. The context hash in the key keeps them distinct.
-        cache[
-            self._cache_key(bin_name, abspath, cache_context_hash=cache_context_hash)
-        ] = record
+        cache_key = self._cache_key(
+            bin_name,
+            abspath,
+            cache_context_hash=cache_context_hash,
+        )
+        if cache.get(cache_key) == record:
+            if os.geteuid() == 0 and derived_env_path.stat().st_uid != self.EUID:
+                try:
+                    pw_record = self.get_pw_record(self.EUID)
+                    os.chown(derived_env_path, self.EUID, pw_record.pw_gid)
+                except (PermissionError, OSError, KeyError):
+                    pass
+            return (
+                TypeAdapter(MTimeNs).validate_python(fingerprints[0]["mtime_ns"]),
+                TypeAdapter(EUID).validate_python(fingerprints[0]["euid"]),
+            )
+        cache[cache_key] = record
         try:
             save_derived_cache(derived_env_path, cache)
             if os.geteuid() == 0:
@@ -1188,6 +1208,228 @@ class BinProvider(BaseModel):
             TypeAdapter(MTimeNs).validate_python(fingerprints[0]["mtime_ns"]),
             TypeAdapter(EUID).validate_python(fingerprints[0]["euid"]),
         )
+
+    @mutation_locked
+    def write_cached_exec_plan(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+        *,
+        exec_provider: "BinProvider",
+        run_context: str,
+        plan_key: str | None = None,
+        runtime_providers: Iterable["BinProvider"] | None = None,
+        base_env: Mapping[str, str] | None = None,
+        exec_env: Mapping[str, str] | None = None,
+        extra_fingerprint_paths: Iterable[Path] = (),
+        resolution_binaries: Iterable[tuple[str, HostBinPath, "BinProvider"]] = (),
+    ) -> None:
+        """Attach a validated warm-exec plan to this provider's cache record."""
+        derived_env_path = self.derived_env_path
+        install_root = self.install_root
+        if (
+            derived_env_path is None
+            or install_root is None
+            or not derived_env_path.is_file()
+            or not exec_provider.supports_cached_exec()
+        ):
+            return
+
+        cache = load_derived_cache(derived_env_path)
+        resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
+
+        def record_matches(record: object) -> bool:
+            if not isinstance(record, dict):
+                return False
+            typed_record = cast(dict[str, object], record)
+            cached_abspath = typed_record.get("abspath")
+            raw_fingerprints = typed_record.get("fingerprint")
+            if not isinstance(cached_abspath, str) or not isinstance(
+                raw_fingerprints,
+                list,
+            ):
+                return False
+            fingerprint_paths: list[Path] = []
+            for raw_fingerprint in raw_fingerprints:
+                if not isinstance(raw_fingerprint, dict):
+                    return False
+                fingerprint = cast(dict[str, object], raw_fingerprint)
+                fingerprint_path = fingerprint.get("path")
+                if not isinstance(fingerprint_path, str):
+                    return False
+                fingerprint_paths.append(Path(fingerprint_path))
+            return (
+                typed_record.get("provider_name") == self.name
+                and typed_record.get("bin_name") == str(bin_name)
+                and Path(cached_abspath).expanduser().resolve(strict=False)
+                == resolved_abspath
+                and len(fingerprint_paths) == len(raw_fingerprints)
+                and raw_fingerprints == self._fingerprint_paths(fingerprint_paths)
+            )
+
+        cache_entry = next(
+            (
+                (cache_key, record)
+                for cache_key, record in cache.items()
+                if record_matches(record)
+            ),
+            None,
+        )
+        if cache_entry is None:
+            return
+        cache_key, record = cache_entry
+
+        resolved_runtime_providers = list(
+            runtime_providers or exec_provider.exec_env_providers(),
+        )
+        resolved_base_env = dict(base_env or os.environ)
+        final_env = (
+            dict(exec_env)
+            if exec_env is not None
+            else build_exec_env(
+                providers=resolved_runtime_providers,
+                base_env=resolved_base_env,
+            )
+        )
+        target_pw_record = exec_provider.get_pw_record(exec_provider.EUID)
+        final_env.update(
+            {
+                "HOME": target_pw_record.pw_dir,
+                "LOGNAME": target_pw_record.pw_name,
+                "USER": target_pw_record.pw_name,
+            },
+        )
+        env = {
+            key: value
+            for key, value in final_env.items()
+            if resolved_base_env.get(key) != value
+        }
+        env_input_keys = {"PATH", "NODE_PATH", "PYTHONPATH", *env}
+        env_input_keys.add(f"{str(bin_name).upper().replace('-', '_')}_BINARY")
+        env_input_keys.update(self.CACHE_ENV_ALIASES.get(str(bin_name), ()))
+        for provider in resolved_runtime_providers:
+            env_input_keys.update(provider.ENV)
+        env_base = {key: resolved_base_env.get(key) for key in sorted(env_input_keys)}
+        exec_abspath = exec_provider._exec_bin_abspath(Path(abspath))
+
+        resolved_binaries = list(resolution_binaries) or [
+            (str(bin_name), abspath, exec_provider),
+        ]
+        fingerprint_paths = [
+            Path(abspath),
+            exec_abspath,
+            *extra_fingerprint_paths,
+        ]
+        for _resolved_name, resolved_abspath, resolved_provider in resolved_binaries:
+            fingerprint_paths.extend(
+                (
+                    Path(resolved_abspath),
+                    resolved_provider._exec_bin_abspath(Path(resolved_abspath)),
+                ),
+            )
+        managed_root = install_root.parent.resolve(strict=False)
+        for provider in resolved_runtime_providers:
+            for raw_path in provider.execution_PATH().split(os.pathsep):
+                path = Path(raw_path).expanduser().resolve(strict=False)
+                if (
+                    not raw_path
+                    or not path.is_relative_to(managed_root)
+                    or not (path.exists() or path.is_symlink())
+                ):
+                    continue
+                fingerprint_paths.append(path)
+                if path.is_dir():
+                    try:
+                        fingerprint_paths.extend(
+                            child for child in path.iterdir() if child.is_file()
+                        )
+                    except OSError:
+                        return
+        unique_paths = list(
+            dict.fromkeys(
+                path.expanduser().resolve(strict=False) for path in fingerprint_paths
+            ),
+        )
+        fingerprints = self._fingerprint_paths(unique_paths)
+        if fingerprints is None:
+            return
+
+        import shutil
+
+        resolutions = []
+        for resolved_name, resolved_abspath, resolved_provider in resolved_binaries:
+            resolved_exec_abspath = resolved_provider._exec_bin_abspath(
+                Path(resolved_abspath),
+            )
+            manual_binary_keys = {
+                f"{resolved_name.upper()}_BINARY",
+                *resolved_provider.CACHE_ENV_ALIASES.get(resolved_name, ()),
+            }
+            env_resolution_is_explicit = resolved_name in {
+                "python",
+                "python3",
+            } or any(resolved_base_env.get(key) for key in manual_binary_keys)
+            if resolved_provider.name == "env" and env_resolution_is_explicit:
+                selected_path = str(resolved_exec_abspath.parent)
+            elif resolved_provider.name == "env":
+                selected_path = resolved_base_env.get("PATH", "")
+            else:
+                selected_path = final_env.get("PATH", "")
+            ambient_abspath = shutil.which(
+                resolved_name,
+                path=resolved_base_env.get("PATH", ""),
+            )
+            resolutions.append(
+                {
+                    "name": resolved_name,
+                    "abspath": str(resolved_exec_abspath),
+                    "selected_path": selected_path,
+                    "ambient_abspath": (
+                        str(Path(ambient_abspath).resolve(strict=False))
+                        if ambient_abspath is not None
+                        else None
+                    ),
+                },
+            )
+
+        exec_plan = {
+            "version": 1,
+            "run_context": run_context,
+            "abspath": str(exec_abspath),
+            "euid": exec_provider.EUID,
+            "env": env,
+            "env_base": env_base,
+            "resolutions": resolutions,
+            "fingerprint": fingerprints,
+        }
+        if plan_key is None:
+            if record.get("exec_plan") == exec_plan:
+                return
+            record["exec_plan"] = exec_plan
+        else:
+            raw_plans = record.get("script_exec_plans")
+            plans = dict(raw_plans) if isinstance(raw_plans, dict) else {}
+            if plans.get(plan_key) == exec_plan:
+                return
+            plans[plan_key] = exec_plan
+            record["script_exec_plans"] = plans
+        cache[cache_key] = record
+        try:
+            save_derived_cache(derived_env_path, cache)
+        except OSError as err:
+            logger.debug(
+                "Skipping cached exec plan for %s via %s: %s",
+                bin_name,
+                self.name,
+                err,
+            )
+            return
+        if os.geteuid() == 0 and derived_env_path.stat().st_uid != self.EUID:
+            try:
+                pw_record = self.get_pw_record(self.EUID)
+                os.chown(derived_env_path, self.EUID, pw_record.pw_gid)
+            except (PermissionError, OSError, KeyError):
+                pass
 
     _cache: dict[str, dict[str, Any]] | None = (
         None  # Per-method in-memory cache populated by @binprovider_cache during the current process only.
@@ -1855,7 +2097,9 @@ class BinProvider(BaseModel):
     def invalidate_cache(self, bin_name: BinName) -> None:
         if self._cache:
             for method_cache in self._cache.values():
-                method_cache.pop(bin_name, None)
+                for cache_key in list(method_cache):
+                    if cache_key[0] == str(bin_name):
+                        method_cache.pop(cache_key, None)
         derived_env_path = self.derived_env_path
         if derived_env_path is None:
             return
@@ -3531,21 +3775,40 @@ class EnvProvider(BinProvider):
             Path(str(bin_name)).name,
             binary.loaded_abspath,
         )
-        self._ensure_projection_owner(projected_abspath, binary.loaded_euid)
+        self._ensure_projection_owner(projected_abspath, self.EUID)
         if (
             binary.loaded_version is not None
             and binary.loaded_sha256 is not None
             and loaded_binprovider is not None
         ):
-            self.write_cached_binary(
-                Path(str(bin_name)).name,
-                projected_abspath,
-                binary.loaded_version,
-                binary.loaded_sha256,
-                resolved_provider_name=loaded_binprovider.name,
-                resolved_provider=loaded_binprovider,
-                cache_kind="projection",
-            )
+            projected_sha256 = binary.loaded_sha256
+            if Path(projected_abspath).resolve(strict=False) != Path(
+                binary.loaded_abspath,
+            ).resolve(strict=False):
+                cached_projection = self.load_cached_binary(
+                    Path(str(bin_name)).name,
+                    projected_abspath,
+                )
+                projected_sha256 = (
+                    cached_projection.loaded_sha256
+                    if cached_projection is not None
+                    and cached_projection.loaded_sha256 is not None
+                    else self.get_sha256(
+                        Path(str(bin_name)).name,
+                        abspath=projected_abspath,
+                        no_cache=True,
+                    )
+                )
+            if projected_sha256 is not None:
+                self.write_cached_binary(
+                    Path(str(bin_name)).name,
+                    projected_abspath,
+                    binary.loaded_version,
+                    projected_sha256,
+                    resolved_provider_name=loaded_binprovider.name,
+                    resolved_provider=loaded_binprovider,
+                    cache_kind="projection",
+                )
         return projected_abspath
 
     def _ensure_projection_owner(
@@ -3591,6 +3854,8 @@ class EnvProvider(BinProvider):
         providers: list[BinProvider] = []
         for provider in self._projection_providers:
             self._append_unique_provider(providers, provider)
+            for runtime_provider in provider.exec_env_providers():
+                self._append_unique_provider(providers, runtime_provider)
         for provider in super().exec_env_providers():
             self._append_unique_provider(providers, provider)
         return providers
@@ -3617,6 +3882,54 @@ class EnvProvider(BinProvider):
             default=str,
             separators=(",", ":"),
             sort_keys=True,
+        )
+
+    def cached_binary_state_mismatch(
+        self,
+        bin_name: BinName,
+        cached_record: Mapping[str, object],
+    ) -> bool:
+        cached_abspath = cached_record.get("abspath")
+        if not isinstance(cached_abspath, str):
+            return True
+        if (
+            self.bin_dir is None
+            or Path(cached_abspath).parent != self.bin_dir
+            or cached_record.get("resolved_provider_name") != self.name
+        ):
+            return False
+
+        bin_name_str = str(bin_name)
+        manual = os.environ.get(f"{bin_name_str.upper()}_BINARY")
+        if bin_name_str in {"python", "python3"}:
+            manual = manual or os.environ.get("PYTHON_BINARY")
+            current_host = Path(manual).expanduser() if manual else Path(sys.executable)
+        else:
+            search_paths = [
+                entry
+                for entry in str(self.PATH or "").split(os.pathsep)
+                if entry and (self.bin_dir is None or Path(entry) != self.bin_dir)
+            ]
+            current_host = None
+            for candidate_name in self._host_candidate_names(bin_name_str):
+                current_host = next(
+                    (
+                        Path(abspath)
+                        for abspath in bin_abspaths(
+                            candidate_name,
+                            PATH=os.pathsep.join(search_paths),
+                        )
+                        if not self._is_managed_by_other_provider(abspath)
+                    ),
+                    None,
+                )
+                if current_host is not None:
+                    break
+        if current_host is None or not current_host.is_file():
+            return False
+        projected_host = self._host_projection_target(Path(cached_abspath))
+        return current_host.resolve(strict=False) != projected_host.resolve(
+            strict=False,
         )
 
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:

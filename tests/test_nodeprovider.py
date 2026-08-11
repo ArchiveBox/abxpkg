@@ -1,3 +1,4 @@
+import pwd
 import tempfile
 from pathlib import Path
 
@@ -6,6 +7,34 @@ import pytest
 
 
 class TestNodeProvider:
+    def test_root_managed_install_uses_sudo_invoking_uid(self, tmp_path):
+        invoking_uid = next(
+            entry.pw_uid for entry in pwd.getpwall() if entry.pw_uid > 0
+        )
+        provider = NodeProvider(install_root=tmp_path / "node")
+
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            == invoking_uid
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=invoking_uid,
+                environ={"SUDO_UID": str(invoking_uid)},
+            )
+            is None
+        )
+        assert (
+            provider._sudo_managed_install_euid(
+                current_euid=0,
+                environ={"SUDO_UID": "not-a-uid"},
+            )
+            is None
+        )
+
     def test_official_distribution_provides_node_and_npm_without_root(
         self,
         test_machine,

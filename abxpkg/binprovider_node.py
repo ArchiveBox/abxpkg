@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import urllib.request
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import ClassVar, NamedTuple, Self
 
@@ -141,11 +142,43 @@ class NodeProvider(BinProvider):
     ) -> None:
         assert self.install_root is not None
         if self.euid is None:
-            self.euid = self.detect_euid(
-                owner_paths=(self.install_root.parent,),
+            self.euid = self._managed_install_euid()
+        self.install_root.parent.mkdir(parents=True, exist_ok=True)
+
+    def _managed_install_euid(self) -> int:
+        if self.install_root is not None and self.install_root.is_dir():
+            return self.detect_euid(
+                owner_paths=(self.install_root,),
                 preserve_root=True,
             )
-        self.install_root.parent.mkdir(parents=True, exist_ok=True)
+        sudo_uid = self._sudo_managed_install_euid()
+        if sudo_uid is not None:
+            return sudo_uid
+        return self.detect_euid(
+            owner_paths=(self.install_root,),
+            preserve_root=True,
+        )
+
+    def _sudo_managed_install_euid(
+        self,
+        *,
+        current_euid: int | None = None,
+        environ: Mapping[str, str] | None = None,
+    ) -> int | None:
+        if current_euid is None:
+            current_euid = os.geteuid()
+        if current_euid != 0:
+            return None
+        sudo_uid = (environ or os.environ).get("SUDO_UID")
+        if not sudo_uid:
+            return None
+        try:
+            uid = int(sudo_uid)
+        except ValueError:
+            return None
+        if uid > 0 and self.uid_has_passwd_entry(uid):
+            return uid
+        return None
 
     def default_install_args_handler(
         self,
@@ -221,6 +254,8 @@ class NodeProvider(BinProvider):
                 for chunk in iter(lambda: response.read(1024 * 1024), b""):
                     digest.update(chunk)
                     archive_file.write(chunk)
+                archive_file.flush()
+                os.fsync(archive_file.fileno())
 
             downloaded_sha256 = digest.hexdigest()
             if downloaded_sha256 != artifact.sha256:

@@ -266,6 +266,21 @@ class PnpmProvider(BinProvider):
         self.PATH = self._merge_PATH(*path_entries, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
 
+    def exec_env_providers(self) -> list[BinProvider]:
+        providers = super().exec_env_providers()
+        managed_lib_dir = self._managed_lib_dir()
+        if managed_lib_dir is not None:
+            from .binprovider_node import NodeProvider
+
+            node_provider = NodeProvider(install_root=managed_lib_dir / "node")
+            if node_provider.bin_dir and (node_provider.bin_dir / "node").is_file():
+                self._append_unique_provider(providers, node_provider)
+        return providers
+
+    def supports_cached_exec(self) -> bool:
+        # Global pnpm execution injects --config.global-bin-dir dynamically.
+        return self.install_root is not None
+
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         installer = self._INSTALLER_BINARY
         if (
@@ -643,9 +658,10 @@ class PnpmProvider(BinProvider):
         should_log_command: bool = True,
         **kwargs,
     ):
-        # pnpm REQUIRES PNPM_HOME to exist for global installs to work.
         pnpm_home = Path(self.ENV["PNPM_HOME"])
-        pnpm_home.mkdir(parents=True, exist_ok=True)
+        if self.install_root is None:
+            # Global installs require PNPM_HOME to exist before pnpm starts.
+            pnpm_home.mkdir(parents=True, exist_ok=True)
         installer_abspath = (
             self._INSTALLER_BINARY.loaded_abspath
             if self._INSTALLER_BINARY is not None
@@ -684,11 +700,22 @@ class PnpmProvider(BinProvider):
             self.euid = self._managed_install_euid()
         if not no_cache:
             self._ensure_writable_cache_dir(self.cache_dir)
-        if self.bin_dir:
-            self.bin_dir.mkdir(parents=True, exist_ok=True)
+        managed_dirs = (self.install_root,) if self.install_root else (self.bin_dir,)
+        for managed_dir in managed_dirs:
+            if managed_dir is None:
+                continue
+            managed_dir.mkdir(parents=True, exist_ok=True)
+            if os.geteuid() == 0 and self.EUID != 0:
+                pw_record = self.get_pw_record(self.EUID)
+                os.chown(managed_dir, self.EUID, pw_record.pw_gid)
 
     def _managed_install_euid(self) -> int:
         """Return the uid that should own pnpm-managed package installs."""
+        if self.install_root is not None and self.install_root.is_dir():
+            return self.detect_euid(
+                owner_paths=(self.install_root,),
+                preserve_root=True,
+            )
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
@@ -931,11 +958,26 @@ class PnpmProvider(BinProvider):
                     return TypeAdapter(HostBinPath).validate_python(link_path)
             except OSError:
                 pass
-        if link_path.exists() or link_path.is_symlink():
-            link_path.unlink(missing_ok=True)
-        link_path.write_text(wrapper)
-        link_path.chmod(0o755)
+        self._write_executable_wrapper(link_path, wrapper)
         return TypeAdapter(HostBinPath).validate_python(link_path)
+
+    @staticmethod
+    def _write_executable_wrapper(path: Path, contents: str) -> None:
+        temp_fd, temp_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+        )
+        temp_path = Path(temp_name)
+        try:
+            os.fchmod(temp_fd, 0o755)
+            with os.fdopen(temp_fd, "w", encoding="utf-8") as wrapper_file:
+                wrapper_file.write(contents)
+                wrapper_file.flush()
+                os.fsync(wrapper_file.fileno())
+            os.replace(temp_path, path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _refresh_pnpm_exec_link(
         self,
@@ -978,10 +1020,7 @@ class PnpmProvider(BinProvider):
                     return TypeAdapter(HostBinPath).validate_python(link_path)
             except OSError:
                 pass
-        if link_path.exists() or link_path.is_symlink():
-            link_path.unlink(missing_ok=True)
-        link_path.write_text(wrapper)
-        link_path.chmod(0o755)
+        self._write_executable_wrapper(link_path, wrapper)
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
     def default_search_handler(

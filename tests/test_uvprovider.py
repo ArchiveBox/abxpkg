@@ -1,9 +1,11 @@
 import logging
 import os
+import pwd
 import stat
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -13,6 +15,25 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
+    def test_uv_cache_is_enabled_unless_no_cache_is_explicit(self, tmp_path):
+        provider = UvProvider(install_root=tmp_path / "uv")
+
+        assert provider._cache_args() == []
+        assert provider._cache_args(no_cache=True) == ["--no-cache"]
+
+    def test_managed_root_access_does_not_modify_ancestors(self, tmp_path):
+        lib_dir = tmp_path / "lib"
+        install_root = lib_dir / "uv"
+        package_root = install_root / "packages" / "demo"
+        package_root.mkdir(parents=True)
+        lib_dir.chmod(0o700)
+        original_mode = lib_dir.stat().st_mode
+        provider = UvProvider(install_root=install_root)
+
+        provider._ensure_managed_root_access(package_root)
+
+        assert lib_dir.stat().st_mode == original_mode
+
     def test_self_bootstrap_installs_uv_when_host_uv_is_not_on_path(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "uv-root"
@@ -206,8 +227,9 @@ class TestUvProvider:
             assert reloaded.loaded_abspath == entrypoint
 
     def test_root_managed_install_uses_sudo_invoking_uid(self, tmp_path):
-        invoking_uid = os.getuid()
-        assert invoking_uid > 0
+        invoking_uid = next(
+            entry.pw_uid for entry in pwd.getpwall() if entry.pw_uid > 0
+        )
         provider = UvProvider(
             install_root=tmp_path / "uv",
             postinstall_scripts=True,
@@ -267,6 +289,24 @@ class TestUvProvider:
             assert pyfiglet.loaded_version is not None
             assert cowsay.loaded_sha256 is not None
             assert pyfiglet.loaded_sha256 is not None
+            cowsay_cache = load_derived_cache(install_root / "derived.env")
+            cowsay_record = cast(
+                dict[str, Any],
+                next(
+                    record
+                    for record in cowsay_cache.values()
+                    if record.get("bin_name") == "cowsay"
+                    and record.get("cache_kind") == "binary"
+                ),
+            )
+            fingerprint_paths = {
+                Path(fingerprint["path"])
+                for fingerprint in cowsay_record["fingerprint"]
+            }
+            assert (
+                install_root / "packages" / "cowsay" / "venv" / "bin" / "python"
+            ).resolve() in fingerprint_paths
+            assert any(path.name == "METADATA" for path in fingerprint_paths)
             assert not (install_root / "venv" / "bin" / "cowsay").exists()
             assert not (install_root / "venv" / "bin" / "pyfiglet").exists()
 
