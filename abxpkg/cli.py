@@ -471,7 +471,7 @@ def _exec_cached_plan(
         return None
     exec_plan = cast(dict[str, object], raw_plan)
     if (
-        exec_plan.get("version") != 1
+        exec_plan.get("version") != 2
         or exec_plan.get("run_context") != run_context
         or exec_plan.get("euid") != os.geteuid()
         or not _fingerprints_match(exec_plan.get("fingerprint"))

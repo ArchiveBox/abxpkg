@@ -1393,7 +1393,7 @@ class BinProvider(BaseModel):
             )
 
         exec_plan = {
-            "version": 1,
+            "version": 2,
             "run_context": run_context,
             "abspath": str(exec_abspath),
             "euid": exec_provider.EUID,

@@ -898,6 +898,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     assert first.returncode == 0, first.stderr
     assert any(record.get("exec_plan") for record in records)
+    exec_plans = [
+        cast(dict[str, object], record["exec_plan"])
+        for record in records
+        if record.get("exec_plan")
+    ]
+    assert {plan["version"] for plan in exec_plans} == {2}
 
     second = _run_abxpkg_cli(
         *args,

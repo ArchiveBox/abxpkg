@@ -470,6 +470,33 @@ class TestUvProvider:
             assert installed.loaded_abspath.name in {"__init__.py", "imagesize.py"}
             assert "site-packages" in str(installed.loaded_abspath)
             assert installed.loaded_version is not None
+            assert installed.loaded_sha256 is not None
+
+            current_site_packages = next(
+                parent
+                for parent in installed.loaded_abspath.parents
+                if parent.name == "site-packages"
+            )
+            foreign_python_lib = (
+                f"python{sys.version_info.major}.{sys.version_info.minor + 1}"
+            )
+            foreign_module = (
+                current_site_packages.parent.parent
+                / foreign_python_lib
+                / "site-packages"
+                / installed.loaded_abspath.relative_to(current_site_packages)
+            )
+            foreign_module.parent.mkdir(parents=True)
+            foreign_module.write_bytes(installed.loaded_abspath.read_bytes())
+
+            provider.write_cached_binary(
+                "imagesize",
+                foreign_module,
+                installed.loaded_version,
+                installed.loaded_sha256,
+            )
+
+            assert provider.load_cached_binary("imagesize", foreign_module) is None
 
     def test_explicit_venv_bin_dir_takes_precedence_over_existing_PATH_entries(
         self,

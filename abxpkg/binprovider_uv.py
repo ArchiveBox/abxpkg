@@ -90,6 +90,11 @@ class UvProvider(BinProvider):
     # tool mode may accept an explicit ``uv_tool_bin_dir`` override or leave it unset.
     bin_dir: Path | None = Field(default=None, validation_alias="uv_tool_bin_dir")
 
+    @staticmethod
+    def _runtime_site_packages(venv_root: Path) -> Path:
+        python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        return venv_root / "lib" / python_lib / "site-packages"
+
     def env_projection_target(self, source_path: Path) -> Path | None:
         """Uv-managed venv entrypoints are safe to expose through env/bin."""
         if self.install_root is None:
@@ -115,9 +120,8 @@ class UvProvider(BinProvider):
         }
         if self.install_root:
             venv_root = self.install_root / "venv"
-            python_lib = f"python{sys.version_info.major}.{sys.version_info.minor}"
             env["VIRTUAL_ENV"] = str(venv_root)
-            site_packages = venv_root / "lib" / python_lib / "site-packages"
+            site_packages = self._runtime_site_packages(venv_root)
             if site_packages.is_dir():
                 env["PYTHONPATH"] = ":" + str(site_packages)
             # `uv` can install side dependencies into package-scoped venvs under
@@ -132,7 +136,7 @@ class UvProvider(BinProvider):
                     package_bin = package_venv / "bin"
                     if package_bin.is_dir():
                         env["PATH"] = f"{env.get('PATH', '')}:{package_bin}"
-                    site_packages = package_venv / "lib" / python_lib / "site-packages"
+                    site_packages = self._runtime_site_packages(package_venv)
                     if site_packages.is_dir():
                         package_paths.append(str(site_packages))
             if package_paths:
@@ -489,6 +493,24 @@ class UvProvider(BinProvider):
                 deduped.append(root)
         return deduped
 
+    def _managed_module_matches_runtime(
+        self,
+        bin_name: BinName,
+        abspath: Path,
+    ) -> bool:
+        resolved_abspath = abspath.expanduser().resolve(strict=False)
+        for venv_root in self._managed_venv_roots(bin_name):
+            try:
+                resolved_abspath.relative_to(
+                    (venv_root / "lib").resolve(strict=False),
+                )
+            except ValueError:
+                continue
+            return resolved_abspath.is_relative_to(
+                self._runtime_site_packages(venv_root).resolve(strict=False),
+            )
+        return True
+
     def _ensure_venv(self, root: Path | None = None, *, no_cache: bool = False) -> None:
         """Create a managed uv virtualenv on first use when install_root is pinned."""
         assert self.install_root is not None
@@ -690,6 +712,21 @@ class UvProvider(BinProvider):
             if package_name:
                 return package_name
         return str(bin_name)
+
+    def cached_binary_state_mismatch(
+        self,
+        bin_name: BinName,
+        cached_record: Mapping[str, object],
+    ) -> bool:
+        cached_abspath = cached_record.get("abspath")
+        return (
+            super().cached_binary_state_mismatch(bin_name, cached_record)
+            or not isinstance(cached_abspath, str)
+            or not self._managed_module_matches_runtime(
+                bin_name,
+                Path(cached_abspath),
+            )
+        )
 
     def get_cache_info(
         self,
@@ -1123,7 +1160,10 @@ class UvProvider(BinProvider):
     ) -> HostBinPath | None:
         try:
             abspath = super().default_abspath_handler(bin_name, **context)
-            if abspath:
+            if abspath and self._managed_module_matches_runtime(
+                str(bin_name),
+                Path(abspath),
+            ):
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except (OSError, RuntimeError, ValueError) as err:
             logger.debug("uv provider host-path probe failed for %s: %s", bin_name, err)
@@ -1171,6 +1211,10 @@ class UvProvider(BinProvider):
                         if normalized_package_name not in module_names:
                             module_names.append(normalized_package_name)
                 for location in site_packages_locations:
+                    if location.resolve(strict=False) != self._runtime_site_packages(
+                        venv_root,
+                    ).resolve(strict=False):
+                        continue
                     for module_name in module_names:
                         for module_candidate in (
                             location / module_name / "__init__.py",
