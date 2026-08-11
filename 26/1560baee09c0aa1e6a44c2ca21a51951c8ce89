@@ -1,0 +1,19 @@
+abxpkg/binprovider_pnpm.py
+  s_69ddf154c10e6f::t_e7e061e048a684 715,719-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.21",
+  "base_commit_sha": "261560baee09c0aa1e6a44c2ca21a51951c8ce89",
+  "prompts": {},
+  "sessions": {
+    "s_69ddf154c10e6f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019faf8b-797c-7c30-9a89-b8c3ca8cc3e2",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
