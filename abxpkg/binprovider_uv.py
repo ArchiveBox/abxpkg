@@ -413,10 +413,12 @@ class UvProvider(BinProvider):
         """Return the uid that should own uv-managed package environments."""
         owner_paths = (self.install_root,)
         if self.install_root is not None and self.install_root.is_dir():
-            return super().detect_euid(
+            existing_owner = super().detect_euid(
                 owner_paths=owner_paths,
                 preserve_root=True,
             )
+            if existing_owner != 0:
+                return existing_owner
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
