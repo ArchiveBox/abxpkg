@@ -1393,7 +1393,7 @@ class BinProvider(BaseModel):
             )
 
         exec_plan = {
-            "version": 2,
+            "version": 3,
             "run_context": run_context,
             "abspath": str(exec_abspath),
             "euid": exec_provider.EUID,
@@ -4246,6 +4246,23 @@ class EnvProvider(BinProvider):
         )
         if resolved_provider is not None:
             self.set_projection_providers([resolved_provider])
+            projected_target = self._host_projection_target(Path(installed_abspath))
+            if resolved_provider.cached_binary_state_mismatch(
+                bin_name,
+                {
+                    "abspath": str(projected_target),
+                    "resolved_provider_name": resolved_provider.name,
+                },
+            ):
+                with self.mutation_lock():
+                    self.invalidate_cache(bin_name)
+                    projected_path = Path(installed_abspath)
+                    if (
+                        projected_path.is_symlink()
+                        and projected_path.parent == self.bin_dir
+                    ):
+                        projected_path.unlink()
+                return None
         result = super()._try_load_at_abspath(
             bin_name,
             installed_abspath,

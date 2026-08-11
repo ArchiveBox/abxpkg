@@ -493,7 +493,7 @@ class UvProvider(BinProvider):
                 deduped.append(root)
         return deduped
 
-    def _managed_module_matches_runtime(
+    def _managed_path_matches_runtime(
         self,
         bin_name: BinName,
         abspath: Path,
@@ -502,13 +502,18 @@ class UvProvider(BinProvider):
         for venv_root in self._managed_venv_roots(bin_name):
             try:
                 resolved_abspath.relative_to(
-                    (venv_root / "lib").resolve(strict=False),
+                    venv_root.resolve(strict=False),
                 )
             except ValueError:
                 continue
-            return resolved_abspath.is_relative_to(
-                self._runtime_site_packages(venv_root).resolve(strict=False),
-            )
+            runtime_site_packages = self._runtime_site_packages(venv_root)
+            if not runtime_site_packages.is_dir():
+                return False
+            if not resolved_abspath.is_relative_to(
+                (venv_root / "lib").resolve(strict=False),
+            ):
+                return True
+            return resolved_abspath.is_relative_to(runtime_site_packages.resolve())
         return True
 
     def _ensure_venv(self, root: Path | None = None, *, no_cache: bool = False) -> None:
@@ -722,7 +727,7 @@ class UvProvider(BinProvider):
         return (
             super().cached_binary_state_mismatch(bin_name, cached_record)
             or not isinstance(cached_abspath, str)
-            or not self._managed_module_matches_runtime(
+            or not self._managed_path_matches_runtime(
                 bin_name,
                 Path(cached_abspath),
             )
@@ -1160,7 +1165,7 @@ class UvProvider(BinProvider):
     ) -> HostBinPath | None:
         try:
             abspath = super().default_abspath_handler(bin_name, **context)
-            if abspath and self._managed_module_matches_runtime(
+            if abspath and self._managed_path_matches_runtime(
                 str(bin_name),
                 Path(abspath),
             ):
@@ -1177,6 +1182,8 @@ class UvProvider(BinProvider):
             assert installer_binary.loaded_abspath
 
             for venv_root in self._managed_venv_roots(str(bin_name)):
+                if not self._runtime_site_packages(venv_root).is_dir():
+                    continue
                 proc = self.exec(
                     bin_name=installer_binary.loaded_abspath,
                     cmd=[

@@ -197,6 +197,12 @@ class TestUvProvider:
         assert str(active_site_packages) in env["PYTHONPATH"].split(os.pathsep)
         assert str(foreign_site_packages) not in env["PYTHONPATH"].split(os.pathsep)
         assert str(package_bin) in env["PATH"].split(os.pathsep)
+        assert not UvProvider(
+            install_root=install_root,
+        )._managed_path_matches_runtime(
+            "forum-dl",
+            package_bin / "forum-dl",
+        )
 
     def test_managed_package_venv_repair_restores_entrypoint_access(self):
         with tempfile.TemporaryDirectory() as tmpdir:
