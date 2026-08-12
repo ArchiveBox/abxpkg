@@ -1217,6 +1217,7 @@ class BinProvider(BaseModel):
         *,
         exec_provider: "BinProvider",
         run_context: str,
+        loaded_version: SemVer | None = None,
         plan_key: str | None = None,
         runtime_providers: Iterable["BinProvider"] | None = None,
         base_env: Mapping[str, str] | None = None,
@@ -1263,6 +1264,11 @@ class BinProvider(BaseModel):
                 and typed_record.get("bin_name") == str(bin_name)
                 and Path(cached_abspath).expanduser().resolve(strict=False)
                 == resolved_abspath
+                and (
+                    loaded_version is None
+                    or typed_record.get("loaded_version") == str(loaded_version)
+                )
+                and typed_record.get("resolved_provider_name") == exec_provider.name
                 and len(fingerprint_paths) == len(raw_fingerprints)
                 and raw_fingerprints == self._fingerprint_paths(fingerprint_paths)
             )

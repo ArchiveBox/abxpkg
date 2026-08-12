@@ -1354,6 +1354,22 @@ def build_deps_from_exec_env(
     return env
 
 
+def _write_cached_exec_plans(binary: Binary, run_context: str) -> None:
+    if binary.loaded_binprovider is None or binary.loaded_abspath is None:
+        return
+    cache_providers = [*binary.binproviders]
+    if all(provider is not binary.loaded_binprovider for provider in cache_providers):
+        cache_providers.append(binary.loaded_binprovider)
+    for provider in cache_providers:
+        provider.write_cached_exec_plan(
+            binary.name,
+            binary.loaded_abspath,
+            exec_provider=binary.loaded_binprovider,
+            run_context=run_context,
+            loaded_version=binary.loaded_version,
+        )
+
+
 def run_binary_command(
     binary_name: str,
     *,
@@ -1378,6 +1394,11 @@ def run_binary_command(
     if action == "uninstall":
         _echo(binary_name)
         return
+
+    if action == "load":
+        run_context = warm_run_context(options)
+        if run_context is not None:
+            _write_cached_exec_plans(result, run_context)
 
     provider = result.loaded_binprovider
     provider_name = provider.name if provider is not None else "unknown"
@@ -2254,19 +2275,7 @@ def _run_command_impl(
     else:
         run_context = warm_run_context(run_options)
         if run_context is not None:
-            cache_providers = [*binary.binproviders]
-            if all(
-                provider is not binary.loaded_binprovider
-                for provider in cache_providers
-            ):
-                cache_providers.append(binary.loaded_binprovider)
-            for provider in cache_providers:
-                provider.write_cached_exec_plan(
-                    binary.name,
-                    binary.loaded_abspath,
-                    exec_provider=binary.loaded_binprovider,
-                    run_context=run_context,
-                )
+            _write_cached_exec_plans(binary, run_context)
     exec_kwargs: dict[str, Any] = {"capture_output": False}
     other_runtime_binproviders = get_runtime_exec_providers(
         binary,
@@ -2307,6 +2316,7 @@ def _run_command_impl(
             binary.loaded_abspath,
             exec_provider=binary.loaded_binprovider,
             run_context=run_context,
+            loaded_version=binary.loaded_version,
             plan_key=hashlib.sha256(run_context.encode()).hexdigest(),
             runtime_providers=all_exec_providers,
             base_env=script_cache_base_env,

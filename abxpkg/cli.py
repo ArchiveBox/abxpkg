@@ -460,11 +460,10 @@ def _cached_records(
                 yield record
 
 
-def _exec_cached_plan(
+def _validated_cached_plan(
     raw_plan: object,
     run_context: str,
-    binary_args: list[str],
-) -> int | None:
+) -> tuple[str, dict[str, str]] | None:
     if os.getuid() != os.geteuid():
         return None
     if not isinstance(raw_plan, dict):
@@ -535,6 +534,18 @@ def _exec_cached_plan(
         )
         if resolved_ambient != ambient_abspath:
             return None
+    return exec_abspath, final_env
+
+
+def _exec_cached_plan(
+    raw_plan: object,
+    run_context: str,
+    binary_args: list[str],
+) -> int | None:
+    validated = _validated_cached_plan(raw_plan, run_context)
+    if validated is None:
+        return None
+    exec_abspath, final_env = validated
     try:
         os.execvpe(
             exec_abspath,
@@ -547,12 +558,90 @@ def _exec_cached_plan(
     return 1
 
 
+def _format_cached_load(record: dict[str, object]) -> str | None:
+    version = record.get("loaded_version")
+    abspath = record.get("abspath")
+    provider_name = record.get("resolved_provider_name")
+    bin_name = record.get("bin_name")
+    if (
+        not isinstance(version, str)
+        or not isinstance(abspath, str)
+        or not Path(abspath).is_absolute()
+        or not isinstance(provider_name, str)
+        or not isinstance(bin_name, str)
+    ):
+        return None
+
+    rendered_abspath = f'"{abspath}"' if " " in abspath else abspath
+    line = f"{version.ljust(12)} {rendered_abspath} ({provider_name}) {bin_name}"
+    cwd = os.getcwd()
+    if cwd != "/":
+        line = line.replace(cwd + os.sep, "." + os.sep).replace(cwd, ".")
+    home = os.path.expanduser("~")
+    if home and home != "/":
+        line = line.replace(home + os.sep, "~" + os.sep).replace(home, "~")
+    return line
+
+
+def _load_cached(argv: list[str]) -> int | None:
+    if len(argv) != 2 or argv[0] != "load" or argv[1].startswith("-"):
+        return None
+    binary_name = argv[1]
+    if Path(binary_name).is_absolute():
+        return None
+
+    lib_dir = _resolve_lib_dir(None)
+    raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
+    if raw_names is None:
+        import abxpkg as package
+
+        provider_names = list(package.DEFAULT_PROVIDER_NAMES)
+    else:
+        provider_names = [name.strip() for name in raw_names.split(",") if name.strip()]
+    if not provider_names or any(
+        re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
+    ):
+        return None
+
+    os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
+    if raw_names is not None:
+        os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    else:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
+    run_context = warm_run_context(
+        ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+    )
+    if run_context is None:
+        return None
+
+    for provider_name in provider_names:
+        matches: list[str] = []
+        for record in _cached_records(lib_dir, [provider_name], binary_name):
+            raw_plan = record.get("exec_plan")
+            if _validated_cached_plan(raw_plan, run_context) is None:
+                continue
+            line = _format_cached_load(record)
+            if line is None:
+                continue
+            matches.append(line)
+        if len(matches) > 1:
+            return None
+        if matches:
+            print(matches[0])
+            return 0
+    return None
+
+
 def _run_cached(argv: list[str]) -> int | None:
     if any(
         _env_flag_is_true(name)
         for name in ("ABXPKG_DRY_RUN", "DRY_RUN", "ABXPKG_DEBUG", "ABXPKG_NO_CACHE")
     ):
         return None
+
+    loaded_returncode = _load_cached(argv)
+    if loaded_returncode is not None:
+        return loaded_returncode
 
     script_parsed = _parse_script_argv(argv)
     if script_parsed is not None:

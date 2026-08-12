@@ -883,6 +883,103 @@ def test_run_passes_flag_args_through_without_requiring_dash_dash():
     assert proc.stderr == ""
 
 
+def test_warm_load_uses_cached_plan_without_loading_cli_frameworks(tmp_path):
+    env = {
+        "ABXPKG_LIB_DIR": str(tmp_path / "lib"),
+        "ABXPKG_BINPROVIDERS": "env",
+    }
+    first = _run_abxpkg_cli("load", "python3", env_overrides=env)
+
+    started_at = time.perf_counter()
+    second = _run_abxpkg_cli(
+        "load",
+        "python3",
+        env_overrides={**env, "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    elapsed = time.perf_counter() - started_at
+
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert second.stdout == first.stdout
+    assert "rich_click" not in second.stderr
+    assert "pydantic" not in second.stderr
+    assert elapsed < 0.25
+
+    uncached = _run_abxpkg_cli(
+        "load",
+        "--no-cache",
+        "python3",
+        env_overrides={**env, "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert uncached.returncode == 0, uncached.stderr
+    assert uncached.stdout == first.stdout
+    assert "rich_click" in uncached.stderr
+
+
+def test_warm_load_falls_back_when_context_or_cache_is_not_plain(tmp_path):
+    lib = tmp_path / "lib"
+    env = {
+        "ABXPKG_LIB_DIR": str(lib),
+        "ABXPKG_BINPROVIDERS": "env",
+    }
+    first = _run_abxpkg_cli("load", "python3", env_overrides=env)
+    assert first.returncode == 0, first.stderr
+
+    cases = (
+        (("load", "--debug=False", "python3"), {}),
+        (("load", "--min-version=0.0.1", "python3"), {}),
+        (
+            (
+                "load",
+                f"--abspath={sys.executable}",
+                "--version=1.0.0",
+                "python3",
+            ),
+            {},
+        ),
+        (("load", "python3"), {"ABXPKG_DEBUG": "1"}),
+        (("load", "python3"), {"PATH": os.defpath}),
+    )
+    for args, extra_env in cases:
+        proc = _run_abxpkg_cli(
+            *args,
+            env_overrides={
+                **env,
+                **extra_env,
+                "PYTHONPROFILEIMPORTTIME": "1",
+            },
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "rich_click" in proc.stderr
+
+    derived_env = lib / "env" / "derived.env"
+    original_mode = derived_env.stat().st_mode
+    derived_env.chmod(0o666)
+    insecure = _run_abxpkg_cli(
+        "load",
+        "python3",
+        env_overrides={**env, "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    derived_env.chmod(original_mode)
+
+    assert insecure.returncode == 0, insecure.stderr
+    assert "rich_click" in insecure.stderr
+
+    changed_order = _run_abxpkg_cli(
+        "load",
+        "python3",
+        env_overrides={
+            **env,
+            "ABXPKG_BINPROVIDERS": "env,uv",
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
+    )
+
+    assert changed_order.returncode == 0, changed_order.stderr
+    assert "rich_click" in changed_order.stderr
+
+
 def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path):
     args = (
         f"--lib={tmp_path}",
