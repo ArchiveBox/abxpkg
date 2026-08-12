@@ -1333,24 +1333,6 @@ class BinProvider(BaseModel):
                     resolved_provider._exec_bin_abspath(Path(resolved_abspath)),
                 ),
             )
-        managed_root = install_root.parent.resolve(strict=False)
-        for provider in resolved_runtime_providers:
-            for raw_path in provider.execution_PATH().split(os.pathsep):
-                path = Path(raw_path).expanduser().resolve(strict=False)
-                if (
-                    not raw_path
-                    or not path.is_relative_to(managed_root)
-                    or not (path.exists() or path.is_symlink())
-                ):
-                    continue
-                fingerprint_paths.append(path)
-                if path.is_dir():
-                    try:
-                        fingerprint_paths.extend(
-                            child for child in path.iterdir() if child.is_file()
-                        )
-                    except OSError:
-                        return
         unique_paths = list(
             dict.fromkeys(
                 path.expanduser().resolve(strict=False) for path in fingerprint_paths

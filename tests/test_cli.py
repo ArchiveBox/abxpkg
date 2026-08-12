@@ -1068,6 +1068,19 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert "rich_click" not in script_second.stderr
     assert "pydantic" not in script_second.stderr
 
+    unrelated_projection = tmp_path / "script-lib" / "env" / "bin" / "unrelated"
+    unrelated_projection.write_text("#!/bin/sh\nexit 0\n")
+    unrelated_projection.chmod(0o755)
+    script_after_projection = _run_abxpkg_cli(
+        *script_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert script_after_projection.returncode == 0, script_after_projection.stderr
+    assert script_after_projection.stdout.strip() == "warm-script"
+    assert "rich_click" not in script_after_projection.stderr
+    assert "pydantic" not in script_after_projection.stderr
+
     script.write_text(
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("updated-script")\n',
     )
