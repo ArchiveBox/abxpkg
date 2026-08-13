@@ -1,0 +1,26 @@
+abxpkg/binprovider.py
+  h_923c208e183a7b 52,535-539,1363-1370,1378,1388-1396,3841-3843,3845-3847
+abxpkg/binprovider_uv.py
+  h_923c208e183a7b 605-608,614,622,624-625,637-646,653,660,662-663
+abxpkg/cli.py
+  h_923c208e183a7b 524-529
+pyproject.toml
+  h_923c208e183a7b 3
+tests/test_binary_service.py
+  h_923c208e183a7b 72-102
+tests/test_playwrightprovider.py
+  h_923c208e183a7b 198-199,236-237,239,283
+uv.lock
+  h_923c208e183a7b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d3b4d16f860e89e59fcec270fe64ebe13cc3ea6a",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
