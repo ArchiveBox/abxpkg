@@ -903,7 +903,7 @@ def test_warm_load_uses_cached_plan_without_loading_cli_frameworks(tmp_path):
     assert second.stdout == first.stdout
     assert "rich_click" not in second.stderr
     assert "pydantic" not in second.stderr
-    assert elapsed < 0.25
+    assert elapsed < 0.1
 
     uncached = _run_abxpkg_cli(
         "load",

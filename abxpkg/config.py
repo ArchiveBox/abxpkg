@@ -1,33 +1,32 @@
 from __future__ import annotations
 
-import ast
 import json
 import os
-import shlex
 import stat
-import tempfile
 from collections.abc import Iterable, Mapping, MutableMapping
 from functools import lru_cache
 from pathlib import Path
-from typing import ClassVar, Protocol, runtime_checkable
+
+# Keep typing-only imports off cache reads.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import ClassVar, Protocol
+
+    class SupportsExecEnv(Protocol):
+        PATH: str
+        EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]]
+        FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]]
+
+        def setup_PATH(self) -> None: ...
+
+        def execution_PATH(self) -> str: ...
+
+        @property
+        def ENV(self) -> dict[str, str]: ...
 
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 _SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
-
-
-@runtime_checkable
-class SupportsExecEnv(Protocol):
-    PATH: str
-    EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]]
-    FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]]
-
-    def setup_PATH(self) -> None: ...
-
-    def execution_PATH(self) -> str: ...
-
-    @property
-    def ENV(self) -> dict[str, str]: ...
 
 
 def default_abxpkg_lib_dir() -> Path:
@@ -254,11 +253,15 @@ def parse_dotenv_values(contents: str) -> dict[str, str]:
                 values[key] = value[1:-1].replace(_SHELL_SINGLE_QUOTE_ESCAPE, "'")
                 continue
             try:
+                import ast
+
                 values[key] = str(ast.literal_eval(value))
                 continue
             except Exception:
                 pass
             try:
+                import shlex
+
                 values[key] = shlex.split(value)[0]
                 continue
             except Exception:
@@ -298,6 +301,9 @@ def write_dotenv_values(
     dotenv_path: Path,
     values: Mapping[str, str],
 ) -> None:
+    import shlex
+    import tempfile
+
     if not values:
         dotenv_path.unlink(missing_ok=True)
         return

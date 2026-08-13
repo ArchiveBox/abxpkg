@@ -5,10 +5,17 @@ import os
 import re
 import stat
 import sys
-import tomllib
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+
+# Keep typing-only imports off the warm CLI path.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from typing import Any, cast
+else:
+
+    def cast(_type, value):
+        return value
+
 
 _NONE_STRINGS = frozenset({"", "none", "null"})
 _HANDLER_KEYS = frozenset({"abspath", "version", "install_args", "packages"})
@@ -33,22 +40,25 @@ _VALUE_OPTIONS = frozenset(
 )
 
 
-@dataclass(slots=True)
 class ScriptOptions:
-    lib_dir: Path
-    provider_names: list[str]
-    dry_run: bool = False
-    debug: bool = False
-    no_cache: bool = False
-    min_version: str | None = None
-    postinstall_scripts: bool | None = None
-    min_release_age: float | None = None
-    overrides: dict[str, Any] | None = None
-    install_root: Path | None = None
-    bin_dir: Path | None = None
-    euid: int | None = None
-    install_timeout: int | None = None
-    version_timeout: int | None = None
+    """Minimal option surface used before the full CLI is imported."""
+
+    dry_run = False
+    debug = False
+    no_cache = False
+    min_version = None
+    postinstall_scripts = None
+    min_release_age = None
+    overrides = None
+    install_root = None
+    bin_dir = None
+    euid = None
+    install_timeout = None
+    version_timeout = None
+
+    def __init__(self, *, lib_dir: Path, provider_names: list[str]) -> None:
+        self.lib_dir = lib_dir
+        self.provider_names = provider_names
 
 
 def _none_or_stripped(raw: str | None) -> str | None:
@@ -136,6 +146,8 @@ def parse_script_metadata(
     script_path: Path,
     max_lines: int = 50,
 ) -> dict[str, Any] | None:
+    import tomllib
+
     try:
         text = script_path.read_text(encoding="utf-8", errors="replace")
     except OSError as err:

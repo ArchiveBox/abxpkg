@@ -3,8 +3,12 @@ from __future__ import annotations
 __package__ = "abxpkg"
 
 import os
-from collections.abc import Iterator
-from typing import Any
+
+# Keep typing-only imports off the warm CLI path.
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from typing import Any
 
 
 _PACKAGE_DIR = os.path.dirname(__file__)
