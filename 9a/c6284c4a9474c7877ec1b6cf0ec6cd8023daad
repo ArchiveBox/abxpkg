@@ -1,0 +1,18 @@
+abxpkg/binprovider.py
+  h_923c208e183a7b 2485-2486,2584-2589
+abxpkg/click_cli.py
+  h_923c208e183a7b 2454
+tests/test_cli.py
+  h_923c208e183a7b 122,143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "9ac6284c4a9474c7877ec1b6cf0ec6cd8023daad",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
