@@ -602,13 +602,16 @@ class UvProvider(BinProvider):
             if not path.exists():
                 continue
             try:
-                if os.geteuid() == 0 or os.getuid() == 0:
+                path_stat = path.stat()
+                if (os.geteuid() == 0 or os.getuid() == 0) and (
+                    path_stat.st_uid != uid or path_stat.st_gid != gid
+                ):
                     os.chown(path, uid, gid)
             except PermissionError:
                 pass
             try:
                 current_mode = path.stat().st_mode
-                path.chmod(
+                required_mode = (
                     current_mode
                     | stat.S_IRUSR
                     | stat.S_IWUSR
@@ -616,8 +619,10 @@ class UvProvider(BinProvider):
                     | stat.S_IRGRP
                     | stat.S_IXGRP
                     | stat.S_IROTH
-                    | stat.S_IXOTH,
+                    | stat.S_IXOTH
                 )
+                if required_mode != current_mode:
+                    path.chmod(required_mode)
             except PermissionError:
                 pass
 
@@ -629,25 +634,33 @@ class UvProvider(BinProvider):
                 continue
             try:
                 if os.geteuid() == 0 or os.getuid() == 0:
-                    if entrypoint.is_symlink():
-                        os.lchown(entrypoint, uid, gid)
-                    else:
-                        os.chown(entrypoint, uid, gid)
+                    entrypoint_stat = (
+                        entrypoint.lstat()
+                        if entrypoint.is_symlink()
+                        else entrypoint.stat()
+                    )
+                    if entrypoint_stat.st_uid != uid or entrypoint_stat.st_gid != gid:
+                        if entrypoint.is_symlink():
+                            os.lchown(entrypoint, uid, gid)
+                        else:
+                            os.chown(entrypoint, uid, gid)
             except (NotImplementedError, PermissionError):
                 pass
             if entrypoint.is_symlink():
                 continue
             try:
                 current_mode = entrypoint.stat().st_mode
-                entrypoint.chmod(
+                required_mode = (
                     current_mode
                     | stat.S_IRUSR
                     | stat.S_IXUSR
                     | stat.S_IRGRP
                     | stat.S_IXGRP
                     | stat.S_IROTH
-                    | stat.S_IXOTH,
+                    | stat.S_IXOTH
                 )
+                if required_mode != current_mode:
+                    entrypoint.chmod(required_mode)
             except PermissionError:
                 pass
 

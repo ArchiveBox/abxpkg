@@ -49,6 +49,7 @@ from pydantic import (
     InstanceOf,
     PrivateAttr,
     computed_field,
+    field_validator,
     model_validator,
 )
 
@@ -530,6 +531,11 @@ class BinProvider(BaseModel):
         default_factory=lambda: int(os.environ.get("ABXPKG_VERSION_TIMEOUT", "10")),
         repr=False,
     )
+
+    @field_validator("install_root", "bin_dir")
+    @classmethod
+    def normalize_managed_path(cls, value: Path | None) -> Path | None:
+        return value.expanduser().resolve(strict=False) if value is not None else None
 
     @computed_field(repr=False)
     @property
@@ -1333,15 +1339,6 @@ class BinProvider(BaseModel):
                     resolved_provider._exec_bin_abspath(Path(resolved_abspath)),
                 ),
             )
-        unique_paths = list(
-            dict.fromkeys(
-                path.expanduser().resolve(strict=False) for path in fingerprint_paths
-            ),
-        )
-        fingerprints = self._fingerprint_paths(unique_paths)
-        if fingerprints is None:
-            return
-
         import shutil
 
         resolutions = []
@@ -1363,6 +1360,14 @@ class BinProvider(BaseModel):
                 selected_path = resolved_base_env.get("PATH", "")
             else:
                 selected_path = final_env.get("PATH", "")
+            selected_abspath = shutil.which(
+                resolved_name,
+                path=selected_path,
+            )
+            if selected_abspath is not None:
+                fingerprint_paths.append(Path(selected_abspath))
+            else:
+                selected_path = ""
             ambient_abspath = shutil.which(
                 resolved_name,
                 path=resolved_base_env.get("PATH", ""),
@@ -1370,7 +1375,7 @@ class BinProvider(BaseModel):
             resolutions.append(
                 {
                     "name": resolved_name,
-                    "abspath": str(resolved_exec_abspath),
+                    "abspath": str(selected_abspath or resolved_exec_abspath),
                     "selected_path": selected_path,
                     "ambient_abspath": (
                         str(Path(ambient_abspath).resolve(strict=False))
@@ -1379,6 +1384,15 @@ class BinProvider(BaseModel):
                     ),
                 },
             )
+
+        unique_paths = list(
+            dict.fromkeys(
+                path.expanduser().resolve(strict=False) for path in fingerprint_paths
+            ),
+        )
+        fingerprints = self._fingerprint_paths(unique_paths)
+        if fingerprints is None:
+            return
 
         exec_plan = {
             "version": 3,
@@ -3824,9 +3838,13 @@ class EnvProvider(BinProvider):
                 continue
             try:
                 if path.is_symlink():
-                    os.lchown(path, uid, gid)
+                    path_stat = path.lstat()
+                    if path_stat.st_uid != uid or path_stat.st_gid != gid:
+                        os.lchown(path, uid, gid)
                 else:
-                    os.chown(path, uid, gid)
+                    path_stat = path.stat()
+                    if path_stat.st_uid != uid or path_stat.st_gid != gid:
+                        os.chown(path, uid, gid)
             except (NotImplementedError, PermissionError, OSError):
                 pass
 

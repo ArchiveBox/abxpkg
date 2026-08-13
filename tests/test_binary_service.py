@@ -69,6 +69,37 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     ]
     assert lib_roots == [tmp_path / "lib" / "pip", tmp_path / "lib" / "npm"]
 
+    real_lib = tmp_path / "real-lib"
+    real_lib.mkdir()
+    linked_lib = tmp_path / "linked-lib"
+    linked_lib.symlink_to(real_lib, target_is_directory=True)
+    linked_service = BinaryService(
+        abxbus.EventBus(name="test_binary_request_events_linked_lib_dir"),
+        lib_dir=linked_lib,
+    )
+    linked_provider = linked_service._providers_for_event(
+        BinaryRequestEvent(name="tool", binproviders="env"),
+    )[0]
+    assert linked_provider.install_root == real_lib.resolve() / "env"
+    linked_override_event = BinaryRequestEvent(
+        name="tool",
+        binproviders="env",
+        overrides={"env": {"install_root": linked_lib}},
+    )
+    linked_override_provider = linked_service._binary_for_event(
+        linked_override_event,
+    ).get_binprovider("env")
+    assert linked_override_provider.install_root == real_lib.resolve()
+    cached_provider = linked_provider._resolved_provider_from_cache_record(
+        {
+            "resolved_provider_name": "env",
+            "resolved_provider_install_root": str(linked_lib),
+            "resolved_provider_bin_dir": str(linked_lib / "bin"),
+        },
+    )
+    assert cached_provider.install_root == real_lib.resolve()
+    assert cached_provider.bin_dir == real_lib.resolve() / "bin"
+
     override_event = BinaryRequestEvent(
         name="tool",
         description="Tool binary",

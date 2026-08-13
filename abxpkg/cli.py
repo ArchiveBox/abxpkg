@@ -521,11 +521,12 @@ def _validated_cached_plan(
             or (ambient_abspath is not None and not isinstance(ambient_abspath, str))
         ):
             return None
-        selected_command = shutil.which(name, path=selected_path)
-        if selected_command is None or Path(selected_command).resolve(
-            strict=False,
-        ) != Path(abspath).resolve(strict=False):
-            return None
+        if selected_path:
+            selected_command = shutil.which(name, path=selected_path)
+            if selected_command is None or Path(selected_command).resolve(
+                strict=False,
+            ) != Path(abspath).resolve(strict=False):
+                return None
         current_ambient = shutil.which(name, path=os.environ.get("PATH", ""))
         resolved_ambient = (
             str(Path(current_ambient).resolve(strict=False))
