@@ -2482,6 +2482,8 @@ class BinProvider(BaseModel):
         cwd: Path | str = ".",
         quiet=False,
         should_log_command: bool = True,
+        *,
+        replace_process: bool = False,
         **kwargs,
     ) -> subprocess.CompletedProcess:
         explicit_abspath = Path(str(bin_name)).expanduser()
@@ -2579,6 +2581,12 @@ class BinProvider(BaseModel):
             env: dict[str, str],
             preexec_fn: Callable[[], None] | None = None,
         ) -> subprocess.CompletedProcess:
+            if replace_process:
+                os.chdir(cwd_path)
+                if preexec_fn is not None:
+                    preexec_fn()
+                os.execvpe(exec_cmd[0], exec_cmd, env)
+
             if kwargs.get("capture_output", True):
                 return subprocess.run(
                     exec_cmd,

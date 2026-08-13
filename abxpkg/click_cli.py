@@ -2451,6 +2451,7 @@ def _run_command_impl(
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,
         cmd=list(binary_args),
+        replace_process=script_mode,
         **exec_kwargs,
     )
     ctx.exit(proc.returncode)

@@ -119,7 +119,7 @@ def test_shebang_script_exec_replaces_launcher_so_sigterm_reaches_child(tmp_path
 // /// script
 // ///
 process.on('SIGTERM', () => { console.log('clean'); process.exit(0); });
-console.log('ready');
+console.log(`ready:${process.pid}`);
 setInterval(() => {}, 1000);
 """,
     )
@@ -140,7 +140,7 @@ setInterval(() => {}, 1000);
         env=env,
     )
     ready = proc.stdout.readline() if proc.stdout else ""
-    assert ready.strip() == "ready"
+    assert ready.strip() == f"ready:{proc.pid}"
 
     proc.terminate()
     stdout, stderr = proc.communicate(timeout=5)
