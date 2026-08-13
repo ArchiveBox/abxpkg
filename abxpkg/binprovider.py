@@ -909,6 +909,26 @@ class BinProvider(BaseModel):
         cache_context_hash: str | None = None,
         setup_path: bool = True,
     ) -> ShallowBinary | None:
+        # A caller-supplied snapshot may be stale. Internal callers that load
+        # the file under the same mutation lock pass it to the private helper.
+        return self._load_cached_binary(
+            bin_name,
+            abspath,
+            cache=None,
+            cache_context=cache_context,
+            cache_context_hash=cache_context_hash,
+            setup_path=setup_path,
+        )
+
+    def _load_cached_binary(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+        cache: dict[str, dict[str, object]] | None = None,
+        cache_context: str | None = None,
+        cache_context_hash: str | None = None,
+        setup_path: bool = True,
+    ) -> ShallowBinary | None:
         # Cache context includes lazily-derived provider fields like PATH.
         # Direct cache readers (list/version/installer discovery) do not pass
         # through load(), so normalize the provider before comparing context or
@@ -921,6 +941,10 @@ class BinProvider(BaseModel):
         if derived_env_path is None:
             return None
 
+        if self._is_managed_by_other_provider(abspath, cache=cache):
+            self.invalidate_cache(bin_name)
+            return None
+
         cache_info = self.get_cache_info(bin_name, abspath)
         if cache_info is None:
             return None
@@ -929,7 +953,7 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
 
-        cache = load_derived_cache(derived_env_path)
+        cache = cache if cache is not None else load_derived_cache(derived_env_path)
         cache_context = (
             cache_context
             if cache_context is not None
@@ -1083,8 +1107,14 @@ class BinProvider(BaseModel):
             },
         )
 
-    def load_cached_binary_by_name(self, bin_name: BinName) -> ShallowBinary | None:
-        self.setup_PATH()
+    @mutation_locked
+    def load_cached_binary_by_name(
+        self,
+        bin_name: BinName,
+        setup_path: bool = True,
+    ) -> ShallowBinary | None:
+        if setup_path:
+            self.setup_PATH()
         derived_env_path = self.derived_env_path
         if derived_env_path is None or not derived_env_path.is_file():
             return None
@@ -1109,12 +1139,13 @@ class BinProvider(BaseModel):
             cached_abspath = cached_record.get("abspath")
             if not isinstance(cached_abspath, str):
                 continue
-            loaded = self.load_cached_binary(
+            loaded = self._load_cached_binary(
                 bin_name,
                 Path(cached_abspath),
                 cache=cache,
                 cache_context=cache_context,
                 cache_context_hash=cache_context_hash,
+                setup_path=False,
             )
             if loaded and loaded.loaded_abspath:
                 return loaded
@@ -2472,7 +2503,11 @@ class BinProvider(BaseModel):
         """Return a provider-owned executable that EnvProvider may project."""
         return None
 
-    def _is_managed_by_other_provider(self, abspath: HostBinPath | Path) -> bool:
+    def _is_managed_by_other_provider(
+        self,
+        abspath: HostBinPath | Path,
+        cache: Mapping[str, dict[str, object]] | None = None,
+    ) -> bool:
         return False
 
     def exec(
@@ -3535,7 +3570,7 @@ class BinProvider(BaseModel):
         # and write context drift and every cached binary looks stale.
         self.setup_PATH(no_cache=no_cache)
         if not no_cache:
-            cached = self.load_cached_binary_by_name(bin_name)
+            cached = self.load_cached_binary_by_name(bin_name, setup_path=False)
             if cached is not None and cached.loaded_abspath and cached.loaded_version:
                 logger.info(
                     format_loaded_binary(
@@ -4192,12 +4227,13 @@ class EnvProvider(BinProvider):
     def _is_managed_by_other_provider(
         self,
         abspath: HostBinPath | Path,
+        cache: Mapping[str, dict[str, object]] | None = None,
     ) -> bool:
         if self.install_root is None:
             return False
 
         absolute_abspath = Path(abspath).expanduser().absolute()
-        if self._projection_cache_record(absolute_abspath) is not None:
+        if self._projection_cache_record(absolute_abspath, cache=cache) is not None:
             return False
 
         lib_dir = self.install_root.parent
@@ -4220,6 +4256,7 @@ class EnvProvider(BinProvider):
         self,
         abspath: HostBinPath | Path,
         bin_name: BinName | None = None,
+        cache: Mapping[str, dict[str, object]] | None = None,
     ) -> dict[str, Any] | None:
         absolute_abspath = Path(abspath).expanduser().absolute()
         if self.bin_dir is None or absolute_abspath.parent != self.bin_dir:
@@ -4227,7 +4264,8 @@ class EnvProvider(BinProvider):
         derived_env_path = self.derived_env_path
         if not derived_env_path or not derived_env_path.is_file():
             return None
-        for record in load_derived_cache(derived_env_path).values():
+        records = cache if cache is not None else load_derived_cache(derived_env_path)
+        for record in records.values():
             if (
                 isinstance(record, dict)
                 and record.get("provider_name") == self.name

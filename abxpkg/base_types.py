@@ -299,11 +299,13 @@ def bin_abspaths(
         # already a path, get its absolute form
         abspaths.append(Path(bin_path_or_name).expanduser().absolute())
     else:
-        # not a path yet, get path using shutil.which
+        # Return every executable match in PATH order. Calling shutil.which()
+        # once per directory repeats its PATH parsing and candidate setup for
+        # every provider cache validation.
         for path in PATH.split(os.pathsep):
-            binpath = shutil.which(bin_path_or_name, mode=os.X_OK, path=path)
-            if binpath and str(Path(binpath).parent) in PATH:
-                abspaths.append(binpath)
+            binpath = os.path.abspath(os.path.join(path, str(bin_path_or_name)))
+            if os.path.isfile(binpath) and os.access(binpath, os.X_OK):
+                abspaths.append(Path(binpath))
 
     try:
         return TypeAdapter(list[HostBinPath]).validate_python(abspaths)

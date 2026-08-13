@@ -1,3 +1,4 @@
+import cProfile
 import json
 import os
 import shutil
@@ -214,6 +215,41 @@ class TestEnvProvider:
 
         artifact.chmod(0o700)
         assert provider._fingerprint_paths([artifact]) != original
+
+    def test_fresh_binary_load_reuses_exact_provider_cache_once(self, tmp_path):
+        install_root = tmp_path / "lib" / "env"
+        seeded = Binary(
+            name="git",
+            binproviders=[EnvProvider(install_root=install_root)],
+        ).load()
+        assert seeded.loaded_abspath is not None
+        assert seeded.loaded_version is not None
+
+        derived_env_path = install_root / "derived.env"
+        cache_stat = derived_env_path.stat()
+        fresh = Binary(
+            name="git",
+            binproviders=[EnvProvider(install_root=install_root)],
+        )
+        profiler = cProfile.Profile()
+        profiler.enable()
+        loaded = fresh.load()
+        profiler.disable()
+
+        def call_count(func) -> int:
+            return sum(
+                entry.callcount
+                for entry in profiler.getstats()
+                if entry.code is func.__code__
+            )
+
+        assert loaded.loaded_abspath == seeded.loaded_abspath
+        assert loaded.loaded_version == seeded.loaded_version
+        assert call_count(EnvProvider.setup_PATH) == 1
+        assert call_count(load_derived_cache) == 1
+        assert call_count(EnvProvider._get_version_at_abspath) == 0
+        assert derived_env_path.stat().st_ino == cache_stat.st_ino
+        assert derived_env_path.stat().st_mtime_ns == cache_stat.st_mtime_ns
 
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
