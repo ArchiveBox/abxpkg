@@ -390,10 +390,9 @@ def _fingerprints_match(raw_fingerprints: object) -> bool:
             return False
         if fingerprint != {
             "path": str(Path(raw_path).expanduser().resolve(strict=False)),
-            "inode": stat_result.st_ino,
             "size": stat_result.st_size,
             "mtime_ns": stat_result.st_mtime_ns,
-            "ctime_ns": stat_result.st_ctime_ns,
+            "mode": stat.S_IMODE(stat_result.st_mode),
             "euid": stat_result.st_uid,
         }:
             return False
@@ -470,7 +469,7 @@ def _validated_cached_plan(
         return None
     exec_plan = cast(dict[str, object], raw_plan)
     if (
-        exec_plan.get("version") != 3
+        exec_plan.get("version") != 4
         or exec_plan.get("run_context") != run_context
         or exec_plan.get("euid") != os.geteuid()
         or not _fingerprints_match(exec_plan.get("fingerprint"))

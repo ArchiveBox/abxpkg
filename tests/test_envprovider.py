@@ -143,7 +143,7 @@ class TestEnvProvider:
             for record in stale_cache.values()
             if record.get("bin_name") == "first"
         )
-        first_record.pop("inode")
+        first_record.pop("mtime")
 
         provider.write_cached_binary(
             "second",
@@ -195,17 +195,25 @@ class TestEnvProvider:
         assert second_stat.st_ino == first_stat.st_ino
         assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
 
-    def test_cache_fingerprint_includes_unix_change_time(self, tmp_path):
+    def test_cache_fingerprint_survives_artifact_materialization(self, tmp_path):
         provider = EnvProvider(install_root=tmp_path / "lib" / "env")
-        loaded = provider.load("python3")
-        assert loaded is not None
-        assert loaded.loaded_abspath is not None
+        artifact = tmp_path / "artifact"
+        artifact.write_text("#!/bin/sh\nexit 0\n")
+        artifact.chmod(0o755)
+        original_stat = artifact.stat()
+        original = provider._fingerprint_paths([artifact])
 
-        cache = load_derived_cache(provider.derived_env_path)
-        cache_key, record = next(iter(cache.items()))
-        record = cast(dict[str, Any], record)
+        replacement = tmp_path / "replacement"
+        shutil.copy2(artifact, replacement)
+        os.replace(replacement, artifact)
+        materialized_stat = artifact.stat()
+        materialized = provider._fingerprint_paths([artifact])
 
-        assert record["fingerprint"][0]["ctime_ns"] > 0
+        assert materialized_stat.st_ino != original_stat.st_ino
+        assert materialized == original
+
+        artifact.chmod(0o700)
+        assert provider._fingerprint_paths([artifact]) != original
 
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
@@ -673,8 +681,11 @@ class TestEnvProvider:
                 Path(sys.executable).absolute(),
             )
             stat_result = loaded.loaded_abspath.stat()
-            assert cached_record["inode"] == stat_result.st_ino
             assert cached_record["mtime"] == stat_result.st_mtime_ns
+            assert (
+                cast(list[dict[str, Any]], cached_record["fingerprint"])[0]["mode"]
+                == stat_result.st_mode & 0o7777
+            )
 
             assert provider.uninstall("python3") is False
             assert linked_binary.is_symlink()

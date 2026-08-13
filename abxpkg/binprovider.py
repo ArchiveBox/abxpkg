@@ -767,10 +767,9 @@ class BinProvider(BaseModel):
 
     class CacheFingerprint(TypedDict):
         path: str
-        inode: int
         size: int
         mtime_ns: int
-        ctime_ns: int
+        mode: int
         euid: int
 
     class CacheRecord(TypedDict):
@@ -785,7 +784,6 @@ class BinProvider(BaseModel):
         bin_name: str
         abspath: str
         install_args: list[str]
-        inode: int
         mtime: int
         euid: int
 
@@ -892,10 +890,9 @@ class BinProvider(BaseModel):
             fingerprints.append(
                 {
                     "path": str(resolved_path),
-                    "inode": stat_result.st_ino,
                     "size": stat_result.st_size,
                     "mtime_ns": stat_result.st_mtime_ns,
-                    "ctime_ns": stat_result.st_ctime_ns,
+                    "mode": stat.S_IMODE(stat_result.st_mode),
                     "euid": stat_result.st_uid,
                 },
             )
@@ -1040,7 +1037,6 @@ class BinProvider(BaseModel):
             or cached_record.get("cache_kind") != cache_kind
             or cached_record.get("bin_name") != str(bin_name)
             or cached_abspath not in {original_abspath, resolved_abspath}
-            or cached_record.get("inode") != primary_fingerprint["inode"]
             or cached_record.get("mtime") != primary_fingerprint["mtime_ns"]
             or cached_record.get("euid") != primary_fingerprint["euid"]
             or cached_record.get("cache_context_hash") != cache_context_hash
@@ -1066,7 +1062,6 @@ class BinProvider(BaseModel):
                 "install_args": list(
                     self.get_install_args(bin_name, quiet=True, no_cache=True),
                 ),
-                "inode": primary_fingerprint["inode"],
                 "mtime": primary_fingerprint["mtime_ns"],
                 "euid": primary_fingerprint["euid"],
             }
@@ -1166,7 +1161,6 @@ class BinProvider(BaseModel):
             "install_args": list(
                 self.get_install_args(bin_name, quiet=True, no_cache=True),
             ),
-            "inode": primary_fingerprint["inode"],
             "mtime": primary_fingerprint["mtime_ns"],
             "euid": primary_fingerprint["euid"],
         }
@@ -1397,7 +1391,7 @@ class BinProvider(BaseModel):
             return
 
         exec_plan = {
-            "version": 3,
+            "version": 4,
             "run_context": run_context,
             "abspath": str(exec_abspath),
             "euid": exec_provider.EUID,

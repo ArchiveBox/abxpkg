@@ -1000,7 +1000,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         for record in records
         if record.get("exec_plan")
     ]
-    assert {plan["version"] for plan in exec_plans} == {3}
+    assert {plan["version"] for plan in exec_plans} == {4}
 
     second = _run_abxpkg_cli(
         *args,
@@ -1123,6 +1123,21 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert script_after_projection.stdout.strip() == "warm-script"
     assert "rich_click" not in script_after_projection.stderr
     assert "pydantic" not in script_after_projection.stderr
+
+    materialized_script = tmp_path / "materialized-script.py"
+    shutil.copy2(script, materialized_script)
+    os.replace(materialized_script, script)
+    script_after_materialization = _run_abxpkg_cli(
+        *script_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert script_after_materialization.returncode == 0, (
+        script_after_materialization.stderr
+    )
+    assert script_after_materialization.stdout.strip() == "warm-script"
+    assert "rich_click" not in script_after_materialization.stderr
+    assert "pydantic" not in script_after_materialization.stderr
 
     script.write_text(
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("updated-script")\n',
