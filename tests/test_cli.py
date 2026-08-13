@@ -1068,6 +1068,49 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert "rich_click" not in script_second.stderr
     assert "pydantic" not in script_second.stderr
 
+    prepared_lib = tmp_path / "prepared-script-lib"
+    prepared_script = tmp_path / "prepared-script.py"
+    prepared_script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# dependencies = ["python3"]\n'
+        "# ///\n"
+        'print("prepared-script")\n',
+    )
+    prepared_script.chmod(0o755)
+    prepared_env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    prepared_env.update(
+        {
+            "ABXPKG_LIB_DIR": str(prepared_lib),
+            "ABXPKG_BINPROVIDERS": "env",
+            "PATH": os.pathsep.join(
+                [str(_abxpkg_executable().parent), prepared_env.get("PATH", "")],
+            ),
+            "PYTHON3_BINARY": sys.executable,
+        },
+    )
+    from abxpkg import prepare_script_exec_plan
+
+    assert prepare_script_exec_plan(prepared_script, env=prepared_env)
+    prepared_cache = prepared_lib / "env" / "derived.env"
+    prepared_stat = prepared_cache.stat()
+    assert prepare_script_exec_plan(prepared_script, env=prepared_env)
+    assert prepared_cache.stat().st_ino == prepared_stat.st_ino
+    assert prepared_cache.stat().st_mtime_ns == prepared_stat.st_mtime_ns
+    prepared_first = _run_cli(
+        prepared_script,
+        env_overrides={**prepared_env, "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert prepared_first.returncode == 0, prepared_first.stderr
+    assert prepared_first.stdout.strip() == "prepared-script"
+    assert "rich_click" not in prepared_first.stderr
+    assert "pydantic" not in prepared_first.stderr
+    assert prepared_cache.stat().st_ino == prepared_stat.st_ino
+    assert prepared_cache.stat().st_mtime_ns == prepared_stat.st_mtime_ns
+
     unrelated_projection = tmp_path / "script-lib" / "env" / "bin" / "unrelated"
     unrelated_projection.write_text("#!/bin/sh\nexit 0\n")
     unrelated_projection.chmod(0o755)

@@ -5,12 +5,14 @@ import logging as py_logging
 import os
 import platform
 import re
+import shlex
 import shutil
 import sys
 import tomllib
+from contextlib import contextmanager
 from dataclasses import dataclass, fields, replace
 from importlib import metadata
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -32,7 +34,10 @@ from .logging import (
     summarize_value,
 )
 from .cli import (
+    _cached_records,
+    _parse_script_argv,
     _script_cache_context,
+    _validated_cached_plan,
     merge_binary_overrides,
     normalize_binary_overrides,
     parse_script_metadata as _parse_script_metadata,
@@ -1469,6 +1474,7 @@ def resolve_script_runtime_binary(
     options: CliOptions,
     *,
     update_before_run: bool = False,
+    install_missing: bool = True,
 ) -> Binary:
     if update_before_run:
         binary, _ = resolve_runtime_binary(
@@ -1489,6 +1495,10 @@ def resolve_script_runtime_binary(
             return binary
         except click.ClickException:
             continue
+    if not install_missing:
+        raise click.ClickException(
+            f"abxpkg: {binary_name}: binary could not be loaded",
+        )
     binary, _ = resolve_runtime_binary(
         binary_name,
         options=options,
@@ -2043,239 +2053,162 @@ def search_command(
             _echo(f"  {match.name}    {match.description}".rstrip())
 
 
-def _run_command_impl(
-    ctx: click.Context,
-    **shared_kwargs: Any,
-) -> None:
-    command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
-    command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
-    script_mode = bool(shared_kwargs.pop("script_mode"))
-    deps_from = tuple(shared_kwargs.pop("deps_from") or ())
-    binary_name = cast(str, shared_kwargs.pop("binary_name"))
-    binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
+def _prepare_script_execution(
+    *,
+    script_path: Path,
+    binary_name: str,
+    deps_from: tuple[str, ...],
+    run_options: CliOptions,
+    explicit_provider_selection: bool,
+    update_before_run: bool = False,
+    install_missing: bool = True,
+) -> tuple[Binary, dict[str, Any]]:
+    """Resolve one dependency-aware script and cache its exact exec plan."""
+    if not script_path.is_file():
+        raise click.ClickException(f"abxpkg: script not found: {script_path}")
 
-    if binary_name in {"--help", "-h"} and not binary_args:
-        _echo(ctx.get_help())
-        ctx.exit(0)
-        return
-
-    run_options = get_command_options(ctx, **shared_kwargs)
-    install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
-        command_install_before_run,
-    )
-    update_before_run = bool(ctx.obj.get("update_before_run", False)) or bool(
-        command_update_before_run,
-    )
-
-    configure_cli_logging(debug=run_options.debug)
+    meta = parse_script_metadata(script_path)
+    if meta is None:
+        raise click.ClickException(
+            f"abxpkg: no /// script metadata found in {script_path}",
+        )
 
     runtime_binproviders: list[BinProvider] = []
     resolved_script_binaries: list[tuple[str, Path, BinProvider]] = []
-    script_cache_context: tuple[str, list[Path]] | None = None
-    script_cache_base_env: dict[str, str] | None = None
     binary_env_key: str | None = None
     binary_options = run_options
 
-    # --script: the OS appends the script path as binary_args[0] via the
-    # shebang.  Parse its /// metadata and resolve deps before normal run.
-    if script_mode:
-        if not binary_args:
-            _echo("abxpkg: --script requires a script path", err=True)
-            ctx.exit(1)
-            return
+    tool_section = meta.get("tool")
+    tool_config = (
+        tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
+    )
+    for key, value in tool_config.items():
+        if key != "runtime_binproviders":
+            os.environ.setdefault(key, str(value))
 
-        script_path = Path(binary_args[0])
-        if not script_path.is_file():
-            _echo(f"abxpkg: script not found: {script_path}", err=True)
-            ctx.exit(1)
-            return
-
-        meta = parse_script_metadata(script_path)
-        if meta is None:
-            _echo(
-                f"abxpkg: no /// script metadata found in {script_path}",
-                err=True,
-            )
-            ctx.exit(1)
-            return
-
-        # Apply [tool.abxpkg] as env vars before resolving deps.
-        tool_section = meta.get("tool")
-        tool_config = (
-            tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
-        )
-        for key, value in tool_config.items():
-            if key != "runtime_binproviders":
-                os.environ.setdefault(key, str(value))
-
-        runtime_provider_names = tool_config.get("runtime_binproviders")
-        if runtime_provider_names:
-            runtime_binproviders = build_providers(
-                parse_provider_names(
-                    ",".join(runtime_provider_names)
-                    if isinstance(runtime_provider_names, list)
-                    else str(runtime_provider_names),
-                ),
-                dry_run=run_options.dry_run,
-                install_root=run_options.install_root,
-                bin_dir=run_options.bin_dir,
-                euid=run_options.euid,
-                install_timeout=run_options.install_timeout,
-                version_timeout=run_options.version_timeout,
-            )
-        script_cache_base_env = os.environ.copy()
-        script_cache_context = _script_cache_context(
-            {
-                "--deps-from": ",".join(deps_from),
-            }
-            if deps_from
-            else {},
-            binary_name,
-            script_path,
-            meta,
-            run_options,
-        )
-
-        # Resolve all declared dependencies and collect their runtime ENV for
-        # the final script execution. Provider resolution remains hermetic:
-        # only the subprocess env gets the merged dependency PATH / ENV.
-        explicit_provider_selection = shared_kwargs.get(
-            "binproviders",
-        ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
-        dependencies = [
-            *meta.get("dependencies", []),
-            *_deps_from_config_specs(
-                deps_from,
-                base_path=script_path.parent,
-                options=run_options,
+    runtime_provider_names = tool_config.get("runtime_binproviders")
+    if runtime_provider_names:
+        runtime_binproviders = build_providers(
+            parse_provider_names(
+                ",".join(runtime_provider_names)
+                if isinstance(runtime_provider_names, list)
+                else str(runtime_provider_names),
             ),
-        ]
-        for dep in dependencies:
-            if isinstance(dep, str):
-                dep_name = dep
-                dep_options = run_options
-            elif isinstance(dep, dict):
-                if "name" not in dep:
-                    continue
-                dep_name = str(dep["name"])
-                dep_options = run_options
-                if "binproviders" in dep:
-                    raw_provider_names = dep["binproviders"]
-                    dep_options = replace(
-                        dep_options,
-                        provider_names=parse_provider_names(
-                            ",".join(raw_provider_names)
-                            if isinstance(raw_provider_names, list)
-                            else str(raw_provider_names),
-                        ),
-                    )
-                dep_options = apply_script_dependency_options(dep_options, dep)
-            else:
-                continue
-
-            if dep_name == binary_name:
-                if not isinstance(dep, dict):
-                    continue
-                if dep.get("_abxpkg_env_key"):
-                    binary_env_key = str(dep["_abxpkg_env_key"])
-                if (
-                    not explicit_provider_selection
-                    and "binproviders" in dep
-                    and binary_options.provider_names == run_options.provider_names
-                ):
-                    raw_provider_names = dep["binproviders"]
-                    binary_options = replace(
-                        binary_options,
-                        provider_names=parse_provider_names(
-                            ",".join(raw_provider_names)
-                            if isinstance(raw_provider_names, list)
-                            else str(raw_provider_names),
-                        ),
-                    )
-                binary_options = apply_script_dependency_options(binary_options, dep)
-                continue
-
-            try:
-                dep_binary = resolve_script_runtime_binary(
-                    dep_name,
-                    dep_options,
-                )
-                if dep_binary.loaded_binprovider:
-                    runtime_binproviders.append(dep_binary.loaded_binprovider)
-                    if dep_binary.loaded_abspath:
-                        resolved_script_binaries.append(
-                            (
-                                dep_name,
-                                Path(dep_binary.loaded_abspath),
-                                dep_binary.loaded_binprovider,
-                            ),
-                        )
-                        if isinstance(dep, dict) and dep.get("_abxpkg_env_key"):
-                            os.environ[str(dep["_abxpkg_env_key"])] = str(
-                                dep_binary.loaded_abspath,
-                            )
-            except ABXPkgError as err:
-                _echo(
-                    f"abxpkg: failed to resolve dependency {dep_name}: "
-                    f"{format_error(err)}",
-                    err=True,
-                )
-                ctx.exit(1)
-                return
-
-        # --script implies --install
-        install_before_run = True
-
-    try:
-        if script_mode:
-            binary = resolve_script_runtime_binary(
-                binary_name,
-                binary_options,
-                update_before_run=update_before_run,
-            )
-        else:
-            binary, _ = resolve_runtime_binary(
-                binary_name,
-                options=binary_options,
-                install_before_run=install_before_run,
-                update_before_run=update_before_run,
-            )
-    except click.ClickException as err:
-        _echo(str(err), err=True)
-        ctx.exit(1)
-        return
-    if not script_mode:
-        runtime_binproviders = []
-    else:
-        runtime_binproviders = [*runtime_binproviders]
-
-    if run_options.dry_run:
-        # Provider exec honors dry_run and returns a no-op CompletedProcess;
-        # keep the behavior consistent here so nothing is actually run.
-        ctx.exit(0)
-        return
-
-    if not binary.is_valid:
-        _echo(
-            f"abxpkg: {binary_name}: binary could not be loaded",
-            err=True,
+            dry_run=run_options.dry_run,
+            install_root=run_options.install_root,
+            bin_dir=run_options.bin_dir,
+            euid=run_options.euid,
+            install_timeout=run_options.install_timeout,
+            version_timeout=run_options.version_timeout,
         )
-        ctx.exit(1)
-        return
+    script_cache_base_env = os.environ.copy()
+    script_cache_context = _script_cache_context(
+        {"--deps-from": ",".join(deps_from)} if deps_from else {},
+        binary_name,
+        script_path,
+        meta,
+        run_options,
+    )
 
-    # binary.is_valid guarantees both fields are set; narrow for pyright.
+    dependencies = [
+        *meta.get("dependencies", []),
+        *_deps_from_config_specs(
+            deps_from,
+            base_path=script_path.parent,
+            options=run_options,
+        ),
+    ]
+    for dep in dependencies:
+        if isinstance(dep, str):
+            dep_name = dep
+            dep_options = run_options
+        elif isinstance(dep, dict):
+            if "name" not in dep:
+                continue
+            dep_name = str(dep["name"])
+            dep_options = run_options
+            if "binproviders" in dep:
+                raw_provider_names = dep["binproviders"]
+                dep_options = replace(
+                    dep_options,
+                    provider_names=parse_provider_names(
+                        ",".join(raw_provider_names)
+                        if isinstance(raw_provider_names, list)
+                        else str(raw_provider_names),
+                    ),
+                )
+            dep_options = apply_script_dependency_options(dep_options, dep)
+        else:
+            continue
+
+        if dep_name == binary_name:
+            if not isinstance(dep, dict):
+                continue
+            if dep.get("_abxpkg_env_key"):
+                binary_env_key = str(dep["_abxpkg_env_key"])
+            if (
+                not explicit_provider_selection
+                and "binproviders" in dep
+                and binary_options.provider_names == run_options.provider_names
+            ):
+                raw_provider_names = dep["binproviders"]
+                binary_options = replace(
+                    binary_options,
+                    provider_names=parse_provider_names(
+                        ",".join(raw_provider_names)
+                        if isinstance(raw_provider_names, list)
+                        else str(raw_provider_names),
+                    ),
+                )
+            binary_options = apply_script_dependency_options(binary_options, dep)
+            continue
+
+        try:
+            dep_binary = resolve_script_runtime_binary(
+                dep_name,
+                dep_options,
+                install_missing=install_missing,
+            )
+        except ABXPkgError as err:
+            raise click.ClickException(
+                f"abxpkg: failed to resolve dependency {dep_name}: {format_error(err)}",
+            ) from err
+        if dep_binary.loaded_binprovider:
+            runtime_binproviders.append(dep_binary.loaded_binprovider)
+            if dep_binary.loaded_abspath:
+                resolved_script_binaries.append(
+                    (
+                        dep_name,
+                        Path(dep_binary.loaded_abspath),
+                        dep_binary.loaded_binprovider,
+                    ),
+                )
+                if isinstance(dep, dict) and dep.get("_abxpkg_env_key"):
+                    os.environ[str(dep["_abxpkg_env_key"])] = str(
+                        dep_binary.loaded_abspath,
+                    )
+
+    binary = resolve_script_runtime_binary(
+        binary_name,
+        binary_options,
+        update_before_run=update_before_run,
+        install_missing=install_missing,
+    )
+    if run_options.dry_run:
+        return binary, {"capture_output": False}
+    if not binary.is_valid:
+        raise click.ClickException(
+            f"abxpkg: {binary_name}: binary could not be loaded",
+        )
+
     assert binary.loaded_binprovider is not None
     assert binary.loaded_abspath is not None
-    if script_mode:
-        if binary_env_key:
-            os.environ[binary_env_key] = str(binary.loaded_abspath)
-        resolved_script_binaries.append(
-            (binary_name, Path(binary.loaded_abspath), binary.loaded_binprovider),
-        )
-    else:
-        run_context = warm_run_context(run_options)
-        if run_context is not None:
-            _write_cached_exec_plans(binary, run_context)
+    if binary_env_key:
+        os.environ[binary_env_key] = str(binary.loaded_abspath)
+    resolved_script_binaries.append(
+        (binary_name, Path(binary.loaded_abspath), binary.loaded_binprovider),
+    )
+
     exec_kwargs: dict[str, Any] = {"capture_output": False}
     other_runtime_binproviders = get_runtime_exec_providers(
         binary,
@@ -2288,11 +2221,7 @@ def _run_command_impl(
             providers=other_runtime_binproviders,
             base_env=os.environ.copy(),
         )
-    if (
-        script_mode
-        and script_cache_context is not None
-        and script_cache_base_env is not None
-    ):
+    if script_cache_context is not None:
         import hashlib
         from .config import build_exec_env as build_provider_exec_env
 
@@ -2324,6 +2253,201 @@ def _run_command_impl(
             extra_fingerprint_paths=fingerprint_paths,
             resolution_binaries=resolved_script_binaries,
         )
+    return binary, exec_kwargs
+
+
+@contextmanager
+def _script_environment(env: Mapping[str, str]):
+    original = os.environ.copy()
+    os.environ.clear()
+    os.environ.update(env)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(original)
+
+
+def prepare_script_exec_plan(
+    script_path: Path,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> bool:
+    """Prepare the plan described by an executable abxpkg script shebang."""
+    script_path = script_path.expanduser().resolve(strict=False)
+    try:
+        with script_path.open(encoding="utf-8", errors="replace") as script_file:
+            shebang = script_file.readline()
+    except OSError:
+        return False
+    if not shebang.startswith("#!"):
+        return False
+    tokens = shlex.split(shebang[2:].strip())
+    launcher_index = next(
+        (index for index, token in enumerate(tokens) if Path(token).name == "abxpkg"),
+        None,
+    )
+    if launcher_index is None:
+        return False
+    parsed = _parse_script_argv([*tokens[launcher_index + 1 :], str(script_path)])
+    if parsed is None:
+        return False
+    raw_options, binary_name, _, _ = parsed
+
+    with _script_environment(env or os.environ.copy()):
+        lib_dir = resolve_lib_dir(raw_options.get("--lib"))
+        raw_provider_names = raw_options.get("--binproviders")
+        explicit_provider_selection = raw_provider_names is not None or os.environ.get(
+            "ABXPKG_BINPROVIDERS",
+        ) not in (None, "")
+        run_options = CliOptions(
+            lib_dir=lib_dir,
+            provider_names=parse_provider_names(raw_provider_names),
+            dry_run=resolve_dry_run(None),
+            debug=resolve_debug(None),
+            no_cache=resolve_no_cache(None),
+        )
+        meta = parse_script_metadata(script_path)
+        if meta is None:
+            return False
+        tool_section = meta.get("tool")
+        tool_config = (
+            tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
+        )
+        for key, value in tool_config.items():
+            if key != "runtime_binproviders":
+                os.environ.setdefault(key, str(value))
+        cache_context = _script_cache_context(
+            raw_options,
+            binary_name,
+            script_path,
+            meta,
+            run_options,
+        )
+        if cache_context is not None:
+            import hashlib
+            import abxpkg as package
+
+            run_context, _ = cache_context
+            plan_key = hashlib.sha256(run_context.encode()).hexdigest()
+            for record in _cached_records(
+                lib_dir,
+                list(package.ALL_PROVIDER_NAMES),
+                binary_name,
+            ):
+                plans = record.get("script_exec_plans")
+                if (
+                    isinstance(plans, dict)
+                    and _validated_cached_plan(
+                        plans.get(plan_key),
+                        run_context,
+                    )
+                    is not None
+                ):
+                    return True
+        try:
+            _prepare_script_execution(
+                script_path=script_path,
+                binary_name=binary_name,
+                deps_from=tuple(
+                    item
+                    for item in raw_options.get("--deps-from", "").split(",")
+                    if item
+                ),
+                run_options=run_options,
+                explicit_provider_selection=explicit_provider_selection,
+                install_missing=False,
+            )
+        except click.ClickException as err:
+            logger.debug("Could not prepare %s: %s", script_path, err)
+            return False
+    return True
+
+
+def _run_command_impl(
+    ctx: click.Context,
+    **shared_kwargs: Any,
+) -> None:
+    command_install_before_run = bool(shared_kwargs.pop("command_install_before_run"))
+    command_update_before_run = bool(shared_kwargs.pop("command_update_before_run"))
+    script_mode = bool(shared_kwargs.pop("script_mode"))
+    deps_from = tuple(shared_kwargs.pop("deps_from") or ())
+    binary_name = cast(str, shared_kwargs.pop("binary_name"))
+    binary_args = cast(tuple[str, ...], shared_kwargs.pop("binary_args"))
+
+    if binary_name in {"--help", "-h"} and not binary_args:
+        _echo(ctx.get_help())
+        ctx.exit(0)
+        return
+
+    run_options = get_command_options(ctx, **shared_kwargs)
+    install_before_run = bool(ctx.obj.get("install_before_run", False)) or bool(
+        command_install_before_run,
+    )
+    update_before_run = bool(ctx.obj.get("update_before_run", False)) or bool(
+        command_update_before_run,
+    )
+
+    configure_cli_logging(debug=run_options.debug)
+    exec_kwargs: dict[str, Any] = {}
+
+    if script_mode:
+        if not binary_args:
+            _echo("abxpkg: --script requires a script path", err=True)
+            ctx.exit(1)
+            return
+
+        explicit_provider_selection = shared_kwargs.get(
+            "binproviders",
+        ) is not None or os.environ.get("ABXPKG_BINPROVIDERS") not in (None, "")
+        try:
+            binary, exec_kwargs = _prepare_script_execution(
+                script_path=Path(binary_args[0]),
+                binary_name=binary_name,
+                deps_from=deps_from,
+                run_options=run_options,
+                explicit_provider_selection=explicit_provider_selection,
+                update_before_run=update_before_run,
+            )
+        except click.ClickException as err:
+            _echo(str(err), err=True)
+            ctx.exit(1)
+            return
+    else:
+        try:
+            binary, _ = resolve_runtime_binary(
+                binary_name,
+                options=run_options,
+                install_before_run=install_before_run,
+                update_before_run=update_before_run,
+            )
+        except click.ClickException as err:
+            _echo(str(err), err=True)
+            ctx.exit(1)
+            return
+
+    if run_options.dry_run:
+        # Provider exec honors dry_run and returns a no-op CompletedProcess;
+        # keep the behavior consistent here so nothing is actually run.
+        ctx.exit(0)
+        return
+
+    if not script_mode and not binary.is_valid:
+        _echo(
+            f"abxpkg: {binary_name}: binary could not be loaded",
+            err=True,
+        )
+        ctx.exit(1)
+        return
+
+    # binary.is_valid guarantees both fields are set; narrow for pyright.
+    assert binary.loaded_binprovider is not None
+    assert binary.loaded_abspath is not None
+    if not script_mode:
+        run_context = warm_run_context(run_options)
+        if run_context is not None:
+            _write_cached_exec_plans(binary, run_context)
+        exec_kwargs = {"capture_output": False}
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,
         cmd=list(binary_args),

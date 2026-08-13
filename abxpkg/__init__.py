@@ -61,6 +61,12 @@ _PROVIDER_NAME_PRIORITY = (
 _provider_singletons: dict[str, object] = {}
 
 
+def prepare_script_exec_plan(script_path, *, env=None) -> bool:
+    from .click_cli import prepare_script_exec_plan as prepare
+
+    return prepare(script_path, env=env)
+
+
 def _provider_class(provider):
     return provider if isinstance(provider, type) else type(provider)
 
