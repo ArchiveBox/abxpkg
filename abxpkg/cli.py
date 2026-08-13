@@ -469,13 +469,14 @@ def _validated_cached_plan(
         return None
     exec_plan = cast(dict[str, object], raw_plan)
     if (
-        exec_plan.get("version") != 4
+        exec_plan.get("version") != 5
         or exec_plan.get("run_context") != run_context
         or exec_plan.get("euid") != os.geteuid()
         or not _fingerprints_match(exec_plan.get("fingerprint"))
     ):
         return None
     exec_abspath = exec_plan.get("abspath")
+    is_script = exec_plan.get("script")
     env = exec_plan.get("env")
     env_base = exec_plan.get("env_base")
     resolutions = exec_plan.get("resolutions")
@@ -483,6 +484,7 @@ def _validated_cached_plan(
         not isinstance(exec_abspath, str)
         or not Path(exec_abspath).is_absolute()
         or not os.access(exec_abspath, os.X_OK)
+        or not isinstance(is_script, bool)
         or not isinstance(env, dict)
         or not isinstance(env_base, dict)
         or not isinstance(resolutions, list)
@@ -498,7 +500,11 @@ def _validated_cached_plan(
         return None
     typed_env = cast(dict[str, str], env)
     typed_env_base = cast(dict[str, str | None], env_base)
-    if any(os.environ.get(key) != value for key, value in typed_env_base.items()):
+    if any(
+        os.environ.get(key) != value
+        for key, value in typed_env_base.items()
+        if not (is_script and key in typed_env)
+    ):
         return None
     final_env = os.environ.copy()
     final_env.update(typed_env)
@@ -526,14 +532,15 @@ def _validated_cached_plan(
                 strict=False,
             ) != Path(abspath).resolve(strict=False):
                 return None
-        current_ambient = shutil.which(name, path=os.environ.get("PATH", ""))
-        resolved_ambient = (
-            str(Path(current_ambient).resolve(strict=False))
-            if current_ambient is not None
-            else None
-        )
-        if resolved_ambient != ambient_abspath:
-            return None
+        if not (is_script and "PATH" in typed_env):
+            current_ambient = shutil.which(name, path=os.environ.get("PATH", ""))
+            resolved_ambient = (
+                str(Path(current_ambient).resolve(strict=False))
+                if current_ambient is not None
+                else None
+            )
+            if resolved_ambient != ambient_abspath:
+                return None
     return exec_abspath, final_env
 
 

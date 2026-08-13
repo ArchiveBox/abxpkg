@@ -1391,7 +1391,8 @@ class BinProvider(BaseModel):
             return
 
         exec_plan = {
-            "version": 4,
+            "version": 5,
+            "script": plan_key is not None,
             "run_context": run_context,
             "abspath": str(exec_abspath),
             "euid": exec_provider.EUID,

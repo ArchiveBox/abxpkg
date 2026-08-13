@@ -1000,7 +1000,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         for record in records
         if record.get("exec_plan")
     ]
-    assert {plan["version"] for plan in exec_plans} == {4}
+    assert {plan["version"] for plan in exec_plans} == {5}
 
     second = _run_abxpkg_cli(
         *args,
@@ -1074,8 +1074,9 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         "#!/usr/bin/env -S abxpkg run --script python3\n"
         "# /// script\n"
         '# dependencies = ["python3"]\n'
+        '# [tool.abxpkg]\n# runtime_binproviders = ["uv"]\n'
         "# ///\n"
-        'print("prepared-script")\n',
+        "import os\nprint(f\"prepared-script:{os.environ['UV_ACTIVE']}\")\n",
     )
     prepared_script.chmod(0o755)
     prepared_env = {
@@ -1101,11 +1102,18 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert prepared_cache.stat().st_mtime_ns == prepared_stat.st_mtime_ns
     prepared_first = _run_cli(
         prepared_script,
-        env_overrides={**prepared_env, "PYTHONPROFILEIMPORTTIME": "1"},
+        env_overrides={
+            **prepared_env,
+            "PATH": prepared_env["PATH"]
+            + os.pathsep
+            + str(prepared_lib / "env" / "bin"),
+            "PYTHONPROFILEIMPORTTIME": "1",
+            "USER": "runtime-user",
+        },
     )
 
     assert prepared_first.returncode == 0, prepared_first.stderr
-    assert prepared_first.stdout.strip() == "prepared-script"
+    assert prepared_first.stdout.strip() == "prepared-script:1"
     assert "rich_click" not in prepared_first.stderr
     assert "pydantic" not in prepared_first.stderr
     assert prepared_cache.stat().st_ino == prepared_stat.st_ino
