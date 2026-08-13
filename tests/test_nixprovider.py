@@ -133,8 +133,8 @@ class TestNixProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == Path(temp_dir).resolve() / "nix-profile"
+            assert provider.bin_dir == Path(temp_dir).resolve() / "nix-profile" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
@@ -236,8 +236,8 @@ class TestNixProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == nix_profile
-            assert provider.bin_dir == nix_profile / "bin"
+            assert provider.install_root == temp_dir_path.resolve() / "nix-profile"
+            assert provider.bin_dir == temp_dir_path.resolve() / "nix-profile" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert ambient_installed.loaded_abspath is not None
             assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir

@@ -62,8 +62,8 @@ class TestBunProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             # Bun's global node_modules side effect must exist on disk.
             assert (
@@ -109,8 +109,8 @@ class TestBunProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None

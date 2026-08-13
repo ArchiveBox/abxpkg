@@ -111,8 +111,10 @@ class TestYarnProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
+            assert provider.install_root == install_root.resolve()
+            assert (
+                provider.bin_dir == (install_root / "node_modules" / ".bin").resolve()
+            )
             assert installed.loaded_abspath.parent == provider.bin_dir
             # The auto-initialized install_root project dir must exist on disk.
             assert (install_root / "package.json").exists()
@@ -158,8 +160,10 @@ class TestYarnProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
+            assert provider.install_root == install_root.resolve()
+            assert (
+                provider.bin_dir == (install_root / "node_modules" / ".bin").resolve()
+            )
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version is not None

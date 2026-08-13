@@ -33,8 +33,8 @@ class TestBashProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath is not None
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
@@ -61,8 +61,8 @@ class TestBashProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == bin_dir
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == bin_dir.resolve()
             assert installed.loaded_abspath is not None
 
     def test_explicit_bash_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -98,7 +98,7 @@ class TestBashProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.bin_dir == temp_dir_path / "bash-bin"
+            assert provider.bin_dir == (temp_dir_path / "bash-bin").resolve()
             assert installed.loaded_abspath is not None
             assert ambient_installed.loaded_abspath is not None
 

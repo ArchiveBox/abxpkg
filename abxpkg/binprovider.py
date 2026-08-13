@@ -796,6 +796,8 @@ class BinProvider(BaseModel):
             include=provider_fields,
             warnings=False,
         )
+        if self.bin_dir is not None:
+            provider_config["PATH"] = str(self.bin_dir)
         provider_config["provider_class"] = (
             f"{type(self).__module__}.{type(self).__qualname__}"
         )
@@ -4445,7 +4447,11 @@ class EnvProvider(BinProvider):
 
         for provider in self._projection_providers:
             try:
-                loaded = provider.load(bin_name_str, no_cache=no_cache)
+                loaded = (
+                    provider.load(bin_name_str, no_cache=True)
+                    if no_cache
+                    else provider.load_cached_binary_by_name(bin_name_str)
+                )
             except Exception:
                 continue
             if loaded is None or loaded.loaded_abspath is None:

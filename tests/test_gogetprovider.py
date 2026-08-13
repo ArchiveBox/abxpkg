@@ -100,8 +100,8 @@ class TestGoGetProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == bin_dir
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == bin_dir.resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_install_root_without_explicit_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -150,8 +150,8 @@ class TestGoGetProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None
@@ -202,8 +202,8 @@ class TestGoGetProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == gopath
-            assert provider.bin_dir == gobin
+            assert provider.install_root == gopath.resolve()
+            assert provider.bin_dir == gobin.resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None

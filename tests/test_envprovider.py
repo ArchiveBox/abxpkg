@@ -650,7 +650,7 @@ class TestEnvProvider:
             assert loaded is not None
             assert loaded.loaded_abspath is not None
             assert loaded.loaded_version is not None
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert provider.bin_dir is not None
             assert provider.bin_dir.exists()
             assert loaded.loaded_respath == Path(sys.executable).resolve()

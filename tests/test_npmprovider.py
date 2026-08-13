@@ -63,8 +63,8 @@ class TestNpmProvider:
             assert installed.loaded_abspath is not None
             bin_dir = provider.bin_dir
             assert bin_dir is not None
-            assert provider.install_root == install_root
-            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert provider.install_root == install_root.resolve()
+            assert bin_dir == (install_root / "node_modules" / ".bin").resolve()
             assert bin_dir.exists()
             assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
@@ -99,7 +99,9 @@ class TestNpmProvider:
             provider = installed.loaded_binprovider
             assert isinstance(provider, NpmProvider)
             assert provider.bin_dir is not None
-            assert provider.bin_dir == install_root / "node_modules" / ".bin"
+            assert (
+                provider.bin_dir == (install_root / "node_modules" / ".bin").resolve()
+            )
             assert (
                 installed.loaded_abspath.resolve()
                 == (provider.bin_dir / "yarn").resolve()
@@ -143,8 +145,8 @@ class TestNpmProvider:
             assert installed.loaded_abspath is not None
             bin_dir = provider.bin_dir
             assert bin_dir is not None
-            assert provider.install_root == install_root
-            assert bin_dir == install_root / "node_modules" / ".bin"
+            assert provider.install_root == install_root.resolve()
+            assert bin_dir == (install_root / "node_modules" / ".bin").resolve()
             assert bin_dir.exists()
             assert installed.loaded_abspath == bin_dir / "zx"
             assert installed.loaded_abspath.parent == bin_dir
