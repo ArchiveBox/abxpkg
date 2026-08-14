@@ -9,7 +9,6 @@ import sys
 # Keep typing-only imports off the warm CLI path.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import Any, cast
 else:
 
@@ -254,24 +253,72 @@ def _parse_script_argv(
     return options, binary_name, script_args[0], script_args
 
 
-def _script_dependency_paths(
-    raw_value: str | None,
-    script_path: str | os.PathLike[str],
-) -> list[Path]:
+def _expand_dependency_value(value: Any, values: dict[str, str]) -> Any:
+    if isinstance(value, str):
+        return re.sub(
+            r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+            lambda match: values.get(match.group(1), match.group(0)),
+            value,
+        )
+    if isinstance(value, list):
+        return [_expand_dependency_value(item, values) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _expand_dependency_value(item, values)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _deps_from_config_specs(
+    raw_specs: list[str] | tuple[str, ...],
+    *,
+    base_path: str | os.PathLike[str],
+    lib_dir: str | os.PathLike[str],
+) -> list[Any]:
     from pathlib import Path
 
-    resolved_script = Path(script_path)
-    paths: list[Path] = []
-    for raw_spec in (raw_value or "").split(","):
-        spec = raw_spec.strip()
-        if not spec:
-            continue
-        raw_path, _, _selector = spec.partition(":")
-        path = Path(raw_path)
-        if not path.is_absolute():
-            path = resolved_script.parent / path
-        paths.append(path.expanduser().resolve(strict=False))
-    return paths
+    deps: list[Any] = []
+    values = {key: str(value) for key, value in os.environ.items()}
+    values["ABXPKG_LIB_DIR"] = os.fspath(lib_dir)
+    for raw_spec_group in raw_specs:
+        for raw_spec in str(raw_spec_group or "").split(","):
+            spec = raw_spec.strip()
+            if not spec:
+                continue
+            raw_path, _, selector = spec.partition(":")
+            deps_path = Path(raw_path)
+            if not deps_path.is_absolute():
+                deps_path = Path(base_path) / deps_path
+            root = json.loads(deps_path.read_text())
+            selected: Any = root
+            for part in (selector or "dependencies").split("."):
+                selected = selected[part]
+
+            properties = root.get("properties") if isinstance(root, dict) else None
+            if isinstance(properties, dict):
+                for key, prop in properties.items():
+                    if (
+                        key not in values
+                        and isinstance(prop, dict)
+                        and "default" in prop
+                    ):
+                        values[str(key)] = str(prop["default"])
+
+            selected_items = selected if isinstance(selected, list) else [selected]
+            for selected_item in selected_items:
+                expanded = _expand_dependency_value(selected_item, values)
+                if isinstance(selected_item, dict) and isinstance(expanded, dict):
+                    template_name = str(selected_item.get("name") or "").strip()
+                    template_match = re.fullmatch(
+                        r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
+                        template_name,
+                    )
+                    if template_match:
+                        expanded = dict(expanded)
+                        expanded["_abxpkg_env_key"] = template_match.group(1)
+                deps.append(expanded)
+    return deps
 
 
 def _script_cache_context(
@@ -280,7 +327,7 @@ def _script_cache_context(
     script_path: str | os.PathLike[str],
     meta: dict[str, Any],
     options: Any,
-) -> tuple[str, list[Path]] | None:
+) -> str | None:
     from pathlib import Path
 
     if set(raw_options) - {"--lib", "--binproviders", "--deps-from"}:
@@ -290,21 +337,14 @@ def _script_cache_context(
         return None
 
     resolved_script = Path(script_path).expanduser().resolve(strict=False)
-    dependency_paths = _script_dependency_paths(
-        raw_options.get("--deps-from"),
-        resolved_script,
-    )
-    template_text = json.dumps(meta, separators=(",", ":"), sort_keys=True)
     try:
-        template_text += "".join(
-            path.read_text(encoding="utf-8", errors="replace")
-            for path in dependency_paths
+        dependencies = _deps_from_config_specs(
+            (raw_options.get("--deps-from", ""),),
+            base_path=resolved_script.parent,
+            lib_dir=options.lib_dir,
         )
-    except OSError:
+    except (OSError, KeyError, json.JSONDecodeError):
         return None
-    template_env_names = sorted(
-        set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", template_text)),
-    )
     tool_section = meta.get("tool")
     tool_config = (
         tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
@@ -316,15 +356,14 @@ def _script_cache_context(
         {
             "base": json.loads(base_context),
             "binary_name": binary_name,
-            "script_path": str(resolved_script),
-            "deps_from": raw_options.get("--deps-from"),
-            "template_env": {name: os.environ.get(name) for name in template_env_names},
+            "dependencies": dependencies,
+            "metadata": meta,
             "tool_env": {name: os.environ.get(name) for name in tool_env_names},
         },
         separators=(",", ":"),
         sort_keys=True,
     )
-    return context, [resolved_script, *dependency_paths]
+    return context
 
 
 def warm_run_context(options: Any) -> str | None:
@@ -757,7 +796,7 @@ def _run_cached(argv: list[str]) -> int | None:
         import hashlib
         import abxpkg as package
 
-        run_context, _fingerprint_paths = cache_context
+        run_context = cache_context
         plan_key = hashlib.sha256(run_context.encode()).hexdigest()
         for record in _cached_records(
             lib_dir,

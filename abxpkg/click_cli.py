@@ -35,6 +35,7 @@ from .logging import (
 )
 from .cli import (
     _cached_records,
+    _deps_from_config_specs,
     _parse_script_argv,
     _script_cache_context,
     _validated_cached_plan,
@@ -1222,72 +1223,6 @@ def apply_script_dependency_options(
     return replace(options, **replacement_kwargs) if replacement_kwargs else options
 
 
-def _expand_dependency_value(value: Any, values: dict[str, str]) -> Any:
-    if isinstance(value, str):
-        return re.sub(
-            r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
-            lambda match: values.get(match.group(1), match.group(0)),
-            value,
-        )
-    if isinstance(value, list):
-        return [_expand_dependency_value(item, values) for item in value]
-    if isinstance(value, dict):
-        return {
-            str(key): _expand_dependency_value(item, values)
-            for key, item in value.items()
-        }
-    return value
-
-
-def _deps_from_config_specs(
-    raw_specs: Iterable[str],
-    *,
-    base_path: Path,
-    options: CliOptions,
-) -> list[Any]:
-    deps: list[Any] = []
-    values = {key: str(value) for key, value in os.environ.items()}
-    values["ABXPKG_LIB_DIR"] = str(options.lib_dir)
-    for raw_spec_group in raw_specs:
-        for raw_spec in str(raw_spec_group or "").split(","):
-            spec = raw_spec.strip()
-            if not spec:
-                continue
-            raw_path, _, selector = spec.partition(":")
-            deps_path = Path(raw_path)
-            if not deps_path.is_absolute():
-                deps_path = base_path / deps_path
-            root = json.loads(deps_path.read_text())
-            selected: Any = root
-            for part in (selector or "dependencies").split("."):
-                selected = selected[part]
-
-            properties = root.get("properties") if isinstance(root, dict) else None
-            if isinstance(properties, dict):
-                for key, prop in properties.items():
-                    if (
-                        key not in values
-                        and isinstance(prop, dict)
-                        and "default" in prop
-                    ):
-                        values[str(key)] = str(prop["default"])
-
-            selected_items = selected if isinstance(selected, list) else [selected]
-            for selected_item in selected_items:
-                expanded = _expand_dependency_value(selected_item, values)
-                if isinstance(selected_item, dict) and isinstance(expanded, dict):
-                    template_name = str(selected_item.get("name") or "").strip()
-                    template_match = re.fullmatch(
-                        r"\{([A-Za-z_][A-Za-z0-9_]*)\}",
-                        template_name,
-                    )
-                    if template_match:
-                        expanded = dict(expanded)
-                        expanded["_abxpkg_env_key"] = template_match.group(1)
-                deps.append(expanded)
-    return deps
-
-
 def build_deps_from_exec_env(
     deps: Iterable[Any],
     *,
@@ -2115,7 +2050,7 @@ def _prepare_script_execution(
         *_deps_from_config_specs(
             deps_from,
             base_path=script_path.parent,
-            options=run_options,
+            lib_dir=run_options.lib_dir,
         ),
     ]
     for dep in dependencies:
@@ -2225,7 +2160,7 @@ def _prepare_script_execution(
         import hashlib
         from .config import build_exec_env as build_provider_exec_env
 
-        run_context, fingerprint_paths = script_cache_context
+        run_context = script_cache_context
         target_runtime_providers = binary.loaded_binprovider.exec_env_providers()
         all_exec_providers = [
             *other_runtime_binproviders,
@@ -2250,7 +2185,6 @@ def _prepare_script_execution(
             runtime_providers=all_exec_providers,
             base_env=script_cache_base_env,
             exec_env=final_exec_env,
-            extra_fingerprint_paths=fingerprint_paths,
             resolution_binaries=resolved_script_binaries,
         )
     return binary, exec_kwargs
@@ -2328,7 +2262,7 @@ def prepare_script_exec_plan(
             import hashlib
             import abxpkg as package
 
-            run_context, _ = cache_context
+            run_context = cache_context
             plan_key = hashlib.sha256(run_context.encode()).hexdigest()
             for record in _cached_records(
                 lib_dir,
@@ -2610,7 +2544,7 @@ def env_command(
             _deps_from_config_specs(
                 deps_from,
                 base_path=Path.cwd(),
-                options=options,
+                lib_dir=options.lib_dir,
             ),
             options=options,
             install_before_run=install_before_run,

@@ -1081,6 +1081,55 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert "pydantic" not in script_second.stderr
     assert script_elapsed < 0.1
 
+    equivalent_hooks_lib = tmp_path / "equivalent-hooks-lib"
+    equivalent_hooks = []
+    for hook_name in ("first", "second"):
+        hook_dir = tmp_path / hook_name
+        hook_dir.mkdir()
+        (hook_dir / "config.json").write_text(
+            json.dumps(
+                {
+                    "title": hook_name,
+                    "required_binaries": [
+                        {"name": "python3", "binproviders": "env"},
+                    ],
+                },
+            ),
+        )
+        hook_script = hook_dir / "hook.py"
+        hook_script.write_text(
+            '# /// script\n# ///\nprint("' + hook_name + '")\n',
+        )
+        equivalent_hooks.append(hook_script)
+
+    def equivalent_args(script):
+        return (
+            f"--lib={equivalent_hooks_lib}",
+            "--binproviders=env",
+            "run",
+            "--script",
+            "--deps-from=./config.json:required_binaries",
+            "python3",
+            str(script),
+        )
+
+    equivalent_first = _run_abxpkg_cli(*equivalent_args(equivalent_hooks[0]))
+    equivalent_cache = equivalent_hooks_lib / "env" / "derived.env"
+    equivalent_stat = equivalent_cache.stat()
+    equivalent_second = _run_abxpkg_cli(
+        *equivalent_args(equivalent_hooks[1]),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert equivalent_first.returncode == 0, equivalent_first.stderr
+    assert equivalent_first.stdout.strip() == "first"
+    assert equivalent_second.returncode == 0, equivalent_second.stderr
+    assert equivalent_second.stdout.strip() == "second"
+    assert "rich_click" not in equivalent_second.stderr
+    assert "pydantic" not in equivalent_second.stderr
+    assert equivalent_cache.stat().st_ino == equivalent_stat.st_ino
+    assert equivalent_cache.stat().st_mtime_ns == equivalent_stat.st_mtime_ns
+
     prepared_lib = tmp_path / "prepared-script-lib"
     prepared_script = tmp_path / "prepared-script.py"
     prepared_script.write_text(
