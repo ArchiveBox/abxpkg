@@ -491,6 +491,7 @@ class BinProvider(BaseModel):
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     CACHE_ENV_ALIASES: ClassVar[Mapping[str, tuple[str, ...]]] = {}
+    CACHE_CONTEXT_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
 
     euid: int | None = None
     install_root: Path | None = None
@@ -814,6 +815,10 @@ class BinProvider(BaseModel):
             alias_value = os.environ.get(alias)
             if alias_value:
                 provider_config.setdefault("manual_binary_env", {})[alias] = alias_value
+        if self.CACHE_CONTEXT_ENV_KEYS:
+            provider_config["cache_context_env"] = {
+                key: os.environ.get(key) for key in sorted(self.CACHE_CONTEXT_ENV_KEYS)
+            }
         return json.dumps(
             provider_config,
             default=str,
@@ -1411,6 +1416,12 @@ class BinProvider(BaseModel):
         env_input_keys.update(self.CACHE_ENV_ALIASES.get(str(bin_name), ()))
         env_input_keys.update(managed_env_keys)
         env_base = {key: resolved_base_env.get(key) for key in sorted(env_input_keys)}
+        cache_context_env_keys = {
+            *self.CACHE_CONTEXT_ENV_KEYS,
+            *exec_provider.CACHE_CONTEXT_ENV_KEYS,
+        }
+        for provider in resolved_runtime_providers:
+            cache_context_env_keys.update(provider.CACHE_CONTEXT_ENV_KEYS)
         exec_abspath = exec_provider._exec_bin_abspath(Path(abspath))
 
         resolved_binaries = list(resolution_binaries) or [
@@ -1432,6 +1443,7 @@ class BinProvider(BaseModel):
 
         resolutions = []
         for resolved_name, resolved_abspath, resolved_provider in resolved_binaries:
+            cache_context_env_keys.update(resolved_provider.CACHE_CONTEXT_ENV_KEYS)
             resolved_exec_abspath = resolved_provider._exec_bin_abspath(
                 Path(resolved_abspath),
             )
@@ -1483,13 +1495,16 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
         return {
-            "version": 5,
+            "version": 6,
             "script": plan_key is not None,
             "run_context": run_context,
             "abspath": str(exec_abspath),
             "euid": exec_provider.EUID,
             "env": env,
             "env_base": env_base,
+            "cache_context_env": {
+                key: os.environ.get(key) for key in sorted(cache_context_env_keys)
+            },
             "resolutions": resolutions,
             "fingerprint": fingerprints,
         }

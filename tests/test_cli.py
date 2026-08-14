@@ -20,7 +20,7 @@ from click.testing import CliRunner
 
 import abxpkg.cli as cli_module
 from abxpkg import PROVIDER_CLASS_BY_INSTALLER_BIN, EnvProvider, PnpmProvider
-from abxpkg.config import load_derived_cache
+from abxpkg.config import load_derived_cache, save_derived_cache
 
 
 def _abxpkg_executable() -> Path:
@@ -900,12 +900,13 @@ def test_warm_load_uses_cached_plan_without_loading_cli_frameworks(tmp_path):
     }
     first = _run_abxpkg_cli("load", "python3", env_overrides=env)
 
-    started_at = time.perf_counter()
     second = _run_abxpkg_cli(
         "load",
         "python3",
         env_overrides={**env, "PYTHONPROFILEIMPORTTIME": "1"},
     )
+    started_at = time.perf_counter()
+    timed = _run_abxpkg_cli("load", "python3", env_overrides=env)
     elapsed = time.perf_counter() - started_at
 
     assert first.returncode == 0, first.stderr
@@ -913,6 +914,8 @@ def test_warm_load_uses_cached_plan_without_loading_cli_frameworks(tmp_path):
     assert second.stdout == first.stdout
     assert "rich_click" not in second.stderr
     assert "pydantic" not in second.stderr
+    assert timed.returncode == 0, timed.stderr
+    assert timed.stdout == first.stdout
     assert elapsed < 0.1
 
     uncached = _run_abxpkg_cli(
@@ -1010,7 +1013,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         for record in records
         if record.get("exec_plan")
     ]
-    assert {plan["version"] for plan in exec_plans} == {5}
+    assert {plan["version"] for plan in exec_plans} == {6}
 
     second = _run_abxpkg_cli(
         *args,
@@ -1044,15 +1047,17 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     default_args = (f"--lib={tmp_path / 'default-lib'}", "run", "python3", "--version")
     default_first = _run_abxpkg_cli(*default_args)
-    default_started_at = time.perf_counter()
     default_second = _run_abxpkg_cli(
         *default_args,
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    default_started_at = time.perf_counter()
+    default_timed = _run_abxpkg_cli(*default_args)
     default_elapsed = time.perf_counter() - default_started_at
 
     assert default_first.returncode == 0, default_first.stderr
     assert default_second.returncode == 0, default_second.stderr
+    assert default_timed.returncode == 0, default_timed.stderr
     assert "rich_click" not in default_second.stderr
     assert "pydantic" not in default_second.stderr
     imported_modules = {
@@ -1067,12 +1072,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     cached_dependencies_lib = tmp_path / "cached-dependencies-lib"
 
-    async def resolve_cached_dependencies() -> None:
+    async def resolve_cached_dependencies(bus_name: str) -> None:
         import abxbus
 
         from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
-        bus = abxbus.EventBus(name="first_script_from_binary_cache")
+        bus = abxbus.EventBus(name=bus_name)
         BinaryService(
             bus,
             auto_install=False,
@@ -1091,7 +1096,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     import asyncio
 
-    asyncio.run(resolve_cached_dependencies())
+    asyncio.run(resolve_cached_dependencies("first_script_from_binary_cache"))
     cached_dependency_records = load_derived_cache(
         cached_dependencies_lib / "env" / "derived.env",
     ).values()
@@ -1107,7 +1112,6 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         '# /// script\n# dependencies = [{name = "python3", min_version = "3.0.0"}, "git"]\n# ///\n'
         'print("cached-dependencies")\n',
     )
-    cached_script_started_at = time.perf_counter()
     cached_script_first = _run_abxpkg_cli(
         f"--lib={cached_dependencies_lib}",
         "--binproviders=env",
@@ -1117,12 +1121,23 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         str(cached_script),
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    cached_script_started_at = time.perf_counter()
+    cached_script_timed = _run_abxpkg_cli(
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(cached_script),
+    )
     cached_script_elapsed = time.perf_counter() - cached_script_started_at
 
     assert cached_script_first.returncode == 0, cached_script_first.stderr
     assert cached_script_first.stdout.strip() == "cached-dependencies"
     assert "rich_click" not in cached_script_first.stderr
     assert "pydantic" not in cached_script_first.stderr
+    assert cached_script_timed.returncode == 0, cached_script_timed.stderr
+    assert cached_script_timed.stdout.strip() == "cached-dependencies"
     assert cached_script_elapsed < 0.1
 
     changed_path = _run_abxpkg_cli(
@@ -1161,6 +1176,114 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert "must-not-run" not in mismatched.stdout
     assert "rich_click" in mismatched.stderr
 
+    duplicate_target_script = tmp_path / "duplicate-target.py"
+    duplicate_target_script.write_text(
+        "# /// script\n"
+        '# dependencies = [{name = "python3", min_version = "999.0.0"}, '
+        '{name = "python3", min_version = "3.0.0"}]\n'
+        "# ///\n"
+        'print("must-not-run")\n',
+    )
+    duplicate_target = _run_abxpkg_cli(
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(duplicate_target_script),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert duplicate_target.returncode != 0
+    assert "must-not-run" not in duplicate_target.stdout
+    assert "rich_click" in duplicate_target.stderr
+
+    malformed_script = tmp_path / "malformed-dependency.py"
+    malformed_script.write_text(
+        '# /// script\n# dependencies = [{name = "python3", min_version = "3.0.0"}]\n# ///\n'
+        'print("must-not-run")\n',
+    )
+    for label, malformed_dependency in (
+        ("empty-providers", {"name": "git", "binproviders": []}),
+        ("invalid-providers", {"name": "git", "binproviders": 7}),
+        ("empty-name", {"name": "", "binproviders": "env"}),
+    ):
+        malformed_config = tmp_path / f"{label}.json"
+        malformed_config.write_text(
+            json.dumps({"required_binaries": [malformed_dependency]}),
+        )
+        malformed = _run_abxpkg_cli(
+            f"--lib={cached_dependencies_lib}",
+            "--binproviders=env",
+            "run",
+            "--script",
+            f"--deps-from={malformed_config}:required_binaries",
+            "python3",
+            str(malformed_script),
+            env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+        )
+
+        assert malformed.returncode != 0
+        assert "must-not-run" not in malformed.stdout
+        assert "rich_click" in malformed.stderr
+
+    env_key_config = tmp_path / "env-key-config.json"
+    env_key_config.write_text(
+        json.dumps(
+            {
+                "properties": {"GIT_BINARY": {"default": "git"}},
+                "required_binaries": [
+                    {"name": "{GIT_BINARY}", "binproviders": "env"},
+                ],
+            },
+        ),
+    )
+    env_key_script = tmp_path / "env-key-script.py"
+    env_key_script.write_text(
+        '# /// script\n# dependencies = [{name = "python3", min_version = "3.0.0"}]\n# ///\n'
+        'import os\nprint(os.environ["GIT_BINARY"])\n',
+    )
+    env_key_args = (
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        f"--deps-from={env_key_config}:required_binaries",
+        "python3",
+        str(env_key_script),
+    )
+    asyncio.run(resolve_cached_dependencies("refresh_script_from_binary_cache"))
+    projected_env_key = _run_abxpkg_cli(
+        *env_key_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    assert projected_env_key.returncode == 0, projected_env_key.stderr
+    assert Path(projected_env_key.stdout.strip()).name == "git"
+    assert "rich_click" not in projected_env_key.stderr
+
+    git_cache = cached_dependencies_lib / "env" / "derived.env"
+    corrupted_cache = load_derived_cache(git_cache)
+    git_record = next(
+        (
+            record
+            for record in corrupted_cache.values()
+            if record.get("bin_name") == "git"
+            and record.get("request_exec_projections")
+        ),
+        None,
+    )
+    assert git_record is not None, corrupted_cache
+    git_record["abspath"] = sys.executable
+    save_derived_cache(git_cache, corrupted_cache)
+    corrupted_env_key = _run_abxpkg_cli(
+        *env_key_args,
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert corrupted_env_key.returncode == 0, corrupted_env_key.stderr
+    assert Path(corrupted_env_key.stdout.strip()).name == "git"
+    assert "rich_click" in corrupted_env_key.stderr
+
     script = tmp_path / "warm-script.py"
     script.write_text(
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("warm-script")\n',
@@ -1173,11 +1296,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         str(script),
     )
     script_first = _run_abxpkg_cli(*script_args)
-    script_started_at = time.perf_counter()
     script_second = _run_abxpkg_cli(
         *script_args,
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    script_started_at = time.perf_counter()
+    script_timed = _run_abxpkg_cli(*script_args)
     script_elapsed = time.perf_counter() - script_started_at
 
     assert script_first.returncode == 0, script_first.stderr
@@ -1185,6 +1309,8 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert script_second.stdout.strip() == "warm-script"
     assert "rich_click" not in script_second.stderr
     assert "pydantic" not in script_second.stderr
+    assert script_timed.returncode == 0, script_timed.stderr
+    assert script_timed.stdout.strip() == "warm-script"
     assert script_elapsed < 0.1
 
     equivalent_hooks_lib = tmp_path / "equivalent-hooks-lib"
@@ -4572,6 +4698,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "// /// script\n"
         "// ///\n"
         "\n"
+        "const startedAtMs = Date.now();\n"
         "const childProcess = require('child_process');\n"
         "const fs = require('fs');\n"
         "const path = require('path');\n"
@@ -4582,6 +4709,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "], {encoding: 'utf8'}).trim();\n"
         "const puppeteerPackage = require.resolve('puppeteer/package.json');\n"
         "const payload = {\n"
+        "  startedAtMs,\n"
         "  nodeVersion: process.versions.node,\n"
         "  execPath: process.execPath,\n"
         "  nodeBinary: process.env.NODE_BINARY,\n"
@@ -4590,6 +4718,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "  puppeteerPackage,\n"
         "  puppeteerName: JSON.parse(fs.readFileSync(puppeteerPackage, 'utf8')).name,\n"
         "  puppeteerVersion: JSON.parse(fs.readFileSync(puppeteerPackage, 'utf8')).version,\n"
+        "  nodePath: process.env.NODE_PATH,\n"
         "  nodeModulesDir: process.env.NODE_MODULES_DIR,\n"
         "  pnpmHome: process.env.PNPM_HOME,\n"
         "  path: process.env.PATH,\n"
@@ -4602,7 +4731,6 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "ABXPKG_LIB_DIR": str(lib),
         "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
         "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
-        "PYTHONPROFILEIMPORTTIME": "1",
     }
 
     async def resolve_hook_dependencies() -> None:
@@ -4652,22 +4780,55 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
     import asyncio
 
     asyncio.run(resolve_hook_dependencies())
-    first_hook_started_at = time.perf_counter()
     proc = _run_cli(
         script,
-        env_overrides=script_env,
+        env_overrides={**script_env, "PYTHONPROFILEIMPORTTIME": "1"},
         timeout=900,
     )
+    first_hook_started_at = time.perf_counter()
+    first_hook_started_wall = time.time()
+    timed_proc = _run_cli(script, env_overrides=script_env, timeout=60)
     first_hook_elapsed = time.perf_counter() - first_hook_started_at
     warm_proc = _run_cli(script, env_overrides=script_env, timeout=60)
 
     assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+    assert timed_proc.returncode == 0, timed_proc.stderr
     assert warm_proc.returncode == 0, warm_proc.stderr
     assert "rich_click" not in proc.stderr
     assert "pydantic" not in proc.stderr
+    payload = json.loads(timed_proc.stdout.strip().splitlines()[-1])
+    first_hook_launch_elapsed = payload["startedAtMs"] / 1000 - first_hook_started_wall
+    direct_env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    direct_env.update(
+        {
+            "NODE_BINARY": payload["nodeBinary"],
+            "PYTHON_BINARY": payload["pythonBinary"],
+            "NODE_PATH": payload["nodePath"],
+            "NODE_MODULES_DIR": payload["nodeModulesDir"],
+            "NODE_MODULE_DIR": payload["nodeModulesDir"],
+            "PNPM_HOME": payload["pnpmHome"],
+            "PATH": payload["path"],
+        },
+    )
+    direct_started_wall = time.time()
+    direct_proc = subprocess.run(
+        [payload["execPath"], str(script)],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=direct_env,
+        timeout=60,
+    )
+    assert direct_proc.returncode == 0, direct_proc.stderr
+    direct_payload = json.loads(direct_proc.stdout.strip().splitlines()[-1])
+    direct_launch_elapsed = direct_payload["startedAtMs"] / 1000 - direct_started_wall
+    assert first_hook_launch_elapsed - direct_launch_elapsed < 0.1
     assert first_hook_elapsed < 1.0
-    payload = json.loads(proc.stdout.strip().splitlines()[-1])
     warm_payload = json.loads(warm_proc.stdout.strip().splitlines()[-1])
+    payload.pop("startedAtMs")
+    warm_payload.pop("startedAtMs")
     assert warm_payload == payload
     assert int(payload["nodeVersion"].split(".", 1)[0]) >= 22
     assert payload["python"]["version"][:2] >= [3, 10]
@@ -4684,6 +4845,25 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
     assert str(lib / "env" / "bin") in payload["path"].split(os.pathsep)
     assert str(node_modules_dir / ".bin") in payload["path"].split(os.pathsep)
     assert (node_modules_dir / "puppeteer" / "package.json").is_file()
+
+    alternate_npm_dir = tmp_path / "alternate-npm"
+    alternate_npm_dir.mkdir()
+    alternate_npm = alternate_npm_dir / "npm"
+    alternate_npm.symlink_to(
+        shutil.which("npm") or shutil.which("env") or "/usr/bin/env",
+    )
+    changed_provider_env = _run_cli(
+        script,
+        env_overrides={
+            **script_env,
+            "NPM_BINARY": str(alternate_npm),
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
+        timeout=60,
+    )
+
+    assert changed_provider_env.returncode == 0, changed_provider_env.stderr
+    assert "rich_click" in changed_provider_env.stderr
 
 
 @pytest.fixture()

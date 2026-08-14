@@ -62,6 +62,9 @@ class PnpmProvider(BinProvider):
     FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
         {"NODE_MODULES_DIR", "NODE_MODULE_DIR"},
     )
+    CACHE_CONTEXT_ENV_KEYS: ClassVar[frozenset[str]] = frozenset(
+        {"NPM_BINARY", "PNPM_HOME"},
+    )
 
     @classmethod
     def host_projection_target(cls, source_path: Path) -> Path | None:

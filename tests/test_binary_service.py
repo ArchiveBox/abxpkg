@@ -2,7 +2,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import abxbus
@@ -197,6 +197,53 @@ def _real_python_binary(lib_dir: Path) -> Binary:
     binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
     assert binary.loaded_abspath is not None
     return binary
+
+
+def test_binary_service_request_projection_uses_effective_service_options(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+    from abxpkg.config import binary_request_cache_key, load_derived_cache
+
+    lib_dir = tmp_path / "lib"
+    request = BinaryRequestEvent(name="python3", binproviders="env")
+
+    async def run() -> None:
+        bus = abxbus.EventBus(name="test_effective_service_projection")
+        BinaryService(
+            bus,
+            auto_install=False,
+            lib_dir=lib_dir,
+            min_version="3.0.0",
+        )
+        await bus.emit(request).now()
+        await bus.wait_until_idle()
+
+    asyncio.run(run())
+
+    projection_keys = {
+        key
+        for record in load_derived_cache(lib_dir / "env" / "derived.env").values()
+        for key in cast(
+            dict[str, object],
+            record.get("request_exec_projections", {}),
+        )
+    }
+    raw_key = binary_request_cache_key(
+        {"name": "python3", "binproviders": "env"},
+        default_provider_names=["env"],
+    )
+    effective_key = binary_request_cache_key(
+        {
+            "name": "python3",
+            "binproviders": "env",
+            "min_version": "3.0.0",
+        },
+        default_provider_names=["env"],
+    )
+
+    assert effective_key in projection_keys
+    assert raw_key not in projection_keys
 
 
 def test_binary_event_env_does_not_prepend_shared_host_projections(

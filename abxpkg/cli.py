@@ -517,11 +517,26 @@ def _cached_records(
             if fd >= 0:
                 os.close(fd)
         for record in cache.values():
+            raw_fingerprints = (
+                record.get("fingerprint") if isinstance(record, dict) else None
+            )
+            record_abspath = record.get("abspath") if isinstance(record, dict) else None
+            primary_fingerprint = (
+                raw_fingerprints[0]
+                if isinstance(raw_fingerprints, list) and raw_fingerprints
+                else None
+            )
             if (
                 isinstance(record, dict)
                 and record.get("provider_name") == provider_name
                 and record.get("bin_name") == binary_name
-                and _fingerprints_match(record.get("fingerprint"))
+                and isinstance(record_abspath, str)
+                and os.path.isabs(record_abspath)
+                and os.access(record_abspath, os.X_OK)
+                and isinstance(primary_fingerprint, dict)
+                and os.path.realpath(record_abspath)
+                == cast(dict[str, object], primary_fingerprint).get("path")
+                and _fingerprints_match(raw_fingerprints)
             ):
                 yield record
 
@@ -533,11 +548,15 @@ def _script_request(
     request = {"name": dependency} if isinstance(dependency, str) else None
     if isinstance(dependency, dict):
         typed_dependency = cast(dict[str, object], dependency)
-        if typed_dependency.get("name"):
+        if "name" in typed_dependency:
             request = typed_dependency
     if request is None:
         return None
-    raw_provider_names = request.get("binproviders") or default_provider_names
+    if not isinstance(request.get("name"), str) or not request["name"]:
+        raise ValueError("invalid binary name")
+    raw_provider_names = (
+        request["binproviders"] if "binproviders" in request else default_provider_names
+    )
     if isinstance(raw_provider_names, str):
         provider_names = [
             name.strip() for name in raw_provider_names.split(",") if name.strip()
@@ -547,11 +566,11 @@ def _script_request(
             str(name).strip() for name in raw_provider_names if str(name).strip()
         ]
     else:
-        return None
+        raise ValueError("invalid binary providers")
     if not provider_names or any(
         re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
     ):
-        return None
+        raise ValueError("invalid binary providers")
     request = dict(request)
     request["binproviders"] = provider_names
     env_key = request.pop("_abxpkg_env_key", None)
@@ -648,13 +667,20 @@ def _exec_cached_script_requests(
     }
     target_provider_names = provider_names
     target_env_key: str | None = None
+    target_declaration_seen = False
 
     for dependency in dependencies:
-        parsed = _script_request(dependency, provider_names)
+        try:
+            parsed = _script_request(dependency, provider_names)
+        except ValueError:
+            return None
         if parsed is None:
             continue
         request, dependency_provider_names, env_key = parsed
         if request["name"] == binary_name:
+            if target_declaration_seen:
+                return None
+            target_declaration_seen = True
             target_request = request
             target_env_key = env_key
             if explicit_provider_selection:
@@ -794,7 +820,7 @@ def _validated_cached_plan(
         return None
     exec_plan = cast(dict[str, object], raw_plan)
     if (
-        exec_plan.get("version") != 5
+        exec_plan.get("version") != 6
         or exec_plan.get("run_context") != run_context
         or exec_plan.get("euid") != os.geteuid()
         or not _fingerprints_match(exec_plan.get("fingerprint"))
@@ -804,6 +830,7 @@ def _validated_cached_plan(
     is_script = exec_plan.get("script")
     env = exec_plan.get("env")
     env_base = exec_plan.get("env_base")
+    cache_context_env = exec_plan.get("cache_context_env")
     resolutions = exec_plan.get("resolutions")
     if (
         not isinstance(exec_abspath, str)
@@ -812,6 +839,7 @@ def _validated_cached_plan(
         or not isinstance(is_script, bool)
         or not isinstance(env, dict)
         or not isinstance(env_base, dict)
+        or not isinstance(cache_context_env, dict)
         or not isinstance(resolutions, list)
         or not resolutions
         or any(not isinstance(key, str) for key in env)
@@ -821,10 +849,20 @@ def _validated_cached_plan(
             value is not None and not isinstance(value, str)
             for value in env_base.values()
         )
+        or any(not isinstance(key, str) for key in cache_context_env)
+        or any(
+            value is not None and not isinstance(value, str)
+            for value in cache_context_env.values()
+        )
     ):
         return None
     typed_env = cast(dict[str, str], env)
     typed_env_base = cast(dict[str, str | None], env_base)
+    typed_cache_context_env = cast(dict[str, str | None], cache_context_env)
+    if any(
+        os.environ.get(key) != value for key, value in typed_cache_context_env.items()
+    ):
+        return None
     if any(
         os.environ.get(key) != value
         for key, value in typed_env_base.items()

@@ -6,13 +6,30 @@ from copy import deepcopy
 from inspect import isawaitable
 from collections.abc import Awaitable, Mapping
 from pathlib import Path
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol, cast
 
 from pydantic import ConfigDict, Field
 
 from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME, Binary, BinProvider
 from .exceptions import BinaryLoadError
 from .semver import SemVer
+
+
+_REQUEST_PROJECTION_FIELDS = {
+    "name",
+    "min_version",
+    "postinstall_scripts",
+    "min_release_age",
+    "binproviders",
+    "overrides",
+    "install_root",
+    "bin_dir",
+    "euid",
+    "dry_run",
+    "no_cache",
+    "install_timeout",
+    "version_timeout",
+}
 
 try:
     from abxbus import (
@@ -292,31 +309,29 @@ def _cache_request_projection(
     binary: Binary,
     *,
     env: Mapping[str, str] | None,
+    request_data: Mapping[str, object] | None = None,
 ) -> None:
-    if request.no_cache or not binary.loaded_binprovider or not binary.loaded_abspath:
+    payload = (
+        dict(request_data)
+        if request_data is not None
+        else request.model_dump(
+            include=_REQUEST_PROJECTION_FIELDS,
+            mode="json",
+        )
+    )
+    if (
+        payload.get("no_cache")
+        or not binary.loaded_binprovider
+        or not binary.loaded_abspath
+    ):
         return
     from .config import binary_request_cache_key
 
     request_key = binary_request_cache_key(
-        request.model_dump(
-            include={
-                "name",
-                "min_version",
-                "postinstall_scripts",
-                "min_release_age",
-                "binproviders",
-                "overrides",
-                "install_root",
-                "bin_dir",
-                "euid",
-                "dry_run",
-                "no_cache",
-                "install_timeout",
-                "version_timeout",
-            },
-            mode="json",
+        payload,
+        default_provider_names=_provider_names(
+            cast(str | list[str] | None, payload.get("binproviders")),
         ),
-        default_provider_names=_provider_names(request.binproviders),
         env=env,
     )
     binary.loaded_binprovider.write_cached_request_projection(
@@ -641,6 +656,41 @@ class BinaryService:
             **dict(event.extra_env or {}),
         }
 
+    def _projection_request_for_event(
+        self,
+        event: BinaryRequestEvent,
+    ) -> dict[str, object]:
+        request = event.model_dump(include=_REQUEST_PROJECTION_FIELDS, mode="json")
+        request.update(
+            {
+                "min_version": self._min_version_for_event(event),
+                "postinstall_scripts": self._postinstall_scripts_for_event(event),
+                "min_release_age": self._min_release_age_for_event(event),
+                "binproviders": self._provider_names(event.binproviders),
+                "overrides": (
+                    event.overrides
+                    if event.overrides is not None
+                    else (self.overrides or None)
+                ),
+                "install_root": event.install_root or self.install_root,
+                "bin_dir": event.bin_dir or self.bin_dir,
+                "euid": self.euid if event.euid is None else event.euid,
+                "dry_run": self._dry_run_for_event(event),
+                "no_cache": self._no_cache_for_event(event),
+                "install_timeout": (
+                    self.install_timeout
+                    if event.install_timeout is None
+                    else event.install_timeout
+                ),
+                "version_timeout": (
+                    self.version_timeout
+                    if event.version_timeout is None
+                    else event.version_timeout
+                ),
+            },
+        )
+        return request
+
     def _provider_names(self, requested: str | list[str] | None) -> list[str]:
         return _provider_names(
             requested,
@@ -665,6 +715,7 @@ class BinaryService:
             request,
             binary,
             env=self._base_env_for_event(request),
+            request_data=self._projection_request_for_event(request),
         )
         await request.emit(event).now()
         return event.abspath
