@@ -1,0 +1,14 @@
+tests/test_cli.py
+  h_923c208e183a7b 494,523-526,555,581-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c4f38ea231db0d5c5d6ddc093dc523af3eee3297",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
