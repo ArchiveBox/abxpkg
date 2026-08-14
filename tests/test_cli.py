@@ -1147,7 +1147,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     implicit_providers = _run_abxpkg_cli(*provider_precedence_args)
     explicit_providers = _run_abxpkg_cli(
-        f"--binproviders={','.join(cli_module.parse_provider_names(None))}",
+        f"--binproviders={','.join(cli_module.DEFAULT_PROVIDER_NAMES)}",
         *provider_precedence_args,
     )
     different_exec_env = _run_abxpkg_cli(
