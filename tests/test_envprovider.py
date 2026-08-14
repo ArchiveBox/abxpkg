@@ -189,12 +189,23 @@ class TestEnvProvider:
 
         derived_env_path = provider.install_root / "derived.env"
         provider.project_binary(loaded, "python3")
+        cache = load_derived_cache(derived_env_path)
+        cache_key = next(
+            key for key, record in cache.items() if record.get("bin_name") == "python3"
+        )
+        cache[cache_key]["exec_plan"] = {"version": 5}
+        cache[cache_key]["script_exec_plans"] = {"script": {"version": 5}}
+        save_derived_cache(derived_env_path, cache)
+
         first_stat = derived_env_path.stat()
         provider.project_binary(loaded, "python3")
         second_stat = derived_env_path.stat()
+        projected_record = load_derived_cache(derived_env_path)[cache_key]
 
         assert second_stat.st_ino == first_stat.st_ino
         assert second_stat.st_mtime_ns == first_stat.st_mtime_ns
+        assert projected_record["exec_plan"] == {"version": 5}
+        assert projected_record["script_exec_plans"] == {"script": {"version": 5}}
 
     def test_cache_fingerprint_survives_artifact_materialization(self, tmp_path):
         provider = EnvProvider(install_root=tmp_path / "lib" / "env")
@@ -818,6 +829,10 @@ class TestEnvProvider:
                     if record.get("cache_context") == default_context
                 )
                 cache[default_key]["cache_context"] = "old-cache-context"
+                cache[default_key]["exec_plan"] = {"version": 5}
+                cache[default_key]["script_exec_plans"] = {
+                    "script": {"version": 5},
+                }
                 save_derived_cache(derived_env_path, cache)
 
                 repaired = provider.load("python3")
@@ -825,6 +840,10 @@ class TestEnvProvider:
                 assert repaired is not None
                 refreshed = load_derived_cache(derived_env_path)
                 assert refreshed[default_key]["cache_context"] == default_context
+                assert refreshed[default_key]["exec_plan"] == {"version": 5}
+                assert refreshed[default_key]["script_exec_plans"] == {
+                    "script": {"version": 5},
+                }
                 assert (
                     len(
                         {

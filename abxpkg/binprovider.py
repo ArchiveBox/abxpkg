@@ -1066,6 +1066,11 @@ class BinProvider(BaseModel):
             or cached_record_key != cache_key
         ):
             cache.pop(cached_record_key, None)
+            cached_exec_plans = {
+                key: cached_record[key]
+                for key in ("exec_plan", "script_exec_plans")
+                if key in cached_record
+            }
             cached_record = {
                 "fingerprint": fingerprints,
                 "cache_context": cache_context,
@@ -1086,6 +1091,7 @@ class BinProvider(BaseModel):
                 ),
                 "mtime": primary_fingerprint["mtime_ns"],
                 "euid": primary_fingerprint["euid"],
+                **cached_exec_plans,
             }
             cache[cache_key] = cached_record
             save_derived_cache(derived_env_path, cache)
@@ -1207,6 +1213,15 @@ class BinProvider(BaseModel):
             abspath,
             cache_context_hash=cache_context_hash,
         )
+        cached_record = cache.get(cache_key)
+        if isinstance(cached_record, dict):
+            record.update(
+                {
+                    key: cached_record[key]
+                    for key in ("exec_plan", "script_exec_plans")
+                    if key in cached_record
+                },
+            )
         if cache.get(cache_key) == record:
             if os.geteuid() == 0 and derived_env_path.stat().st_uid != self.EUID:
                 try:
