@@ -1,0 +1,14 @@
+tests/test_binary_service_apt.py
+  h_923c208e183a7b 3,77
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a9ddfeadc1f9297f0a0a1e8d2cd9e3e93ff3a723",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
