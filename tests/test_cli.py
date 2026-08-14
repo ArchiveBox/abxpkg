@@ -1140,6 +1140,10 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         f"--binproviders={','.join(cli_module.parse_provider_names(None))}",
         *provider_precedence_args,
     )
+    different_exec_env = _run_abxpkg_cli(
+        *provider_precedence_args,
+        env_overrides={"NODE_PATH": "/caller/node_modules"},
+    )
     provider_precedence_plans = [
         plan
         for record in load_derived_cache(equivalent_cache).values()
@@ -1151,7 +1155,8 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     assert implicit_providers.returncode == 0, implicit_providers.stderr
     assert explicit_providers.returncode == 0, explicit_providers.stderr
-    assert len(provider_precedence_plans) == 3
+    assert different_exec_env.returncode == 0, different_exec_env.stderr
+    assert len(provider_precedence_plans) == 4
 
     prepared_lib = tmp_path / "prepared-script-lib"
     prepared_script = tmp_path / "prepared-script.py"
@@ -1337,6 +1342,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         == mutable_target.resolve()
         for resolution in dependency_resolutions
     )
+    dependency_restored = _run_abxpkg_cli(
+        *dependency_script_args,
+        env_overrides={"PATH": os.environ["PATH"], "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    assert dependency_restored.returncode == 0, dependency_restored.stderr
+    assert "rich_click" in dependency_restored.stderr
 
     relative_a = tmp_path / "relative-a"
     relative_b = tmp_path / "relative-b"

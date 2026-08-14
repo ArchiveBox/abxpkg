@@ -358,6 +358,10 @@ def _script_cache_context(
             "base": json.loads(base_context),
             "binary_name": binary_name,
             "dependencies": dependencies,
+            "exec_env_inputs": {
+                name: os.environ.get(name)
+                for name in ("NODE_PATH", "PYTHONPATH", "LD_LIBRARY_PATH")
+            },
             "explicit_provider_selection": explicit_provider_selection,
             "metadata": meta,
             "tool_env": {name: os.environ.get(name) for name in tool_env_names},
@@ -627,15 +631,12 @@ def _validated_cached_plan(
                 selected_command,
             ) != os.path.realpath(abspath):
                 return None
-        if not (is_script and "PATH" in typed_env):
-            current_ambient = _find_executable(name, os.environ.get("PATH", ""))
-            resolved_ambient = (
-                os.path.realpath(current_ambient)
-                if current_ambient is not None
-                else None
-            )
-            if resolved_ambient != ambient_abspath:
-                return None
+        current_ambient = _find_executable(name, os.environ.get("PATH", ""))
+        resolved_ambient = (
+            os.path.realpath(current_ambient) if current_ambient is not None else None
+        )
+        if resolved_ambient != ambient_abspath:
+            return None
     return exec_abspath, final_env
 
 
