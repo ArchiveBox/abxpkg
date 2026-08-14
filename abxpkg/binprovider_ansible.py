@@ -305,7 +305,6 @@ class AnsibleProvider(BinProvider):
     _log_emoji = "📘"
     INSTALLER_BIN: BinName = "ansible"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
-    DEFAULT_ENABLED: ClassVar[bool] = False
     PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Ansible has no bin_dir field of its own and never mutates PATH in setup().
 
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:

@@ -30,8 +30,6 @@ class AptProvider(BinProvider):
     _log_emoji = "🐧"
     INSTALLER_BIN: BinName = "apt-get"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
-    DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = ("linux",)
-
     PATH: PATHStr = ""  # Starts empty; setup_PATH() discovers package runtime bin dirs via dpkg and replaces PATH with those dirs.
     euid: int | None = (
         0  # Import-time default that forces every apt subprocess through the root/sudo execution path.

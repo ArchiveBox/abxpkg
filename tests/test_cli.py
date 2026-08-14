@@ -1034,15 +1034,18 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     default_args = (f"--lib={tmp_path / 'default-lib'}", "run", "python3", "--version")
     default_first = _run_abxpkg_cli(*default_args)
+    default_started_at = time.perf_counter()
     default_second = _run_abxpkg_cli(
         *default_args,
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    default_elapsed = time.perf_counter() - default_started_at
 
     assert default_first.returncode == 0, default_first.stderr
     assert default_second.returncode == 0, default_second.stderr
     assert "rich_click" not in default_second.stderr
     assert "pydantic" not in default_second.stderr
+    assert default_elapsed < 0.1
 
     script = tmp_path / "warm-script.py"
     script.write_text(
@@ -1050,23 +1053,25 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     script_args = (
         f"--lib={tmp_path / 'script-lib'}",
-        "--binproviders=env",
         "run",
         "--script",
         "python3",
         str(script),
     )
     script_first = _run_abxpkg_cli(*script_args)
+    script_started_at = time.perf_counter()
     script_second = _run_abxpkg_cli(
         *script_args,
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    script_elapsed = time.perf_counter() - script_started_at
 
     assert script_first.returncode == 0, script_first.stderr
     assert script_second.returncode == 0, script_second.stderr
     assert script_second.stdout.strip() == "warm-script"
     assert "rich_click" not in script_second.stderr
     assert "pydantic" not in script_second.stderr
+    assert script_elapsed < 0.1
 
     prepared_lib = tmp_path / "prepared-script-lib"
     prepared_script = tmp_path / "prepared-script.py"

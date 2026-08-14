@@ -487,8 +487,6 @@ class BinProvider(BaseModel):
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = None
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = None
-    DEFAULT_ENABLED: ClassVar[bool] = True
-    DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = None
     INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()

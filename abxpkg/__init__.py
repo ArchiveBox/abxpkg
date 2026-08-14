@@ -21,7 +21,6 @@ _PROVIDER_MODULE_NAMES_CACHE = None
 _EXPORT_MODULES_BY_NAME_CACHE = None
 _PROVIDER_CLASS_NAMES_BY_NAME_CACHE = None
 _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE = None
-_PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE = None
 _PROVIDER_NAMES_BY_INSTALLER_BIN_CACHE = None
 _ALL_PUBLIC_EXPORT_NAMES_CACHE = None
 
@@ -61,6 +60,16 @@ _PROVIDER_NAME_PRIORITY = (
     "ansible",
     "pyinfra",
 )
+
+# Most built-in providers are enabled on every supported host. Keep only the
+# exceptions here so warm CLI paths can select providers without opening and
+# parsing every provider module before reading the executable cache.
+_PROVIDER_DEFAULT_PLATFORMS = {
+    "node": ("darwin", "linux"),
+    "apt": ("linux",),
+    "ansible": (),
+    "pyinfra": (),
+}
 
 _provider_singletons: dict[str, object] = {}
 
@@ -179,30 +188,6 @@ def _provider_class_names_by_name() -> dict[str, tuple[str, str]]:
     return _PROVIDER_CLASS_NAMES_BY_NAME_CACHE
 
 
-def _provider_default_metadata_by_name() -> dict[
-    str,
-    tuple[bool, tuple[str, ...] | None],
-]:
-    """Read provider default-selection metadata without importing provider modules."""
-    global _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
-    if _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE is not None:
-        return _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
-
-    literal_fields = _provider_class_literal_fields_by_name()
-    _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE = {
-        provider_name: (
-            bool(fields.get("DEFAULT_ENABLED", True)),
-            (
-                None
-                if fields.get("DEFAULT_SUPPORTED_PLATFORMS") is None
-                else tuple(fields["DEFAULT_SUPPORTED_PLATFORMS"])
-            ),
-        )
-        for provider_name, fields in literal_fields.items()
-    }
-    return _PROVIDER_DEFAULT_METADATA_BY_NAME_CACHE
-
-
 def _provider_class_literal_fields_by_name() -> dict[str, dict[str, Any]]:
     """Read provider-owned literal class metadata without importing providers."""
     global _PROVIDER_CLASS_LITERAL_FIELDS_BY_NAME_CACHE
@@ -213,11 +198,7 @@ def _provider_class_literal_fields_by_name() -> dict[str, dict[str, Any]]:
 
     metadata: dict[str, dict[str, Any]] = {}
     source_modules: dict[str, list[str] | None] = {}
-    field_names = {
-        "DEFAULT_ENABLED",
-        "DEFAULT_SUPPORTED_PLATFORMS",
-        "INSTALLER_BIN",
-    }
+    field_names = {"INSTALLER_BIN"}
     for provider_name, (
         module_name,
         class_name,
@@ -405,7 +386,7 @@ def _all_providers():
 
 
 def _all_provider_names() -> list[str]:
-    return list(_provider_class_names_by_name())
+    return list(_PROVIDER_NAME_PRIORITY)
 
 
 def _all_provider_class_names() -> list[str]:
@@ -416,15 +397,12 @@ def _default_provider_names() -> list[str]:
     import platform
 
     operating_system = platform.system().lower()
-    provider_metadata = _provider_default_metadata_by_name()
-    default_names: list[str] = []
-    for provider_name in _all_provider_names():
-        default_enabled, supported_platforms = provider_metadata[provider_name]
-        if default_enabled and (
-            supported_platforms is None or operating_system in supported_platforms
-        ):
-            default_names.append(provider_name)
-    return default_names
+    return [
+        provider_name
+        for provider_name in _PROVIDER_NAME_PRIORITY
+        if operating_system
+        in _PROVIDER_DEFAULT_PLATFORMS.get(provider_name, (operating_system,))
+    ]
 
 
 def _provider_class_by_name():

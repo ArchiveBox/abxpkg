@@ -99,11 +99,6 @@ class NodeProvider(BinProvider):
     _log_emoji = "🟢"
     INSTALLER_BIN: BinName = "node"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
-    DEFAULT_SUPPORTED_PLATFORMS: ClassVar[tuple[str, ...] | None] = (
-        "darwin",
-        "linux",
-    )
-
     PATH: PATHStr = ""
     install_root: Path | None = Field(
         default_factory=lambda: abxpkg_install_root_default("node"),
