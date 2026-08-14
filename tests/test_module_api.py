@@ -1,8 +1,18 @@
+import abxpkg
 from abxpkg import EnvProvider
 from abxpkg.__init__ import _PROVIDER_NAME_PRIORITY, _provider_class
 
 
 class TestModuleApi:
+    def test_public_exports_are_available_directly_and_by_wildcard_import(self):
+        public_names = abxpkg.__all__
+        namespace = {}
+        exec("from abxpkg import *", namespace)
+
+        assert isinstance(public_names, list)
+        assert "EnvProvider" in public_names
+        assert namespace["EnvProvider"] is EnvProvider
+
     def test_provider_class_normalization_accepts_classes_and_instances(self):
         normalized_from_class = _provider_class(EnvProvider)
         normalized_from_instance = _provider_class(

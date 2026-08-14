@@ -5,11 +5,11 @@ import os
 import re
 import stat
 import sys
-from pathlib import Path
 
 # Keep typing-only imports off the warm CLI path.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
+    from pathlib import Path
     from typing import Any, cast
 else:
 
@@ -56,7 +56,7 @@ class ScriptOptions:
     install_timeout = None
     version_timeout = None
 
-    def __init__(self, *, lib_dir: Path, provider_names: list[str]) -> None:
+    def __init__(self, *, lib_dir: str, provider_names: list[str]) -> None:
         self.lib_dir = lib_dir
         self.provider_names = provider_names
 
@@ -72,27 +72,27 @@ def _env_flag_is_true(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_lib_dir(raw_value: str | None) -> Path:
+def _resolve_lib_dir(raw_value: str | None) -> str:
     env_value = os.environ.get("ABXPKG_LIB_DIR")
     if _none_or_stripped(raw_value) is None and raw_value is not None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
         from .config import default_abxpkg_lib_dir
 
-        return default_abxpkg_lib_dir().expanduser().resolve()
+        return os.path.realpath(os.path.expanduser(default_abxpkg_lib_dir()))
     if _none_or_stripped(env_value) is None and env_value is not None:
         os.environ.pop("ABXPKG_LIB_DIR", None)
         from .config import default_abxpkg_lib_dir
 
-        return default_abxpkg_lib_dir().expanduser().resolve()
+        return os.path.realpath(os.path.expanduser(default_abxpkg_lib_dir()))
 
     if raw_value or _none_or_stripped(env_value):
-        lib_dir = Path(raw_value or str(env_value))
+        lib_dir = raw_value or str(env_value)
     else:
         from .config import default_abxpkg_lib_dir
 
-        lib_dir = default_abxpkg_lib_dir()
-    resolved = lib_dir.expanduser().resolve()
-    os.environ["ABXPKG_LIB_DIR"] = str(resolved)
+        lib_dir = os.fspath(default_abxpkg_lib_dir())
+    resolved = os.path.realpath(os.path.expanduser(lib_dir))
+    os.environ["ABXPKG_LIB_DIR"] = resolved
     return resolved
 
 
@@ -143,13 +143,15 @@ def normalize_binary_overrides(
 
 
 def parse_script_metadata(
-    script_path: Path,
+    script_path: str | os.PathLike[str],
     max_lines: int = 50,
 ) -> dict[str, Any] | None:
     import tomllib
 
+    script_path = os.fspath(script_path)
     try:
-        text = script_path.read_text(encoding="utf-8", errors="replace")
+        with open(script_path, encoding="utf-8", errors="replace") as script_file:
+            text = script_file.read()
     except OSError as err:
         raise RuntimeError(f"cannot read script {script_path}: {err}") from err
 
@@ -196,7 +198,7 @@ def _pop_option_value(argv: list[str], index: int) -> tuple[str | None, int]:
 
 def _parse_script_argv(
     argv: list[str],
-) -> tuple[dict[str, str], str, Path, list[str]] | None:
+) -> tuple[dict[str, str], str, str, list[str]] | None:
     options: dict[str, str] = {}
     i = 0
     while i < len(argv):
@@ -249,13 +251,16 @@ def _parse_script_argv(
         return None
     binary_name = argv[i]
     script_args = argv[i + 1 :]
-    return options, binary_name, Path(script_args[0]), script_args
+    return options, binary_name, script_args[0], script_args
 
 
 def _script_dependency_paths(
     raw_value: str | None,
-    script_path: Path,
+    script_path: str | os.PathLike[str],
 ) -> list[Path]:
+    from pathlib import Path
+
+    resolved_script = Path(script_path)
     paths: list[Path] = []
     for raw_spec in (raw_value or "").split(","):
         spec = raw_spec.strip()
@@ -264,7 +269,7 @@ def _script_dependency_paths(
         raw_path, _, _selector = spec.partition(":")
         path = Path(raw_path)
         if not path.is_absolute():
-            path = script_path.parent / path
+            path = resolved_script.parent / path
         paths.append(path.expanduser().resolve(strict=False))
     return paths
 
@@ -272,17 +277,19 @@ def _script_dependency_paths(
 def _script_cache_context(
     raw_options: dict[str, str],
     binary_name: str,
-    script_path: Path,
+    script_path: str | os.PathLike[str],
     meta: dict[str, Any],
     options: Any,
 ) -> tuple[str, list[Path]] | None:
+    from pathlib import Path
+
     if set(raw_options) - {"--lib", "--binproviders", "--deps-from"}:
         return None
     base_context = warm_run_context(options)
     if base_context is None:
         return None
 
-    resolved_script = script_path.expanduser().resolve(strict=False)
+    resolved_script = Path(script_path).expanduser().resolve(strict=False)
     dependency_paths = _script_dependency_paths(
         raw_options.get("--deps-from"),
         resolved_script,
@@ -397,11 +404,11 @@ def _fingerprints_match(raw_fingerprints: object) -> bool:
         if not isinstance(raw_path, str):
             return False
         try:
-            stat_result = Path(raw_path).stat()
+            stat_result = os.stat(raw_path)
         except OSError:
             return False
         if fingerprint != {
-            "path": str(Path(raw_path).expanduser().resolve(strict=False)),
+            "path": os.path.realpath(os.path.expanduser(raw_path)),
             "size": stat_result.st_size,
             "mtime_ns": stat_result.st_mtime_ns,
             "mode": stat.S_IMODE(stat_result.st_mode),
@@ -412,14 +419,12 @@ def _fingerprints_match(raw_fingerprints: object) -> bool:
 
 
 def _cached_records(
-    lib_dir: Path,
+    lib_dir: str | os.PathLike[str],
     provider_names: list[str],
     binary_name: str,
 ):
-    from .config import load_derived_cache_text
-
     for provider_name in provider_names:
-        derived_env_path = lib_dir / provider_name / "derived.env"
+        derived_env_path = os.path.join(lib_dir, provider_name, "derived.env")
         try:
             fd = os.open(
                 derived_env_path,
@@ -455,7 +460,7 @@ def _cached_records(
                 for field in stable_fields
             ):
                 continue
-            cache = load_derived_cache_text(contents)
+            cache = _load_current_derived_cache_text(contents)
         except OSError:
             continue
         finally:
@@ -469,6 +474,45 @@ def _cached_records(
                 and _fingerprints_match(record.get("fingerprint"))
             ):
                 yield record
+
+
+def _load_current_derived_cache_text(
+    contents: str,
+) -> dict[str, dict[str, object]]:
+    prefix = "ABXPKG_DERIVED_CACHE="
+    raw_value = next(
+        (
+            line[len(prefix) :]
+            for line in contents.splitlines()
+            if line.startswith(prefix)
+        ),
+        "",
+    )
+    if raw_value.startswith("'") and raw_value.endswith("'"):
+        raw_value = raw_value[1:-1].replace("'\"'\"'", "'")
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _find_executable(name: str, path: str) -> str | None:
+    candidates = (
+        (name,)
+        if os.path.dirname(name)
+        else tuple(
+            os.path.join(directory, name) for directory in path.split(os.pathsep)
+        )
+    )
+    return next(
+        (
+            candidate
+            for candidate in candidates
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK)
+        ),
+        None,
+    )
 
 
 def _validated_cached_plan(
@@ -494,7 +538,7 @@ def _validated_cached_plan(
     resolutions = exec_plan.get("resolutions")
     if (
         not isinstance(exec_abspath, str)
-        or not Path(exec_abspath).is_absolute()
+        or not os.path.isabs(exec_abspath)
         or not os.access(exec_abspath, os.X_OK)
         or not isinstance(is_script, bool)
         or not isinstance(env, dict)
@@ -521,8 +565,6 @@ def _validated_cached_plan(
     final_env = os.environ.copy()
     final_env.update(typed_env)
     final_env["PWD"] = os.getcwd()
-    import shutil
-
     for raw_resolution in resolutions:
         if not isinstance(raw_resolution, dict):
             return None
@@ -539,15 +581,15 @@ def _validated_cached_plan(
         ):
             return None
         if selected_path:
-            selected_command = shutil.which(name, path=selected_path)
-            if selected_command is None or Path(selected_command).resolve(
-                strict=False,
-            ) != Path(abspath).resolve(strict=False):
+            selected_command = _find_executable(name, selected_path)
+            if selected_command is None or os.path.realpath(
+                selected_command,
+            ) != os.path.realpath(abspath):
                 return None
         if not (is_script and "PATH" in typed_env):
-            current_ambient = shutil.which(name, path=os.environ.get("PATH", ""))
+            current_ambient = _find_executable(name, os.environ.get("PATH", ""))
             resolved_ambient = (
-                str(Path(current_ambient).resolve(strict=False))
+                os.path.realpath(current_ambient)
                 if current_ambient is not None
                 else None
             )
@@ -585,7 +627,7 @@ def _format_cached_load(record: dict[str, object]) -> str | None:
     if (
         not isinstance(version, str)
         or not isinstance(abspath, str)
-        or not Path(abspath).is_absolute()
+        or not os.path.isabs(abspath)
         or not isinstance(provider_name, str)
         or not isinstance(bin_name, str)
     ):
@@ -606,7 +648,7 @@ def _load_cached(argv: list[str]) -> int | None:
     if len(argv) != 2 or argv[0] != "load" or argv[1].startswith("-"):
         return None
     binary_name = argv[1]
-    if Path(binary_name).is_absolute():
+    if os.path.isabs(binary_name):
         return None
 
     lib_dir = _resolve_lib_dir(None)
@@ -665,7 +707,7 @@ def _run_cached(argv: list[str]) -> int | None:
     script_parsed = _parse_script_argv(argv)
     if script_parsed is not None:
         raw_options, binary_name, script_path, script_args = script_parsed
-        if not script_path.is_file():
+        if not os.path.isfile(script_path):
             return None
         try:
             meta = parse_script_metadata(script_path)

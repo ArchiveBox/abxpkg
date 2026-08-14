@@ -3,6 +3,7 @@ from __future__ import annotations
 __package__ = "abxpkg"
 
 import os
+import sys
 
 # Keep typing-only imports off the warm CLI path.
 TYPE_CHECKING = False
@@ -394,9 +395,7 @@ def _all_provider_class_names() -> list[str]:
 
 
 def _default_provider_names() -> list[str]:
-    import platform
-
-    operating_system = platform.system().lower()
+    operating_system = sys.platform
     return [
         provider_name
         for provider_name in _PROVIDER_NAME_PRIORITY
@@ -424,6 +423,10 @@ _COMPUTED_EXPORTS = {
 
 
 def __getattr__(name: str) -> Any:
+    if name == "__all__":
+        value = list(_all_public_export_names())
+        globals()[name] = value
+        return value
     if name in _COMPUTED_EXPORTS:
         value = _COMPUTED_EXPORTS[name]()
         globals()[name] = value
@@ -445,6 +448,3 @@ def _all_public_export_names() -> tuple[str, ...]:
     ]
     _ALL_PUBLIC_EXPORT_NAMES_CACHE = tuple(dict.fromkeys(names))
     return _ALL_PUBLIC_EXPORT_NAMES_CACHE
-
-
-__all__ = list(_all_public_export_names())

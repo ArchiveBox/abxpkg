@@ -1045,6 +1045,14 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert default_second.returncode == 0, default_second.stderr
     assert "rich_click" not in default_second.stderr
     assert "pydantic" not in default_second.stderr
+    imported_modules = {
+        line.rsplit("|", 1)[-1].strip()
+        for line in default_second.stderr.splitlines()
+        if line.startswith("import time:") and "|" in line
+    }
+    assert imported_modules.isdisjoint(
+        {"pathlib", "platform", "platformdirs", "shutil"},
+    )
     assert default_elapsed < 0.1
 
     script = tmp_path / "warm-script.py"
