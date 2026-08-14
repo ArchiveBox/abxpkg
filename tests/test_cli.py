@@ -1089,7 +1089,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         '# dependencies = ["python3"]\n'
         '# [tool.abxpkg]\n# runtime_binproviders = ["uv"]\n'
         "# ///\n"
-        "import os\nprint(f\"prepared-script:{os.environ['UV_ACTIVE']}\")\n",
+        "import os\nprint(f\"prepared-script:{os.environ['UV_ACTIVE']}:{os.environ['USER']}\")\n",
     )
     prepared_script.chmod(0o755)
     prepared_env = {
@@ -1128,8 +1128,13 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         },
     )
 
+    import pwd
+
     assert prepared_first.returncode == 0, prepared_first.stderr
-    assert prepared_first.stdout.strip() == "prepared-script:1"
+    assert (
+        prepared_first.stdout.strip()
+        == f"prepared-script:1:{pwd.getpwuid(os.geteuid()).pw_name}"
+    )
     assert "rich_click" not in prepared_first.stderr
     assert "pydantic" not in prepared_first.stderr
     assert prepared_cache.stat().st_ino == prepared_stat.st_ino
