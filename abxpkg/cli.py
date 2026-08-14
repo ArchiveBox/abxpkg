@@ -467,9 +467,14 @@ def _cached_records(
     lib_dir: str | os.PathLike[str],
     provider_names: list[str],
     binary_name: str,
+    install_roots: dict[str, str] | None = None,
 ):
     for provider_name in provider_names:
-        derived_env_path = os.path.join(lib_dir, provider_name, "derived.env")
+        provider_root = (install_roots or {}).get(provider_name)
+        derived_env_path = os.path.join(
+            provider_root or os.path.join(lib_dir, provider_name),
+            "derived.env",
+        )
         try:
             fd = os.open(
                 derived_env_path,
@@ -519,6 +524,225 @@ def _cached_records(
                 and _fingerprints_match(record.get("fingerprint"))
             ):
                 yield record
+
+
+def _script_request(
+    dependency: object,
+    default_provider_names: list[str],
+) -> tuple[dict[str, object], list[str], str | None] | None:
+    request = {"name": dependency} if isinstance(dependency, str) else None
+    if isinstance(dependency, dict):
+        typed_dependency = cast(dict[str, object], dependency)
+        if typed_dependency.get("name"):
+            request = typed_dependency
+    if request is None:
+        return None
+    raw_provider_names = request.get("binproviders") or default_provider_names
+    if isinstance(raw_provider_names, str):
+        provider_names = [
+            name.strip() for name in raw_provider_names.split(",") if name.strip()
+        ]
+    elif isinstance(raw_provider_names, list):
+        provider_names = [
+            str(name).strip() for name in raw_provider_names if str(name).strip()
+        ]
+    else:
+        return None
+    if not provider_names or any(
+        re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
+    ):
+        return None
+    request = dict(request)
+    request["binproviders"] = provider_names
+    env_key = request.pop("_abxpkg_env_key", None)
+    return request, provider_names, str(env_key) if env_key else None
+
+
+def _cached_request_projection(
+    lib_dir: str | os.PathLike[str],
+    request: dict[str, object],
+    provider_names: list[str],
+) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
+    from .config import binary_request_cache_key
+
+    request_key = binary_request_cache_key(
+        request,
+        default_provider_names=provider_names,
+    )
+    install_roots: dict[str, str] = {}
+    top_level_install_root = request.get("install_root")
+    if isinstance(top_level_install_root, str) and top_level_install_root:
+        install_roots.update(
+            dict.fromkeys(provider_names, top_level_install_root),
+        )
+    raw_overrides = request.get("overrides")
+    if isinstance(raw_overrides, dict):
+        typed_overrides = cast(dict[str, object], raw_overrides)
+        for provider_name in provider_names:
+            provider_overrides = typed_overrides.get(provider_name)
+            if not isinstance(provider_overrides, dict):
+                continue
+            install_root = cast(dict[str, object], provider_overrides).get(
+                "install_root",
+            )
+            if isinstance(install_root, str) and install_root:
+                install_roots[provider_name] = install_root
+
+    for provider_name in provider_names:
+        matches = []
+        for record in _cached_records(
+            lib_dir,
+            [provider_name],
+            str(request["name"]),
+            install_roots,
+        ):
+            raw_projections = record.get("request_exec_projections")
+            projection = (
+                raw_projections.get(request_key)
+                if isinstance(raw_projections, dict)
+                else None
+            )
+            if isinstance(projection, dict):
+                matches.append((record, cast(dict[str, object], projection)))
+        if len(matches) > 1:
+            return None
+        if not matches:
+            continue
+        record, projection = matches[0]
+        if projection.get("version") != 1 or any(
+            not isinstance(projection.get(key), list)
+            or any(
+                not isinstance(layer, dict)
+                for layer in cast(list[object], projection.get(key))
+            )
+            for key in ("provider_layers", "target_layers")
+        ):
+            return None
+        if not projection.get("provider_layers"):
+            return None
+        validated = _validated_cached_plan(
+            projection.get("validation"),
+            request_key,
+        )
+        if validated is None:
+            return None
+        return record, projection, *validated
+    return None
+
+
+def _exec_cached_script_requests(
+    *,
+    lib_dir: str | os.PathLike[str],
+    provider_names: list[str],
+    binary_name: str,
+    dependencies: list[object],
+    explicit_provider_selection: bool,
+    script_args: list[str],
+) -> int | None:
+    resolved_dependencies: list[
+        tuple[dict[str, object], dict[str, object], str | None]
+    ] = []
+    target_request: dict[str, object] = {
+        "name": binary_name,
+        "binproviders": provider_names,
+    }
+    target_provider_names = provider_names
+    target_env_key: str | None = None
+
+    for dependency in dependencies:
+        parsed = _script_request(dependency, provider_names)
+        if parsed is None:
+            continue
+        request, dependency_provider_names, env_key = parsed
+        if request["name"] == binary_name:
+            target_request = request
+            target_env_key = env_key
+            if explicit_provider_selection:
+                target_request["binproviders"] = provider_names
+            else:
+                target_provider_names = dependency_provider_names
+            continue
+        resolved = _cached_request_projection(
+            lib_dir,
+            request,
+            dependency_provider_names,
+        )
+        if resolved is None:
+            return None
+        record, projection, _exec_abspath, _validation_env = resolved
+        resolved_dependencies.append((record, projection, env_key))
+
+    target = _cached_request_projection(
+        lib_dir,
+        target_request,
+        target_provider_names,
+    )
+    if target is None:
+        return None
+    target_record, target_projection, exec_abspath, target_validation_env = target
+
+    from .config import build_exec_env
+
+    final_env = os.environ.copy()
+    for record, _projection, env_key in resolved_dependencies:
+        if env_key:
+            abspath = record.get("abspath")
+            if not isinstance(abspath, str):
+                return None
+            final_env[env_key] = abspath
+    if target_env_key:
+        target_abspath = target_record.get("abspath")
+        if not isinstance(target_abspath, str):
+            return None
+        final_env[target_env_key] = target_abspath
+    dependency_layers = [
+        layer
+        for _record, projection, _env_key in resolved_dependencies
+        for layer in cast(list[dict[str, object]], projection.get("provider_layers"))
+    ]
+    target_provider_layers = cast(
+        list[dict[str, object]],
+        target_projection.get("provider_layers"),
+    )
+    target_provider_layer = target_provider_layers[0]
+    dependency_layers = [
+        layer
+        for layer in dependency_layers
+        if not (
+            layer.get("provider_name") == target_provider_layer.get("provider_name")
+            and (
+                target_provider_layer.get("install_root") is None
+                and target_provider_layer.get("bin_dir") is None
+                or (
+                    layer.get("install_root")
+                    == target_provider_layer.get("install_root")
+                    and layer.get("bin_dir") == target_provider_layer.get("bin_dir")
+                )
+            )
+        )
+    ]
+    target_layers = cast(
+        list[dict[str, object]],
+        target_projection.get("target_layers"),
+    )
+    user_env = {
+        key: target_validation_env[key]
+        for key in ("HOME", "LOGNAME", "USER")
+        if key in target_validation_env
+    }
+    final_env = build_exec_env(dependency_layers, base_env=final_env)
+    final_env = build_exec_env(
+        target_layers,
+        base_env=final_env,
+    )
+    final_env.update(user_env)
+    final_env["PWD"] = os.getcwd()
+    try:
+        os.execvpe(exec_abspath, [exec_abspath, *script_args], final_env)
+    except OSError as err:
+        print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
+        return 1
+    return 1
 
 
 def _load_current_derived_cache_text(
@@ -817,7 +1041,24 @@ def _run_cached(argv: list[str]) -> int | None:
             )
             if result is not None:
                 return result
-        return None
+        if tool_config.get("runtime_binproviders"):
+            return None
+        dependencies = [
+            *meta.get("dependencies", []),
+            *_deps_from_config_specs(
+                (raw_options.get("--deps-from", ""),),
+                base_path=os.path.dirname(os.path.realpath(script_path)),
+                lib_dir=lib_dir,
+            ),
+        ]
+        return _exec_cached_script_requests(
+            lib_dir=lib_dir,
+            provider_names=provider_names,
+            binary_name=binary_name,
+            dependencies=dependencies,
+            explicit_provider_selection=raw_names is not None,
+            script_args=script_args,
+        )
 
     parsed = _parse_warm_run_argv(argv)
     if parsed is None:

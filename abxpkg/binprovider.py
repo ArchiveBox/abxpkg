@@ -1068,7 +1068,10 @@ class BinProvider(BaseModel):
             cache.pop(cached_record_key, None)
             cached_exec_plans = {
                 key: cached_record[key]
-                for key in ("exec_plan", "script_exec_plans")
+                for key in (
+                    "exec_plan",
+                    "script_exec_plans",
+                )
                 if key in cached_record
             }
             cached_record = {
@@ -1215,13 +1218,40 @@ class BinProvider(BaseModel):
         )
         cached_record = cache.get(cache_key)
         if isinstance(cached_record, dict):
+            projection_identity_fields = (
+                "fingerprint",
+                "loaded_version",
+                "loaded_sha256",
+                "loaded_euid",
+                "provider_name",
+                "resolved_provider_name",
+                "bin_name",
+                "abspath",
+                "install_args",
+                "mtime",
+                "euid",
+            )
+            preserve_request_projections = all(
+                cached_record.get(key) == record.get(key)
+                for key in projection_identity_fields
+            )
             record.update(
                 {
                     key: cached_record[key]
-                    for key in ("exec_plan", "script_exec_plans")
+                    for key in (
+                        "exec_plan",
+                        "script_exec_plans",
+                    )
                     if key in cached_record
                 },
             )
+            if (
+                preserve_request_projections
+                and "request_exec_projections" in cached_record
+            ):
+                record["request_exec_projections"] = cached_record[
+                    "request_exec_projections"
+                ]
         if cache.get(cache_key) == record:
             if os.geteuid() == 0 and derived_env_path.stat().st_uid != self.EUID:
                 try:
@@ -1256,80 +1286,97 @@ class BinProvider(BaseModel):
         )
 
     @mutation_locked
-    def write_cached_exec_plan(
+    def write_cached_request_projection(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+        *,
+        request_key: str,
+        exec_provider: "BinProvider",
+        base_env: Mapping[str, str] | None = None,
+    ) -> None:
+        """Attach one canonically resolved binary request to its cache record."""
+
+        derived_env_path = self.derived_env_path
+        if derived_env_path is None or not derived_env_path.is_file():
+            return
+        cache = load_derived_cache(derived_env_path)
+        cache_context = self._cache_context(bin_name)
+        cache_context_hash = self._cache_context_hash(bin_name, cache_context)
+        cache_key = self._cache_key(
+            bin_name,
+            abspath,
+            cache_context_hash=cache_context_hash,
+        )
+        record = cache.get(cache_key)
+        if not isinstance(record, dict):
+            return
+        if (
+            record.get("cache_context") != cache_context
+            or record.get("cache_context_hash") != cache_context_hash
+        ):
+            return
+
+        from .config import provider_exec_env_layers
+
+        validation = self._build_cached_exec_plan(
+            bin_name,
+            abspath,
+            exec_provider=exec_provider,
+            run_context=request_key,
+            plan_key=request_key,
+            base_env=base_env,
+        )
+        if validation is None:
+            return
+        projection = {
+            "version": 1,
+            "validation": validation,
+            "provider_layers": provider_exec_env_layers([exec_provider]),
+            "target_layers": provider_exec_env_layers(
+                exec_provider.exec_env_providers(),
+            ),
+        }
+        raw_projections = record.get("request_exec_projections")
+        projections = dict(raw_projections) if isinstance(raw_projections, dict) else {}
+        if projections.get(request_key) == projection:
+            return
+        projections[request_key] = projection
+        record["request_exec_projections"] = projections
+        cache[cache_key] = record
+        try:
+            save_derived_cache(derived_env_path, cache)
+        except OSError as err:
+            logger.debug(
+                "Skipping cached request projection for %s via %s: %s",
+                bin_name,
+                self.name,
+                err,
+            )
+            return
+        if os.geteuid() == 0 and derived_env_path.stat().st_uid != self.EUID:
+            try:
+                pw_record = self.get_pw_record(self.EUID)
+                os.chown(derived_env_path, self.EUID, pw_record.pw_gid)
+            except (PermissionError, OSError, KeyError):
+                pass
+
+    def _build_cached_exec_plan(
         self,
         bin_name: BinName,
         abspath: HostBinPath,
         *,
         exec_provider: "BinProvider",
         run_context: str,
-        loaded_version: SemVer | None = None,
         plan_key: str | None = None,
         runtime_providers: Iterable["BinProvider"] | None = None,
         base_env: Mapping[str, str] | None = None,
         exec_env: Mapping[str, str] | None = None,
         extra_fingerprint_paths: Iterable[Path] = (),
         resolution_binaries: Iterable[tuple[str, HostBinPath, "BinProvider"]] = (),
-    ) -> None:
-        """Attach a validated warm-exec plan to this provider's cache record."""
-        derived_env_path = self.derived_env_path
-        install_root = self.install_root
-        if (
-            derived_env_path is None
-            or install_root is None
-            or not derived_env_path.is_file()
-            or not exec_provider.supports_cached_exec()
-        ):
-            return
-
-        cache = load_derived_cache(derived_env_path)
-        resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
-
-        def record_matches(record: object) -> bool:
-            if not isinstance(record, dict):
-                return False
-            typed_record = cast(dict[str, object], record)
-            cached_abspath = typed_record.get("abspath")
-            raw_fingerprints = typed_record.get("fingerprint")
-            if not isinstance(cached_abspath, str) or not isinstance(
-                raw_fingerprints,
-                list,
-            ):
-                return False
-            fingerprint_paths: list[Path] = []
-            for raw_fingerprint in raw_fingerprints:
-                if not isinstance(raw_fingerprint, dict):
-                    return False
-                fingerprint = cast(dict[str, object], raw_fingerprint)
-                fingerprint_path = fingerprint.get("path")
-                if not isinstance(fingerprint_path, str):
-                    return False
-                fingerprint_paths.append(Path(fingerprint_path))
-            return (
-                typed_record.get("provider_name") == self.name
-                and typed_record.get("bin_name") == str(bin_name)
-                and Path(cached_abspath).expanduser().resolve(strict=False)
-                == resolved_abspath
-                and (
-                    loaded_version is None
-                    or typed_record.get("loaded_version") == str(loaded_version)
-                )
-                and typed_record.get("resolved_provider_name") == exec_provider.name
-                and len(fingerprint_paths) == len(raw_fingerprints)
-                and raw_fingerprints == self._fingerprint_paths(fingerprint_paths)
-            )
-
-        cache_entry = next(
-            (
-                (cache_key, record)
-                for cache_key, record in cache.items()
-                if record_matches(record)
-            ),
-            None,
-        )
-        if cache_entry is None:
-            return
-        cache_key, record = cache_entry
+    ) -> dict[str, object] | None:
+        if not exec_provider.supports_cached_exec():
+            return None
 
         resolved_runtime_providers = list(
             runtime_providers or exec_provider.exec_env_providers(),
@@ -1434,9 +1481,8 @@ class BinProvider(BaseModel):
         )
         fingerprints = self._fingerprint_paths(unique_paths)
         if fingerprints is None:
-            return
-
-        exec_plan = {
+            return None
+        return {
             "version": 5,
             "script": plan_key is not None,
             "run_context": run_context,
@@ -1447,6 +1493,97 @@ class BinProvider(BaseModel):
             "resolutions": resolutions,
             "fingerprint": fingerprints,
         }
+
+    @mutation_locked
+    def write_cached_exec_plan(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+        *,
+        exec_provider: "BinProvider",
+        run_context: str,
+        loaded_version: SemVer | None = None,
+        plan_key: str | None = None,
+        runtime_providers: Iterable["BinProvider"] | None = None,
+        base_env: Mapping[str, str] | None = None,
+        exec_env: Mapping[str, str] | None = None,
+        extra_fingerprint_paths: Iterable[Path] = (),
+        resolution_binaries: Iterable[tuple[str, HostBinPath, "BinProvider"]] = (),
+    ) -> None:
+        """Attach a validated warm-exec plan to this provider's cache record."""
+        derived_env_path = self.derived_env_path
+        install_root = self.install_root
+        if (
+            derived_env_path is None
+            or install_root is None
+            or not derived_env_path.is_file()
+            or not exec_provider.supports_cached_exec()
+        ):
+            return
+
+        cache = load_derived_cache(derived_env_path)
+        resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
+
+        def record_matches(record: object) -> bool:
+            if not isinstance(record, dict):
+                return False
+            typed_record = cast(dict[str, object], record)
+            cached_abspath = typed_record.get("abspath")
+            raw_fingerprints = typed_record.get("fingerprint")
+            if not isinstance(cached_abspath, str) or not isinstance(
+                raw_fingerprints,
+                list,
+            ):
+                return False
+            fingerprint_paths: list[Path] = []
+            for raw_fingerprint in raw_fingerprints:
+                if not isinstance(raw_fingerprint, dict):
+                    return False
+                fingerprint = cast(dict[str, object], raw_fingerprint)
+                fingerprint_path = fingerprint.get("path")
+                if not isinstance(fingerprint_path, str):
+                    return False
+                fingerprint_paths.append(Path(fingerprint_path))
+            return (
+                typed_record.get("provider_name") == self.name
+                and typed_record.get("bin_name") == str(bin_name)
+                and Path(cached_abspath).expanduser().resolve(strict=False)
+                == resolved_abspath
+                and (
+                    loaded_version is None
+                    or typed_record.get("loaded_version") == str(loaded_version)
+                )
+                and typed_record.get("resolved_provider_name") == exec_provider.name
+                and len(fingerprint_paths) == len(raw_fingerprints)
+                and raw_fingerprints == self._fingerprint_paths(fingerprint_paths)
+            )
+
+        cache_entry = next(
+            (
+                (cache_key, record)
+                for cache_key, record in cache.items()
+                if record_matches(record)
+            ),
+            None,
+        )
+        if cache_entry is None:
+            return
+        cache_key, record = cache_entry
+
+        exec_plan = self._build_cached_exec_plan(
+            bin_name,
+            abspath,
+            exec_provider=exec_provider,
+            run_context=run_context,
+            plan_key=plan_key,
+            runtime_providers=runtime_providers,
+            base_env=base_env,
+            exec_env=exec_env,
+            extra_fingerprint_paths=extra_fingerprint_paths,
+            resolution_binaries=resolution_binaries,
+        )
+        if exec_plan is None:
+            return
         if plan_key is None:
             if record.get("exec_plan") == exec_plan:
                 return

@@ -1065,6 +1065,102 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     assert default_elapsed < 0.1
 
+    cached_dependencies_lib = tmp_path / "cached-dependencies-lib"
+
+    async def resolve_cached_dependencies() -> None:
+        import abxbus
+
+        from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+
+        bus = abxbus.EventBus(name="first_script_from_binary_cache")
+        BinaryService(
+            bus,
+            auto_install=False,
+            provider_names="env",
+            lib_dir=cached_dependencies_lib,
+        )
+        for binary_name, min_version in (("python3", "3.0.0"), ("git", None)):
+            await bus.emit(
+                BinaryRequestEvent(
+                    name=binary_name,
+                    binproviders="env",
+                    min_version=min_version,
+                ),
+            ).now()
+        await bus.wait_until_idle()
+
+    import asyncio
+
+    asyncio.run(resolve_cached_dependencies())
+    cached_dependency_records = load_derived_cache(
+        cached_dependencies_lib / "env" / "derived.env",
+    ).values()
+    assert all(
+        record.get("request_exec_projections") for record in cached_dependency_records
+    )
+    assert not any(
+        record.get("script_exec_plans") for record in cached_dependency_records
+    )
+
+    cached_script = tmp_path / "cached-dependencies.py"
+    cached_script.write_text(
+        '# /// script\n# dependencies = [{name = "python3", min_version = "3.0.0"}, "git"]\n# ///\n'
+        'print("cached-dependencies")\n',
+    )
+    cached_script_started_at = time.perf_counter()
+    cached_script_first = _run_abxpkg_cli(
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(cached_script),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    cached_script_elapsed = time.perf_counter() - cached_script_started_at
+
+    assert cached_script_first.returncode == 0, cached_script_first.stderr
+    assert cached_script_first.stdout.strip() == "cached-dependencies"
+    assert "rich_click" not in cached_script_first.stderr
+    assert "pydantic" not in cached_script_first.stderr
+    assert cached_script_elapsed < 0.1
+
+    changed_path = _run_abxpkg_cli(
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(cached_script),
+        env_overrides={
+            "PATH": os.pathsep.join(("/usr/bin", os.environ.get("PATH", ""))),
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
+    )
+
+    assert changed_path.returncode == 0, changed_path.stderr
+    assert changed_path.stdout.strip() == "cached-dependencies"
+    assert "rich_click" in changed_path.stderr
+
+    mismatched_script = tmp_path / "mismatched-dependency.py"
+    mismatched_script.write_text(
+        '# /// script\n# dependencies = [{name = "python3", min_version = "999.0.0"}, "git"]\n# ///\n'
+        'print("must-not-run")\n',
+    )
+    mismatched = _run_abxpkg_cli(
+        f"--lib={cached_dependencies_lib}",
+        "--binproviders=env",
+        "run",
+        "--script",
+        "python3",
+        str(mismatched_script),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert mismatched.returncode != 0
+    assert "must-not-run" not in mismatched.stdout
+    assert "rich_click" in mismatched.stderr
+
     script = tmp_path / "warm-script.py"
     script.write_text(
         '# /// script\n# dependencies = ["python3"]\n# ///\nprint("warm-script")\n',
@@ -4504,19 +4600,72 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
 
     script_env = {
         "ABXPKG_LIB_DIR": str(lib),
-        "ABXPKG_BINPROVIDERS": "env,pnpm",
         "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
         "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
+        "PYTHONPROFILEIMPORTTIME": "1",
     }
+
+    async def resolve_hook_dependencies() -> None:
+        import abxbus
+
+        from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+
+        bus = abxbus.EventBus(name="first_node_script_from_binary_cache")
+        BinaryService(bus, auto_install=True, lib_dir=lib)
+        requests = (
+            BinaryRequestEvent(
+                name="node",
+                binproviders="env,npm,apt,brew",
+                min_version="22.12.0",
+                overrides={
+                    "npm": {
+                        "install_root": str(lib / "npm" / "packages" / "node"),
+                        "install_args": ["node@22.23.1"],
+                        "postinstall_scripts": True,
+                    },
+                    "apt": {"install_args": ["nodejs", "npm"]},
+                    "brew": {"install_args": ["node"]},
+                },
+            ),
+            BinaryRequestEvent(
+                name="python3",
+                binproviders="env",
+                min_version="3.10.0",
+            ),
+            BinaryRequestEvent(
+                name="puppeteer",
+                binproviders="pnpm",
+                postinstall_scripts=False,
+                min_release_age=3,
+                overrides={
+                    "pnpm": {
+                        "install_root": str(install_root),
+                        "install_args": ["puppeteer"],
+                    },
+                },
+            ),
+        )
+        for request in requests:
+            await bus.emit(request).now()
+        await bus.wait_until_idle()
+
+    import asyncio
+
+    asyncio.run(resolve_hook_dependencies())
+    first_hook_started_at = time.perf_counter()
     proc = _run_cli(
         script,
         env_overrides=script_env,
         timeout=900,
     )
+    first_hook_elapsed = time.perf_counter() - first_hook_started_at
     warm_proc = _run_cli(script, env_overrides=script_env, timeout=60)
 
     assert proc.returncode == 0, f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     assert warm_proc.returncode == 0, warm_proc.stderr
+    assert "rich_click" not in proc.stderr
+    assert "pydantic" not in proc.stderr
+    assert first_hook_elapsed < 1.0
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     warm_payload = json.loads(warm_proc.stdout.strip().splitlines()[-1])
     assert warm_payload == payload

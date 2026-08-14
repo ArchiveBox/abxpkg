@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -13,7 +14,10 @@ if TYPE_CHECKING:
     from typing import ClassVar, Protocol
 
     class SupportsExecEnv(Protocol):
+        name: str
         PATH: str
+        install_root: Path | None
+        bin_dir: Path | None
         EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]]
         FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]]
 
@@ -27,6 +31,67 @@ if TYPE_CHECKING:
 
 DERIVED_CACHE_KEY = "ABXPKG_DERIVED_CACHE"
 _SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
+_BINARY_REQUEST_CACHE_FIELDS = (
+    "name",
+    "min_version",
+    "postinstall_scripts",
+    "min_release_age",
+    "binproviders",
+    "overrides",
+    "install_root",
+    "bin_dir",
+    "euid",
+    "dry_run",
+    "no_cache",
+    "install_timeout",
+    "version_timeout",
+    "abspath",
+    "version",
+    "install_args",
+    "packages",
+)
+
+
+def binary_request_cache_key(
+    request: Mapping[str, object],
+    *,
+    default_provider_names: Iterable[str],
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Return the exact cache identity shared by event and script requests."""
+
+    provider_names = request.get("binproviders") or default_provider_names
+    if isinstance(provider_names, str):
+        provider_names = [
+            name.strip() for name in provider_names.split(",") if name.strip()
+        ]
+    elif isinstance(provider_names, Iterable):
+        provider_names = [
+            str(name).strip() for name in provider_names if str(name).strip()
+        ]
+    else:
+        provider_names = [str(name).strip() for name in default_provider_names]
+    payload = {
+        field: request.get(field)
+        for field in _BINARY_REQUEST_CACHE_FIELDS
+        if field != "binproviders"
+    }
+    min_release_age = payload["min_release_age"]
+    if isinstance(min_release_age, (int, float)):
+        payload["min_release_age"] = float(min_release_age)
+    payload["dry_run"] = bool(payload["dry_run"])
+    payload["no_cache"] = bool(payload["no_cache"])
+    payload["binproviders"] = provider_names
+    payload["abxpkg_env"] = {
+        key: value
+        for key, value in sorted(
+            (env if env is not None else os.environ).items(),
+        )
+        if key.startswith("ABXPKG_")
+        and key not in {"ABXPKG_BINPROVIDERS", "ABXPKG_LIB_DIR"}
+    }
+    canonical = json.dumps(payload, default=str, separators=(",", ":"), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def default_abxpkg_lib_dir() -> Path:
@@ -117,7 +182,7 @@ def merge_exec_path(
 
 
 def build_exec_env(
-    providers: Iterable[SupportsExecEnv] = (),
+    providers: Iterable[SupportsExecEnv | Mapping[str, object]] = (),
     *,
     base_env: Mapping[str, str] | None = None,
     extra_env: Mapping[str, str] | None = None,
@@ -188,13 +253,40 @@ def build_exec_env(
         if provider_id in seen_providers:
             continue
         seen_providers.add(provider_id)
-
-        provider.setup_PATH()
-        provider_env = dict(provider.ENV)
+        if isinstance(provider, Mapping):
+            layer: dict[str, object] = {
+                str(key): value for key, value in provider.items()
+            }
+            raw_env = layer.get("env")
+            if not isinstance(raw_env, Mapping):
+                continue
+            provider_env = {
+                str(key): value
+                for key, value in raw_env.items()
+                if isinstance(key, str) and isinstance(value, str)
+            }
+            raw_exec_only_keys = layer.get("exec_only_env_keys")
+            exec_only_keys = (
+                raw_exec_only_keys if isinstance(raw_exec_only_keys, list) else []
+            )
+            raw_first_writer_keys = layer.get("first_writer_env_keys")
+            first_writer_keys = (
+                raw_first_writer_keys if isinstance(raw_first_writer_keys, list) else []
+            )
+            provider_path = layer.get("execution_path")
+        else:
+            provider.setup_PATH()
+            provider_env = dict(provider.ENV)
+            exec_only_keys = provider.EXEC_ONLY_ENV_KEYS
+            first_writer_keys = provider.FIRST_WRITER_ENV_KEYS
+            provider_path = provider.execution_PATH()
         if not include_exec_only_env:
-            for key in getattr(provider, "EXEC_ONLY_ENV_KEYS", ()):
-                provider_env.pop(key, None)
-        for key in provider.FIRST_WRITER_ENV_KEYS:
+            for key in exec_only_keys:
+                if isinstance(key, str):
+                    provider_env.pop(key, None)
+        for key in first_writer_keys:
+            if not isinstance(key, str):
+                continue
             if key in first_writer_provider_keys:
                 provider_env.pop(key, None)
             elif provider_env.get(key):
@@ -204,9 +296,8 @@ def build_exec_env(
             prepend_layers=provider_path_prepend_layers,
             append_layers=provider_path_append_layers,
         )
-        provider_path = provider.execution_PATH()
         if provider_path:
-            provider_path_prepend_layers.append(provider_path)
+            provider_path_prepend_layers.append(str(provider_path))
         consume_pathlike_env(provider_env)
         apply_exec_env(provider_env, env)
 
@@ -229,6 +320,39 @@ def build_exec_env(
             env[key] = merged_pathlike
 
     return env
+
+
+def provider_exec_env_layers(
+    providers: Iterable[SupportsExecEnv],
+) -> list[dict[str, object]]:
+    """Serialize provider-owned runtime environment behavior for cache reuse."""
+
+    layers: list[dict[str, object]] = []
+    seen_providers: set[int] = set()
+    for provider in providers:
+        provider_id = id(provider)
+        if provider_id in seen_providers:
+            continue
+        seen_providers.add(provider_id)
+        provider.setup_PATH()
+        layers.append(
+            {
+                "provider_name": provider.name,
+                "install_root": (
+                    str(provider.install_root)
+                    if provider.install_root is not None
+                    else None
+                ),
+                "bin_dir": str(provider.bin_dir)
+                if provider.bin_dir is not None
+                else None,
+                "env": dict(provider.ENV),
+                "execution_path": str(provider.execution_PATH()),
+                "exec_only_env_keys": sorted(provider.EXEC_ONLY_ENV_KEYS),
+                "first_writer_env_keys": sorted(provider.FIRST_WRITER_ENV_KEYS),
+            },
+        )
+    return layers
 
 
 def parse_dotenv_values(contents: str) -> dict[str, str]:

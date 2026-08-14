@@ -287,6 +287,47 @@ def _binary_from_event(event: BinaryEvent) -> Binary:
     )
 
 
+def _cache_request_projection(
+    request: BinaryRequestEvent,
+    binary: Binary,
+    *,
+    env: Mapping[str, str] | None,
+) -> None:
+    if request.no_cache or not binary.loaded_binprovider or not binary.loaded_abspath:
+        return
+    from .config import binary_request_cache_key
+
+    request_key = binary_request_cache_key(
+        request.model_dump(
+            include={
+                "name",
+                "min_version",
+                "postinstall_scripts",
+                "min_release_age",
+                "binproviders",
+                "overrides",
+                "install_root",
+                "bin_dir",
+                "euid",
+                "dry_run",
+                "no_cache",
+                "install_timeout",
+                "version_timeout",
+            },
+            mode="json",
+        ),
+        default_provider_names=_provider_names(request.binproviders),
+        env=env,
+    )
+    binary.loaded_binprovider.write_cached_request_projection(
+        binary.name,
+        binary.loaded_abspath,
+        request_key=request_key,
+        exec_provider=binary.loaded_binprovider,
+        base_env=env,
+    )
+
+
 class BinaryCacheService:
     """abxbus service that projects cached Binary objects onto BinaryRequestEvent."""
 
@@ -335,6 +376,11 @@ class BinaryCacheService:
             overrides=dict(event.overrides or cached.overrides or {}),
             base_env=event.base_env or self.base_env,
             extra_env={**dict(self.extra_env or {}), **dict(event.extra_env or {})},
+        )
+        _cache_request_projection(
+            event,
+            cached,
+            env=event.base_env or self.base_env,
         )
         await event.emit(binary_event).now()
         return binary_event.abspath
@@ -614,6 +660,11 @@ class BinaryService:
             overrides=self._overrides_for_event(request),
             base_env=self._base_env_for_event(request),
             extra_env=self._extra_env_for_event(request),
+        )
+        _cache_request_projection(
+            request,
+            binary,
+            env=self._base_env_for_event(request),
         )
         await request.emit(event).now()
         return event.abspath
