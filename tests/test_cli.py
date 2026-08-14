@@ -491,6 +491,7 @@ def test_parse_provider_names_uses_preferred_default_cli_order():
 
 def test_default_cli_sets_managed_lib_dir():
     old_lib_dir = os.environ.pop("ABXPKG_LIB_DIR", None)
+    old_providers = os.environ.pop("ABXPKG_BINPROVIDERS", None)
     options = cli_module.build_cli_options(
         None,
         lib_dir=None,
@@ -519,6 +520,10 @@ def test_default_cli_sets_managed_lib_dir():
         os.environ.pop("ABXPKG_LIB_DIR", None)
     else:
         os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
+    if old_providers is None:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
+    else:
+        os.environ["ABXPKG_BINPROVIDERS"] = old_providers
 
 
 def test_cli_lib_none_disables_managed_mode(tmp_path):
@@ -547,6 +552,7 @@ def test_cli_global_flag_disables_managed_mode(tmp_path):
 
 def test_env_lib_none_disables_managed_mode():
     old_lib_dir = os.environ.get("ABXPKG_LIB_DIR")
+    old_providers = os.environ.pop("ABXPKG_BINPROVIDERS", None)
     os.environ["ABXPKG_LIB_DIR"] = "None"
     options = cli_module.build_cli_options(
         None,
@@ -572,6 +578,10 @@ def test_env_lib_none_disables_managed_mode():
     assert cli_module.build_providers(["pip"], dry_run=True)[0].install_root is None
     if old_lib_dir is not None:
         os.environ["ABXPKG_LIB_DIR"] = old_lib_dir
+    if old_providers is None:
+        os.environ.pop("ABXPKG_BINPROVIDERS", None)
+    else:
+        os.environ["ABXPKG_BINPROVIDERS"] = old_providers
 
 
 def test_install_command_uses_env_defaults(tmp_path):
