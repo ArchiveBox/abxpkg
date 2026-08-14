@@ -1351,16 +1351,18 @@ class BinProvider(BaseModel):
                 "USER": target_pw_record.pw_name,
             },
         )
+        provider_env_keys = {"PATH"}
+        for provider in resolved_runtime_providers:
+            provider_env_keys.update(provider.ENV)
         env = {
             key: value
             for key, value in final_env.items()
-            if resolved_base_env.get(key) != value
+            if key in provider_env_keys or resolved_base_env.get(key) != value
         }
         env_input_keys = {"PATH", "NODE_PATH", "PYTHONPATH", *env}
         env_input_keys.add(f"{str(bin_name).upper().replace('-', '_')}_BINARY")
         env_input_keys.update(self.CACHE_ENV_ALIASES.get(str(bin_name), ()))
-        for provider in resolved_runtime_providers:
-            env_input_keys.update(provider.ENV)
+        env_input_keys.update(provider_env_keys)
         env_base = {key: resolved_base_env.get(key) for key in sorted(env_input_keys)}
         exec_abspath = exec_provider._exec_bin_abspath(Path(abspath))
 

@@ -1103,6 +1103,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
                 [str(_abxpkg_executable().parent), prepared_env.get("PATH", "")],
             ),
             "PYTHON3_BINARY": sys.executable,
+            "UV_ACTIVE": "1",
         },
     )
     from abxpkg import prepare_script_exec_plan
@@ -1113,10 +1114,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert prepare_script_exec_plan(prepared_script, env=prepared_env)
     assert prepared_cache.stat().st_ino == prepared_stat.st_ino
     assert prepared_cache.stat().st_mtime_ns == prepared_stat.st_mtime_ns
+    runtime_env = dict(prepared_env)
+    runtime_env.pop("UV_ACTIVE")
     prepared_first = _run_cli(
         prepared_script,
         env_overrides={
-            **prepared_env,
+            **runtime_env,
             "PATH": prepared_env["PATH"]
             + os.pathsep
             + str(prepared_lib / "env" / "bin"),
