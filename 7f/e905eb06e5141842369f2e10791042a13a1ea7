@@ -1,0 +1,24 @@
+abxpkg/binary_service.py
+  h_923c208e183a7b 9,17-33,312,314-326,331-333,659-693,718
+abxpkg/binprovider.py
+  h_923c208e183a7b 494,818-821,1419-1424,1446,1498,1505-1507
+abxpkg/binprovider_pnpm.py
+  h_923c208e183a7b 65-67
+abxpkg/cli.py
+  h_923c208e183a7b 520-528,533-539,551,555-559,569,573,670,673-676,681-683,823,833,842,852-856,861-865
+tests/test_binary_service.py
+  h_923c208e183a7b 5,202-248
+tests/test_cli.py
+  h_923c208e183a7b 23,908-909,917-918,1016,1054-1055,1060,1075,1080,1099,1124-1132,1139-1140,1179-1286,1303-1304,1312-1313,4701,4712,4721,4785,4788-4790,4795,4799-4827,4830-4831,4849-4867
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7fe905eb06e5141842369f2e10791042a13a1ea7",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
