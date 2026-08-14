@@ -3917,8 +3917,6 @@ class EnvProvider(BinProvider):
             self._append_unique_provider(providers, provider)
             for runtime_provider in provider.exec_env_providers():
                 self._append_unique_provider(providers, runtime_provider)
-        for provider in super().exec_env_providers():
-            self._append_unique_provider(providers, provider)
         return providers
 
     def setup_PATH(self, no_cache: bool = False) -> None:

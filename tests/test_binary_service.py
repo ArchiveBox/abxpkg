@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -196,6 +197,38 @@ def _real_python_binary(lib_dir: Path) -> Binary:
     binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
     assert binary.loaded_abspath is not None
     return binary
+
+
+def test_binary_event_env_does_not_prepend_shared_host_projections(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+
+    runtime_bin = str(Path(sys.executable).parent)
+
+    async def run() -> BinaryEvent:
+        bus = abxbus.EventBus(name="test_binary_event_env_keeps_caller_runtime")
+        BinaryService(bus, lib_dir=tmp_path / "lib", auto_install=False)
+        request = await bus.emit(
+            BinaryRequestEvent(
+                name="python3",
+                binproviders="env",
+                base_env={"PATH": f"{runtime_bin}{os.pathsep}{os.defpath}"},
+            ),
+        ).now()
+        event = await bus.find(
+            BinaryEvent,
+            child_of=request,
+            past=True,
+            future=False,
+            name="python3",
+        )
+        assert isinstance(event, BinaryEvent)
+        return event
+
+    event = asyncio.run(run())
+
+    assert event.env["PATH"].split(os.pathsep)[0] == runtime_bin
 
 
 def test_binary_cache_service_emits_cached_binary_before_resolver(

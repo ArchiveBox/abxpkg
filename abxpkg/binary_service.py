@@ -231,7 +231,7 @@ def _binary_event_from_binary(
         if isinstance(cached_env, Mapping)
         else (
             BinProvider.build_exec_env(
-                providers=[provider],
+                providers=provider.exec_env_providers(),
                 base_env=base_env,
                 extra_env=dict(extra_env or {}),
             )
