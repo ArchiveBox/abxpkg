@@ -1130,6 +1130,29 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert equivalent_cache.stat().st_ino == equivalent_stat.st_ino
     assert equivalent_cache.stat().st_mtime_ns == equivalent_stat.st_mtime_ns
 
+    provider_precedence_args = tuple(
+        arg
+        for arg in equivalent_args(equivalent_hooks[0])
+        if arg != "--binproviders=env"
+    )
+    implicit_providers = _run_abxpkg_cli(*provider_precedence_args)
+    explicit_providers = _run_abxpkg_cli(
+        f"--binproviders={','.join(cli_module.parse_provider_names(None))}",
+        *provider_precedence_args,
+    )
+    provider_precedence_plans = [
+        plan
+        for record in load_derived_cache(equivalent_cache).values()
+        for plan in cast(
+            dict[str, object],
+            record.get("script_exec_plans", {}),
+        ).values()
+    ]
+
+    assert implicit_providers.returncode == 0, implicit_providers.stderr
+    assert explicit_providers.returncode == 0, explicit_providers.stderr
+    assert len(provider_precedence_plans) == 3
+
     prepared_lib = tmp_path / "prepared-script-lib"
     prepared_script = tmp_path / "prepared-script.py"
     prepared_script.write_text(

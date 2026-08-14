@@ -327,6 +327,7 @@ def _script_cache_context(
     script_path: str | os.PathLike[str],
     meta: dict[str, Any],
     options: Any,
+    explicit_provider_selection: bool,
 ) -> str | None:
     from pathlib import Path
 
@@ -357,6 +358,7 @@ def _script_cache_context(
             "base": json.loads(base_context),
             "binary_name": binary_name,
             "dependencies": dependencies,
+            "explicit_provider_selection": explicit_provider_selection,
             "metadata": meta,
             "tool_env": {name: os.environ.get(name) for name in tool_env_names},
         },
@@ -790,6 +792,7 @@ def _run_cached(argv: list[str]) -> int | None:
             script_path,
             meta,
             ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+            explicit_provider_selection=raw_names is not None,
         )
         if cache_context is None:
             return None

@@ -2043,6 +2043,7 @@ def _prepare_script_execution(
         script_path,
         meta,
         run_options,
+        explicit_provider_selection,
     )
 
     dependencies = [
@@ -2257,6 +2258,7 @@ def prepare_script_exec_plan(
             script_path,
             meta,
             run_options,
+            explicit_provider_selection,
         )
         if cache_context is not None:
             import hashlib
