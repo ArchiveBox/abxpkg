@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 from pathlib import Path
 
 import abxbus
@@ -73,7 +74,7 @@ def test_binary_service_reloads_managed_install_through_env(
             assert resolved_event.binproviders == "env,apt"
             assert resolved_event.binprovider == "env"
             assert resolved_event.env["PATH"].split(os.pathsep)[0] == str(
-                projected_abspath.parent,
+                Path(sys.executable).parent,
             )
         assert projected_abspath.is_symlink()
         assert projected_abspath.resolve().is_file()
