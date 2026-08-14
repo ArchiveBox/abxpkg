@@ -251,6 +251,44 @@ class TestEnvProvider:
         assert derived_env_path.stat().st_ino == cache_stat.st_ino
         assert derived_env_path.stat().st_mtime_ns == cache_stat.st_mtime_ns
 
+    def test_warm_load_reuses_valid_binary_after_unchanged_broken_path_entry(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_git = Path(test_machine.require_tool("git"))
+        false_abspath = shutil.which("false")
+        assert false_abspath is not None
+        host_false = Path(false_abspath)
+        shadow_bin = tmp_path / "shadow" / "bin"
+        shadow_bin.mkdir(parents=True)
+        (shadow_bin / "git").symlink_to(host_false)
+        install_root = tmp_path / "lib" / "env"
+        host_path = os.pathsep.join((str(shadow_bin), str(host_git.parent)))
+
+        seeded = EnvProvider(install_root=install_root, PATH=host_path).load("git")
+        assert seeded is not None
+        assert seeded.loaded_abspath is not None
+        assert seeded.loaded_abspath.resolve() == host_git.resolve()
+
+        derived_env_path = install_root / "derived.env"
+        cache_stat = derived_env_path.stat()
+        fresh = EnvProvider(install_root=install_root, PATH=host_path)
+        profiler = cProfile.Profile()
+        profiler.enable()
+        loaded = fresh.load("git")
+        profiler.disable()
+
+        assert loaded is not None
+        assert loaded.loaded_abspath == seeded.loaded_abspath
+        assert not any(
+            entry.callcount
+            for entry in profiler.getstats()
+            if entry.code is EnvProvider._get_version_at_abspath.__code__
+        )
+        assert derived_env_path.stat().st_ino == cache_stat.st_ino
+        assert derived_env_path.stat().st_mtime_ns == cache_stat.st_mtime_ns
+
     def test_installer_binary_uses_fixed_version_override(self):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 

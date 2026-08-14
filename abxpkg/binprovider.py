@@ -3930,54 +3930,6 @@ class EnvProvider(BinProvider):
             sort_keys=True,
         )
 
-    def cached_binary_state_mismatch(
-        self,
-        bin_name: BinName,
-        cached_record: Mapping[str, object],
-    ) -> bool:
-        cached_abspath = cached_record.get("abspath")
-        if not isinstance(cached_abspath, str):
-            return True
-        if (
-            self.bin_dir is None
-            or Path(cached_abspath).parent != self.bin_dir
-            or cached_record.get("resolved_provider_name") != self.name
-        ):
-            return False
-
-        bin_name_str = str(bin_name)
-        manual = os.environ.get(f"{bin_name_str.upper()}_BINARY")
-        if bin_name_str in {"python", "python3"}:
-            manual = manual or os.environ.get("PYTHON_BINARY")
-            current_host = Path(manual).expanduser() if manual else Path(sys.executable)
-        else:
-            search_paths = [
-                entry
-                for entry in str(self.PATH or "").split(os.pathsep)
-                if entry and (self.bin_dir is None or Path(entry) != self.bin_dir)
-            ]
-            current_host = None
-            for candidate_name in self._host_candidate_names(bin_name_str):
-                current_host = next(
-                    (
-                        Path(abspath)
-                        for abspath in bin_abspaths(
-                            candidate_name,
-                            PATH=os.pathsep.join(search_paths),
-                        )
-                        if not self._is_managed_by_other_provider(abspath)
-                    ),
-                    None,
-                )
-                if current_host is not None:
-                    break
-        if current_host is None or not current_host.is_file():
-            return False
-        projected_host = self._host_projection_target(Path(cached_abspath))
-        return current_host.resolve(strict=False) != projected_host.resolve(
-            strict=False,
-        )
-
     def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
@@ -4139,6 +4091,39 @@ class EnvProvider(BinProvider):
         bin_name_str = str(bin_name)
         aliases = self.HOST_BINARY_ALIASES.get(bin_name_str, ())
         return tuple(dict.fromkeys((bin_name_str, *aliases)))
+
+    def _host_candidates(self, bin_name: BinName | str) -> list[HostBinPath]:
+        search_path = os.pathsep.join(
+            entry
+            for entry in str(self.PATH or "").split(os.pathsep)
+            if entry and (self.bin_dir is None or Path(entry) != self.bin_dir)
+        )
+        candidates: list[HostBinPath] = []
+        for candidate_name in self._host_candidate_names(bin_name):
+            for abspath in bin_abspaths(candidate_name, PATH=search_path):
+                if self._is_managed_by_other_provider(abspath):
+                    continue
+                if abspath not in candidates:
+                    candidates.append(abspath)
+        return candidates
+
+    def get_cache_info(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath,
+    ) -> dict[str, list[Path]] | None:
+        cache_info = super().get_cache_info(bin_name, abspath)
+        if cache_info is None or str(bin_name) in {"python", "python3"}:
+            return cache_info
+        projected_path = Path(abspath).expanduser().absolute()
+        if self.bin_dir is None or projected_path.parent != self.bin_dir:
+            return cache_info
+
+        # The selected target stays first because its stat owns the Binary
+        # metadata. The ordered host candidates invalidate resolution when a
+        # PATH entry appears, disappears, moves, or changes without probes.
+        cache_info["fingerprint_paths"].extend(self._host_candidates(bin_name))
+        return cache_info
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:
         # EnvProvider exposes stable managed links under ABXPKG_LIB_DIR/env/bin so
@@ -4409,32 +4394,7 @@ class EnvProvider(BinProvider):
                 # projection after that single validation fails.
                 return projected_abspath
 
-        search_paths = []
-        for entry in str(self.PATH or "").split(os.pathsep):
-            if not entry:
-                continue
-            if self.bin_dir is not None and Path(entry) == self.bin_dir:
-                continue
-            search_paths.append(entry)
-
-        candidates: list[HostBinPath] = []
-        for candidate_name in self._host_candidate_names(bin_name_str):
-            for abspath in bin_abspaths(
-                candidate_name,
-                PATH=os.pathsep.join(search_paths),
-            ):
-                if self.bin_dir is not None and Path(abspath).parent == self.bin_dir:
-                    continue
-                # EnvProvider projects binaries discovered from the host OS into
-                # ``ABXPKG_LIB_DIR/env/bin``. Paths owned by another managed
-                # provider are already part of that provider's runtime and must
-                # fall through to it instead of being reverse-linked into env/bin.
-                # In particular, pnpm's generated shell launchers resolve package
-                # files relative to $0 and break when invoked through such a link.
-                if self._is_managed_by_other_provider(abspath):
-                    continue
-                if abspath not in candidates:
-                    candidates.append(abspath)
+        candidates = self._host_candidates(bin_name_str)
 
         projection_providers = list(self._projection_providers)
         for abspath in candidates:
