@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
@@ -203,10 +204,13 @@ def test_binary_service_request_projection_uses_effective_service_options(
     tmp_path: Path,
 ) -> None:
     from abxpkg.binary_service import BinaryRequestEvent, BinaryService
-    from abxpkg.config import binary_request_cache_key, load_derived_cache
+    from abxpkg.config import (
+        binary_request_cache_key,
+        load_derived_cache,
+        save_derived_cache,
+    )
 
     lib_dir = tmp_path / "lib"
-    request = BinaryRequestEvent(name="python3", binproviders="env")
 
     async def run() -> None:
         bus = abxbus.EventBus(name="test_effective_service_projection")
@@ -216,8 +220,9 @@ def test_binary_service_request_projection_uses_effective_service_options(
             lib_dir=lib_dir,
             min_version="3.0.0",
         )
-        await bus.emit(request).now()
+        await bus.emit(BinaryRequestEvent(name="python3", binproviders="env")).now()
         await bus.wait_until_idle()
+        await bus.destroy(clear=False)
 
     asyncio.run(run())
 
@@ -244,6 +249,35 @@ def test_binary_service_request_projection_uses_effective_service_options(
 
     assert effective_key in projection_keys
     assert raw_key not in projection_keys
+
+    def request_projections(record: dict[str, Any]) -> dict[str, Any]:
+        projections = record.get("request_exec_projections")
+        return (
+            cast(dict[str, Any], projections) if isinstance(projections, dict) else {}
+        )
+
+    cache_path = lib_dir / "env" / "derived.env"
+    cache = load_derived_cache(cache_path)
+    record = next(
+        record
+        for record in cache.values()
+        if effective_key in request_projections(record)
+    )
+    projections = request_projections(record)
+    stale_projection = deepcopy(projections[effective_key])
+    stale_projection["validation"]["fingerprint"][0]["mtime_ns"] = 0
+    projections["stale-request"] = stale_projection
+    save_derived_cache(cache_path, cache)
+    asyncio.run(run())
+
+    refreshed = load_derived_cache(cache_path)
+    refreshed_projections = next(
+        request_projections(record)
+        for record in refreshed.values()
+        if effective_key in request_projections(record)
+    )
+    assert effective_key in refreshed_projections
+    assert "stale-request" not in refreshed_projections
 
 
 def test_binary_event_env_does_not_prepend_shared_host_projections(

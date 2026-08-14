@@ -1344,7 +1344,37 @@ class BinProvider(BaseModel):
         }
         raw_projections = record.get("request_exec_projections")
         projections = dict(raw_projections) if isinstance(raw_projections, dict) else {}
-        if projections.get(request_key) == projection:
+        projections_changed = False
+        for existing_key, existing_projection in tuple(projections.items()):
+            if not isinstance(existing_projection, dict):
+                projections.pop(existing_key)
+                projections_changed = True
+                continue
+            existing_validation = existing_projection.get("validation")
+            if not isinstance(existing_validation, dict):
+                projections.pop(existing_key)
+                projections_changed = True
+                continue
+            raw_fingerprints = existing_validation.get("fingerprint")
+            if not isinstance(raw_fingerprints, list):
+                projections.pop(existing_key)
+                projections_changed = True
+                continue
+            fingerprint_paths = []
+            for raw_fingerprint in raw_fingerprints:
+                if not isinstance(raw_fingerprint, dict) or not isinstance(
+                    raw_fingerprint.get("path"),
+                    str,
+                ):
+                    fingerprint_paths = []
+                    break
+                fingerprint_paths.append(Path(raw_fingerprint["path"]))
+            if not fingerprint_paths or raw_fingerprints != self._fingerprint_paths(
+                fingerprint_paths,
+            ):
+                projections.pop(existing_key)
+                projections_changed = True
+        if not projections_changed and projections.get(request_key) == projection:
             return
         projections[request_key] = projection
         record["request_exec_projections"] = projections
