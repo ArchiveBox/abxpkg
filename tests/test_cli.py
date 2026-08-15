@@ -1091,6 +1091,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     default_cache = tmp_path / "default-lib" / "env" / "derived.env"
     default_cache_stat = default_cache.stat()
+    default_script_started_at = time.perf_counter()
     default_script_first = _run_abxpkg_cli(
         f"--lib={tmp_path / 'default-lib'}",
         "run",
@@ -1099,6 +1100,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         str(default_script),
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    default_script_elapsed = time.perf_counter() - default_script_started_at
 
     assert default_script_first.returncode == 0, default_script_first.stderr
     assert default_script_first.stdout.strip() == "default-script"
@@ -1106,6 +1108,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert "pydantic" not in default_script_first.stderr
     assert default_cache.stat().st_ino == default_cache_stat.st_ino
     assert default_cache.stat().st_mtime_ns == default_cache_stat.st_mtime_ns
+    assert default_script_elapsed < 0.1
 
     cached_dependencies_lib = tmp_path / "cached-dependencies-lib"
 
