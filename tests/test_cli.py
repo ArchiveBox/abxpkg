@@ -1089,11 +1089,20 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     default_script.write_text(
         '# /// script\n# dependencies = []\n# ///\nprint("default-script")\n',
     )
-    default_cache = tmp_path / "default-lib" / "env" / "derived.env"
+    absolute_lib = tmp_path / "absolute-lib"
+    absolute_python = tmp_path / "python3"
+    absolute_python.symlink_to(sys.executable)
+    absolute_load = _run_abxpkg_cli(
+        f"--lib={absolute_lib}",
+        "load",
+        str(absolute_python),
+    )
+    assert absolute_load.returncode == 0, absolute_load.stderr
+    default_cache = absolute_lib / "env" / "derived.env"
     default_cache_stat = default_cache.stat()
     default_script_started_at = time.perf_counter()
     default_script_first = _run_abxpkg_cli(
-        f"--lib={tmp_path / 'default-lib'}",
+        f"--lib={absolute_lib}",
         "run",
         "--script",
         "python3",
