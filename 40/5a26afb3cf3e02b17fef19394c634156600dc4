@@ -1,0 +1,16 @@
+abxpkg/click_cli.py
+  h_923c208e183a7b 1297,1303-1313,1322-1327,1358,2402
+tests/test_cli.py
+  h_923c208e183a7b 1088-1109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "405a26afb3cf3e02b17fef19394c634156600dc4",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
