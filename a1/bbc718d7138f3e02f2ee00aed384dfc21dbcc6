@@ -1,0 +1,22 @@
+abxpkg/cli.py
+  h_923c208e183a7b 318-329,451,481-487,494-495,499-539,570,580-581,591,593,597-598,605,609-610
+abxpkg/config.py
+  h_923c208e183a7b 631,676,685,727,790
+pyproject.toml
+  h_923c208e183a7b 3
+tests/test_cli.py
+  h_923c208e183a7b 1293-1296,1298-1302,1310-1311,1322-1323,1327-1331,1334-1336,1355-1359,1363
+uv.lock
+  h_923c208e183a7b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a1bbc718d7138f3e02f2ee00aed384dfc21dbcc6",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
