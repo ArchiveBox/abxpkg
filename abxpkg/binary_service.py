@@ -494,6 +494,11 @@ class BinaryService:
         if existing is not None:
             return existing.abspath
 
+        cached = self._cached_binary_event(event)
+        if cached is not None:
+            await event.emit(cached).now()
+            return cached.abspath
+
         try:
             loaded = await asyncio.to_thread(self._load, event)
         except BinaryLoadError:
@@ -532,6 +537,55 @@ class BinaryService:
     def _load(self, event: BinaryRequestEvent) -> Binary:
         return self._binary_for_event(event).load(
             no_cache=self._no_cache_for_event(event),
+        )
+
+    def _cached_binary_event(self, event: BinaryRequestEvent) -> BinaryEvent | None:
+        if self._no_cache_for_event(event):
+            return None
+        from .config import (
+            _load_cached_request_projection,
+            build_exec_env,
+            default_abxpkg_lib_dir,
+        )
+
+        provider_names = self._provider_names(event.binproviders)
+        cached = _load_cached_request_projection(
+            event.lib_dir or self.lib_dir or default_abxpkg_lib_dir(),
+            self._projection_request_for_event(event),
+            provider_names,
+            base_env=self._base_env_for_event(event),
+        )
+        if cached is None:
+            return None
+        record, _projection, abspath, cached_env = cached
+        extra_env = self._extra_env_for_event(event)
+        raw_mtime = record.get("mtime")
+        raw_euid = record.get("loaded_euid")
+        return BinaryEvent(
+            name=event.name,
+            description=self._description_for_event(event),
+            abspath=abspath,
+            version=(
+                str(record["loaded_version"])
+                if record.get("loaded_version") is not None
+                else ""
+            ),
+            sha256=(
+                str(record["loaded_sha256"])
+                if record.get("loaded_sha256") is not None
+                else ""
+            ),
+            mtime=raw_mtime if isinstance(raw_mtime, int) else None,
+            euid=raw_euid if isinstance(raw_euid, int) else None,
+            binproviders=",".join(provider_names),
+            binprovider=str(
+                record.get("resolved_provider_name")
+                or record.get("provider_name")
+                or "",
+            ),
+            overrides=self._overrides_for_event(event),
+            env=build_exec_env([], base_env=cached_env, extra_env=extra_env),
+            extra_context=dict(event.extra_context),
         )
 
     @retry(

@@ -2,7 +2,7 @@ import asyncio
 import os
 import subprocess
 import sys
-from copy import deepcopy
+import threading
 from pathlib import Path
 from typing import Any, cast
 
@@ -274,9 +274,12 @@ def test_binary_service_request_projection_uses_effective_service_options(
     )
 
     lib_dir = tmp_path / "lib"
+    run_id = 0
 
     async def run(*, dry_run: bool = False) -> None:
-        bus = abxbus.EventBus(name="test_effective_service_projection")
+        nonlocal run_id
+        run_id += 1
+        bus = abxbus.EventBus(name=f"test_effective_service_projection_{run_id}")
         BinaryService(
             bus,
             auto_install=False,
@@ -315,6 +318,23 @@ def test_binary_service_request_projection_uses_effective_service_options(
     assert effective_key in projection_keys
     assert raw_key not in projection_keys
 
+    binary_load_calls = 0
+
+    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
+        del arg
+        nonlocal binary_load_calls
+        if event == "call" and frame.f_code is BinaryService._load.__code__:
+            binary_load_calls += 1
+
+    sys.setprofile(count_binary_loads)
+    threading.setprofile(count_binary_loads)
+    try:
+        asyncio.run(run())
+    finally:
+        sys.setprofile(None)
+        threading.setprofile(None)
+    assert binary_load_calls == 0
+
     cache_before_dry_run = load_derived_cache(lib_dir / "env" / "derived.env")
     asyncio.run(run(dry_run=True))
     assert load_derived_cache(lib_dir / "env" / "derived.env") == cache_before_dry_run
@@ -333,9 +353,7 @@ def test_binary_service_request_projection_uses_effective_service_options(
         if effective_key in request_projections(record)
     )
     projections = request_projections(record)
-    stale_projection = deepcopy(projections[effective_key])
-    stale_projection["validation"]["fingerprint"][0]["mtime_ns"] = 0
-    projections["stale-request"] = stale_projection
+    projections[effective_key]["validation"]["fingerprint"][0]["mtime_ns"] = 0
     save_derived_cache(cache_path, cache)
     asyncio.run(run())
 
@@ -346,7 +364,10 @@ def test_binary_service_request_projection_uses_effective_service_options(
         if effective_key in request_projections(record)
     )
     assert effective_key in refreshed_projections
-    assert "stale-request" not in refreshed_projections
+    assert (
+        refreshed_projections[effective_key]["validation"]["fingerprint"][0]["mtime_ns"]
+        > 0
+    )
 
 
 def test_binary_event_env_does_not_prepend_shared_host_projections(
