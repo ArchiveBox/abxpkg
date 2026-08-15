@@ -715,7 +715,12 @@ def _validated_cached_plan(
         resolved_ambient = (
             os.path.realpath(current_ambient) if current_ambient is not None else None
         )
-        if resolved_ambient != ambient_abspath and not (is_script and selected_path):
+        projected_ambient = (
+            is_script
+            and ambient_abspath is None
+            and resolved_ambient == os.path.realpath(abspath)
+        )
+        if resolved_ambient != ambient_abspath and not projected_ambient:
             return None
     return exec_abspath, final_env
 
