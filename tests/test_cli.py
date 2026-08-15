@@ -1165,6 +1165,17 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         record.get("script_exec_plans") for record in cached_dependency_records
     )
     cached_dependencies_cache = cached_dependencies_lib / "env" / "derived.env"
+    cached_dependencies = load_derived_cache(cached_dependencies_cache)
+    python_record = next(
+        record
+        for record in cached_dependencies.values()
+        if record.get("bin_name") == "python3"
+    )
+    stale_euid_record = json.loads(json.dumps(python_record))
+    for projection in stale_euid_record["request_exec_projections"].values():
+        projection["validation"]["euid"] = os.geteuid() + 1
+    cached_dependencies["stale-cross-euid-projection"] = stale_euid_record
+    save_derived_cache(cached_dependencies_cache, cached_dependencies)
     cached_dependencies_stat = cached_dependencies_cache.stat()
 
     cached_script = tmp_path / "cached-dependencies.py"

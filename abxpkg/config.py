@@ -793,34 +793,34 @@ def _load_cached_request_projection(
                 if isinstance(raw_projections, dict)
                 else None
             )
-            if isinstance(projection, dict):
-                matches.append((record, cast(dict[str, object], projection)))
+            if not isinstance(projection, dict):
+                continue
+            typed_projection = cast(dict[str, object], projection)
+            if typed_projection.get("version") != 1 or any(
+                not isinstance(typed_projection.get(key), list)
+                or any(
+                    not isinstance(layer, dict)
+                    for layer in cast(list[object], typed_projection.get(key))
+                )
+                for key in ("provider_layers", "target_layers")
+            ):
+                continue
+            if not typed_projection.get("provider_layers"):
+                continue
+            validated = _validated_cached_plan(
+                typed_projection.get("validation"),
+                request_key,
+                base_env=current_env,
+                ignored_env_base_keys=ignored_env_base_keys,
+                require_executable=False,
+            )
+            if validated is not None:
+                matches.append((record, typed_projection, *validated))
         if len(matches) > 1:
             return None
         if not matches:
             continue
-        record, projection = matches[0]
-        if projection.get("version") != 1 or any(
-            not isinstance(projection.get(key), list)
-            or any(
-                not isinstance(layer, dict)
-                for layer in cast(list[object], projection.get(key))
-            )
-            for key in ("provider_layers", "target_layers")
-        ):
-            return None
-        if not projection.get("provider_layers"):
-            return None
-        validated = _validated_cached_plan(
-            projection.get("validation"),
-            request_key,
-            base_env=current_env,
-            ignored_env_base_keys=ignored_env_base_keys,
-            require_executable=False,
-        )
-        if validated is None:
-            return None
-        return record, projection, *validated
+        return matches[0]
     return None
 
 
