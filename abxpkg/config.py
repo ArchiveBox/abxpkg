@@ -102,6 +102,21 @@ def binary_request_cache_key(
     min_release_age = payload["min_release_age"]
     if isinstance(min_release_age, (int, float)):
         payload["min_release_age"] = float(min_release_age)
+    raw_overrides = payload["overrides"]
+    if isinstance(raw_overrides, Mapping):
+        payload["overrides"] = {
+            provider_name: {
+                key: (
+                    float(value)
+                    if key == "min_release_age" and isinstance(value, (int, float))
+                    else value
+                )
+                for key, value in provider_overrides.items()
+            }
+            if isinstance(provider_overrides, Mapping)
+            else provider_overrides
+            for provider_name, provider_overrides in raw_overrides.items()
+        }
     if payload["overrides"] == {}:
         payload["overrides"] = None
     payload["dry_run"] = bool(payload["dry_run"])
@@ -531,6 +546,8 @@ def _cached_records(
     provider_names: list[str],
     binary_name: str,
     install_roots: dict[str, str] | None = None,
+    *,
+    require_executable: bool = True,
 ):
     for provider_name in provider_names:
         default_root = os.path.join(lib_dir, provider_name)
@@ -598,7 +615,7 @@ def _cached_records(
                     and record.get("bin_name") == binary_name
                     and isinstance(record_abspath, str)
                     and os.path.isabs(record_abspath)
-                    and os.access(record_abspath, os.X_OK)
+                    and (not require_executable or os.access(record_abspath, os.X_OK))
                     and isinstance(primary_fingerprint, dict)
                     and os.path.realpath(record_abspath)
                     == cast(dict[str, object], primary_fingerprint).get("path")
@@ -631,6 +648,7 @@ def _validated_cached_plan(
     *,
     base_env: Mapping[str, str] | None = None,
     ignored_env_base_keys: Iterable[str] = (),
+    require_executable: bool = True,
 ) -> tuple[str, dict[str, str]] | None:
     if os.getuid() != os.geteuid() or not isinstance(raw_plan, dict):
         return None
@@ -651,7 +669,7 @@ def _validated_cached_plan(
     if (
         not isinstance(exec_abspath, str)
         or not os.path.isabs(exec_abspath)
-        or not os.access(exec_abspath, os.X_OK)
+        or (require_executable and not os.access(exec_abspath, os.X_OK))
         or not isinstance(is_script, bool)
         or not isinstance(env, dict)
         or not isinstance(env_base, dict)
@@ -760,11 +778,14 @@ def _load_cached_request_projection(
 
     for provider_name in provider_names:
         matches = []
+        # Dependency requests may resolve non-executable artifacts such as
+        # browser extension metadata or importable module entrypoints.
         for record in _cached_records(
             lib_dir,
             [provider_name],
             str(request["name"]),
             install_roots,
+            require_executable=False,
         ):
             raw_projections = record.get("request_exec_projections")
             projection = (
@@ -795,6 +816,7 @@ def _load_cached_request_projection(
             request_key,
             base_env=current_env,
             ignored_env_base_keys=ignored_env_base_keys,
+            require_executable=False,
         )
         if validated is None:
             return None

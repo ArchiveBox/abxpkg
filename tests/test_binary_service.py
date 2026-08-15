@@ -279,6 +279,21 @@ def test_binary_request_cache_key_ignores_operational_cache_env() -> None:
         )
         == base_key
     )
+    assert binary_request_cache_key(
+        {
+            **request,
+            "overrides": {"env": {"min_release_age": 0}},
+        },
+        default_provider_names=["env"],
+        env={},
+    ) == binary_request_cache_key(
+        {
+            **request,
+            "overrides": {"env": {"min_release_age": 0.0}},
+        },
+        default_provider_names=["env"],
+        env={},
+    )
 
 
 def test_binary_service_request_projection_uses_effective_service_options(

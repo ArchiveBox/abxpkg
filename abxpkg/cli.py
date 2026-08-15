@@ -612,6 +612,8 @@ def _exec_cached_script_requests(
     if target is None:
         return None
     target_record, target_projection, exec_abspath, target_validation_env = target
+    if not os.access(exec_abspath, os.X_OK):
+        return None
 
     from .config import build_exec_env
 

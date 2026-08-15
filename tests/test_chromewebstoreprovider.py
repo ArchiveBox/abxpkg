@@ -1,9 +1,15 @@
+import asyncio
 import json
+import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
+import abxbus
+
 from abxpkg import Binary, ChromeWebstoreProvider
+from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
 
 PACKAGED_CHROMEWEBSTORE_UTILS_PATH = (
@@ -71,7 +77,7 @@ class TestChromeWebstoreProvider:
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            install_root = Path(temp_dir) / "chromewebstore-root"
+            install_root = (Path(temp_dir) / "chromewebstore-root").resolve()
             provider = ChromeWebstoreProvider.model_validate(
                 {
                     "install_root": install_root,
@@ -96,6 +102,75 @@ class TestChromeWebstoreProvider:
             assert bin_dir == install_root / "extensions"
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.is_relative_to(bin_dir)
+            assert not os.access(installed.loaded_abspath, os.X_OK)
+
+            lib_dir = Path(temp_dir) / "lib"
+            projection_overrides = {
+                "chromewebstore": {
+                    "install_root": str(install_root),
+                    "install_args": [UBLOCK_WEBSTORE_ID, "--name=ublock"],
+                },
+            }
+
+            async def cache_script_dependencies() -> None:
+                bus = abxbus.EventBus(name="chromewebstore_script_dependency")
+                BinaryService(bus, auto_install=False, lib_dir=lib_dir)
+                await bus.emit(
+                    BinaryRequestEvent(name="python3", binproviders="env"),
+                ).now()
+                await bus.emit(
+                    BinaryRequestEvent(
+                        name="ublock",
+                        binproviders="env,chromewebstore",
+                        overrides=projection_overrides,
+                    ),
+                ).now()
+                await bus.wait_until_idle()
+                await bus.destroy(clear=False)
+
+            asyncio.run(cache_script_dependencies())
+
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "required_binaries": [
+                            {
+                                "name": "ublock",
+                                "binproviders": "env,chromewebstore",
+                                "overrides": projection_overrides,
+                            },
+                        ],
+                    },
+                ),
+            )
+            script_path = Path(temp_dir) / "hook.py"
+            script_path.write_text(
+                '# /// script\n# ///\nprint("projected-extension")\n',
+            )
+            abxpkg = Path(sys.executable).parent / "abxpkg"
+            assert abxpkg.is_file()
+            projected = subprocess.run(
+                [
+                    str(abxpkg),
+                    f"--lib={lib_dir}",
+                    "--binproviders=env",
+                    "run",
+                    "--script",
+                    f"--deps-from={config_path}:required_binaries",
+                    "python3",
+                    str(script_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env={**os.environ, "PYTHONPROFILEIMPORTTIME": "1"},
+            )
+
+            assert projected.returncode == 0, projected.stderr
+            assert projected.stdout.strip() == "projected-extension"
+            assert "rich_click" not in projected.stderr
+            assert "pydantic" not in projected.stderr
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
         self,
@@ -107,8 +182,8 @@ class TestChromeWebstoreProvider:
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            install_root = Path(temp_dir) / "chromewebstore-root"
-            bin_dir = Path(temp_dir) / "custom-extensions"
+            install_root = (Path(temp_dir) / "chromewebstore-root").resolve()
+            bin_dir = (Path(temp_dir) / "custom-extensions").resolve()
             provider = ChromeWebstoreProvider.model_validate(
                 {
                     "install_root": install_root,
