@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from copy import deepcopy
 from inspect import isawaitable
 from collections.abc import Awaitable, Mapping
@@ -335,11 +336,14 @@ def _cache_request_projection(
         ),
         env=env,
     )
+    exec_provider = binary.loaded_binprovider
+    if payload.get("euid") is None:
+        exec_provider = exec_provider.get_provider_with_overrides(euid=os.geteuid())
     binary.loaded_binprovider.write_cached_request_projection(
         binary.name,
         binary.loaded_abspath,
         request_key=request_key,
-        exec_provider=binary.loaded_binprovider,
+        exec_provider=exec_provider,
         base_env=env,
     )
 

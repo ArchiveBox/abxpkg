@@ -1444,9 +1444,6 @@ class BinProvider(BaseModel):
         extra_fingerprint_paths: Iterable[Path] = (),
         resolution_binaries: Iterable[tuple[str, HostBinPath, "BinProvider"]] = (),
     ) -> dict[str, object] | None:
-        if not exec_provider.supports_cached_exec():
-            return None
-
         resolved_runtime_providers = list(
             runtime_providers or exec_provider.exec_env_providers(),
         )

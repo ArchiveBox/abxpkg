@@ -1,12 +1,18 @@
+import asyncio
 import os
 import re
 import shutil
+import sys
 import tempfile
+import threading
 from pathlib import Path
+from typing import Any
 
+import abxbus
 import pytest
 
 from abxpkg import Binary, PlaywrightProvider
+from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
 
 def _resolve_shim_target(shim: Path) -> Path:
@@ -170,6 +176,60 @@ class TestPlaywrightProvider:
                 loaded_or_installed.loaded_abspath.resolve()
                 == installed.loaded_abspath.resolve()
             )
+
+    def test_binary_service_reuses_chromium_request_projection_as_runtime_user(
+        self,
+        tmp_path,
+        seeded_playwright_root,
+    ):
+        install_root = tmp_path / "playwright"
+        self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+
+        async def run(run_id: int) -> BinaryEvent:
+            bus = abxbus.EventBus(name=f"test_playwright_projection_{run_id}")
+            BinaryService(
+                bus,
+                auto_install=False,
+                lib_dir=tmp_path,
+            )
+            request = BinaryRequestEvent(
+                name="chromium",
+                binproviders="playwright",
+            )
+            await bus.emit(request).now()
+            await bus.wait_until_idle()
+            result = await bus.find(
+                BinaryEvent,
+                child_of=request,
+                past=True,
+                future=False,
+                name="chromium",
+            )
+            await bus.destroy(clear=False)
+            assert isinstance(result, BinaryEvent)
+            return result
+
+        first = asyncio.run(run(1))
+        assert Path(first.abspath).is_file()
+
+        binary_load_calls = 0
+
+        def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
+            del arg
+            nonlocal binary_load_calls
+            if event == "call" and frame.f_code is BinaryService._load.__code__:
+                binary_load_calls += 1
+
+        sys.setprofile(count_binary_loads)
+        threading.setprofile(count_binary_loads)
+        try:
+            second = asyncio.run(run(2))
+        finally:
+            sys.setprofile(None)
+            threading.setprofile(None)
+
+        assert Path(second.abspath).resolve() == Path(first.abspath).resolve()
+        assert binary_load_calls == 0
 
     def test_install_root_alias_without_explicit_bin_dir_uses_root_bin(
         self,
