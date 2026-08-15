@@ -102,6 +102,8 @@ def binary_request_cache_key(
     min_release_age = payload["min_release_age"]
     if isinstance(min_release_age, (int, float)):
         payload["min_release_age"] = float(min_release_age)
+    if payload["overrides"] == {}:
+        payload["overrides"] = None
     payload["dry_run"] = bool(payload["dry_run"])
     payload["no_cache"] = bool(payload["no_cache"])
     payload["binproviders"] = provider_names
@@ -713,7 +715,7 @@ def _validated_cached_plan(
         resolved_ambient = (
             os.path.realpath(current_ambient) if current_ambient is not None else None
         )
-        if resolved_ambient != ambient_abspath:
+        if resolved_ambient != ambient_abspath and not (is_script and selected_path):
             return None
     return exec_abspath, final_env
 

@@ -4810,6 +4810,13 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "ABXPKG_LIB_DIR": str(lib),
         "NODE_MODULES_DIR": str(tmp_path / "stale" / "node_modules"),
         "NODE_MODULE_DIR": str(tmp_path / "stale" / "node_modules"),
+        # abx-dl starts hooks with the resolved provider environments already
+        # projected. These additions must not invalidate the same exact cached
+        # binaries when the shebang asks abxpkg to assemble its exec env.
+        "PATH": os.pathsep.join(
+            (str(node_modules_dir / ".bin"), os.environ.get("PATH", "")),
+        ),
+        "PYTHONPATH": str(tmp_path / "active-runtime"),
     }
 
     async def resolve_hook_dependencies() -> None:
@@ -4838,6 +4845,7 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
                 name="python3",
                 binproviders="env",
                 min_version="3.10.0",
+                overrides={},
             ),
             BinaryRequestEvent(
                 name="puppeteer",

@@ -1475,7 +1475,7 @@ class BinProvider(BaseModel):
             for key, value in final_env.items()
             if key in managed_env_keys or resolved_base_env.get(key) != value
         }
-        env_input_keys = {"PATH", "NODE_PATH", "PYTHONPATH", *env}
+        env_input_keys = set(env)
         env_input_keys.add(f"{str(bin_name).upper().replace('-', '_')}_BINARY")
         env_input_keys.update(self.CACHE_ENV_ALIASES.get(str(bin_name), ()))
         env_input_keys.update(managed_env_keys)
