@@ -88,7 +88,12 @@ def binary_request_cache_key(
             (env if env is not None else os.environ).items(),
         )
         if key.startswith("ABXPKG_")
-        and key not in {"ABXPKG_BINPROVIDERS", "ABXPKG_LIB_DIR"}
+        and key
+        not in {
+            "ABXPKG_BINPROVIDERS",
+            "ABXPKG_LIB_DIR",
+            "ABXPKG_TMP_CACHE_DIR",
+        }
     }
     canonical = json.dumps(payload, default=str, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()

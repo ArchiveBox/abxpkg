@@ -236,6 +236,33 @@ def _real_python_binary(lib_dir: Path) -> Binary:
     return binary
 
 
+def test_binary_request_cache_key_ignores_operational_cache_env() -> None:
+    from abxpkg.config import binary_request_cache_key
+
+    request = {"name": "python3", "binproviders": "env"}
+    base_key = binary_request_cache_key(
+        request,
+        default_provider_names=["env"],
+        env={"ABXPKG_TMP_CACHE_DIR": "/tmp/first"},
+    )
+    assert (
+        binary_request_cache_key(
+            request,
+            default_provider_names=["env"],
+            env={"ABXPKG_TMP_CACHE_DIR": "/tmp/second"},
+        )
+        == base_key
+    )
+    assert (
+        binary_request_cache_key(
+            request,
+            default_provider_names=["env"],
+            env={"ABXPKG_ENV_ROOT": "/opt/alternate-env"},
+        )
+        != base_key
+    )
+
+
 def test_binary_service_request_projection_uses_effective_service_options(
     tmp_path: Path,
 ) -> None:
