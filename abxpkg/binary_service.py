@@ -321,6 +321,7 @@ def _cache_request_projection(
     )
     if (
         payload.get("no_cache")
+        or payload.get("dry_run")
         or not binary.loaded_binprovider
         or not binary.loaded_abspath
     ):
@@ -616,7 +617,8 @@ class BinaryService:
         return self.dry_run if event.dry_run is None else event.dry_run
 
     def _no_cache_for_event(self, event: BinaryRequestEvent) -> bool:
-        return self.no_cache if event.no_cache is None else event.no_cache
+        no_cache = self.no_cache if event.no_cache is None else event.no_cache
+        return no_cache or self._dry_run_for_event(event)
 
     def _description_for_event(self, event: BinaryRequestEvent) -> str:
         return event.description or self.description

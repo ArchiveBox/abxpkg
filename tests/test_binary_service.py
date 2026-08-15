@@ -212,7 +212,7 @@ def test_binary_service_request_projection_uses_effective_service_options(
 
     lib_dir = tmp_path / "lib"
 
-    async def run() -> None:
+    async def run(*, dry_run: bool = False) -> None:
         bus = abxbus.EventBus(name="test_effective_service_projection")
         BinaryService(
             bus,
@@ -220,7 +220,9 @@ def test_binary_service_request_projection_uses_effective_service_options(
             lib_dir=lib_dir,
             min_version="3.0.0",
         )
-        await bus.emit(BinaryRequestEvent(name="python3", binproviders="env")).now()
+        await bus.emit(
+            BinaryRequestEvent(name="python3", binproviders="env", dry_run=dry_run),
+        ).now()
         await bus.wait_until_idle()
         await bus.destroy(clear=False)
 
@@ -249,6 +251,10 @@ def test_binary_service_request_projection_uses_effective_service_options(
 
     assert effective_key in projection_keys
     assert raw_key not in projection_keys
+
+    cache_before_dry_run = load_derived_cache(lib_dir / "env" / "derived.env")
+    asyncio.run(run(dry_run=True))
+    assert load_derived_cache(lib_dir / "env" / "derived.env") == cache_before_dry_run
 
     def request_projections(record: dict[str, Any]) -> dict[str, Any]:
         projections = record.get("request_exec_projections")

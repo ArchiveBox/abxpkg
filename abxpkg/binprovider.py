@@ -3848,11 +3848,15 @@ class BinProvider(BaseModel):
                 )
                 or UNKNOWN_SHA256
             )
-            cache_write_result = self.write_cached_binary(
-                bin_name,
-                installed_abspath,
-                loaded_version,
-                loaded_sha256,
+            cache_write_result = (
+                None
+                if self.dry_run
+                else self.write_cached_binary(
+                    bin_name,
+                    installed_abspath,
+                    loaded_version,
+                    loaded_sha256,
+                )
             )
             if cache_write_result is None:
                 resolved_path = (
