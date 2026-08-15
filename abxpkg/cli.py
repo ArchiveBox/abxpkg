@@ -406,17 +406,17 @@ def warm_run_context(options: Any) -> str | None:
     )
 
 
-def _parse_warm_run_argv(
+def _parse_warm_argv(
     argv: list[str],
-) -> tuple[str | None, str | None, str, list[str]] | None:
+) -> tuple[str, str | None, str | None, str, list[str]] | None:
     lib_dir: str | None = None
     provider_names: str | None = None
-    command_seen = False
+    command: str | None = None
     i = 0
     while i < len(argv):
         token = argv[i]
-        if not command_seen and token in {"run", "exec"}:
-            command_seen = True
+        if command is None and token in {"load", "run", "exec"}:
+            command = token
             i += 1
             continue
         if token.startswith("--lib") or token.startswith("--binproviders"):
@@ -431,9 +431,9 @@ def _parse_warm_run_argv(
             else:
                 provider_names = value
             continue
-        if token.startswith("-") or not command_seen:
+        if token.startswith("-") or command is None:
             return None
-        return lib_dir, provider_names, token, argv[i + 1 :]
+        return command, lib_dir, provider_names, token, argv[i + 1 :]
     return None
 
 
@@ -671,14 +671,16 @@ def _format_cached_load(record: dict[str, object]) -> str | None:
 
 
 def _load_cached(argv: list[str]) -> int | None:
-    if len(argv) != 2 or argv[0] != "load" or argv[1].startswith("-"):
+    parsed = _parse_warm_argv(argv)
+    if parsed is None:
         return None
-    binary_name = argv[1]
-    if os.path.isabs(binary_name):
+    command, raw_lib_dir, raw_names, binary_name, binary_args = parsed
+    if command != "load" or binary_args or os.path.isabs(binary_name):
         return None
 
-    lib_dir = _resolve_lib_dir(None)
-    raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
+    lib_dir = _resolve_lib_dir(raw_lib_dir)
+    if raw_names is None:
+        raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
     if raw_names is None:
         import abxpkg as package
 
@@ -820,10 +822,12 @@ def _run_cached(argv: list[str]) -> int | None:
             script_args=script_args,
         )
 
-    parsed = _parse_warm_run_argv(argv)
+    parsed = _parse_warm_argv(argv)
     if parsed is None:
         return None
-    raw_lib_dir, raw_provider_names, binary_name, binary_args = parsed
+    command, raw_lib_dir, raw_provider_names, binary_name, binary_args = parsed
+    if command not in {"run", "exec"}:
+        return None
     lib_dir = _resolve_lib_dir(raw_lib_dir)
 
     raw_names = raw_provider_names

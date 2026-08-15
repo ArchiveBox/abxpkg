@@ -918,6 +918,21 @@ def test_warm_load_uses_cached_plan_without_loading_cli_frameworks(tmp_path):
     assert timed.stdout == first.stdout
     assert elapsed < 0.1
 
+    explicit_started_at = time.perf_counter()
+    explicit = _run_abxpkg_cli(
+        "load",
+        "--binproviders=env",
+        "python3",
+        env_overrides={**env, "PYTHONPROFILEIMPORTTIME": "1"},
+    )
+    explicit_elapsed = time.perf_counter() - explicit_started_at
+
+    assert explicit.returncode == 0, explicit.stderr
+    assert explicit.stdout == first.stdout
+    assert "rich_click" not in explicit.stderr
+    assert "pydantic" not in explicit.stderr
+    assert explicit_elapsed < 0.1
+
     uncached = _run_abxpkg_cli(
         "load",
         "--no-cache",

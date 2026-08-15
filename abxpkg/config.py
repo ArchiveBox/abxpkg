@@ -522,75 +522,78 @@ def _cached_records(
     install_roots: dict[str, str] | None = None,
 ):
     for provider_name in provider_names:
-        provider_root = (install_roots or {}).get(provider_name)
-        derived_env_path = os.path.join(
-            provider_root or os.path.join(lib_dir, provider_name),
-            "derived.env",
+        default_root = os.path.join(lib_dir, provider_name)
+        provider_roots = dict.fromkeys(
+            filter(None, ((install_roots or {}).get(provider_name), default_root)),
         )
-        try:
-            fd = os.open(
-                derived_env_path,
-                os.O_RDONLY
-                | getattr(os, "O_NOFOLLOW", 0)
-                | getattr(os, "O_NONBLOCK", 0),
-            )
-        except OSError:
-            continue
-        try:
-            before = os.fstat(fd)
-            if (
-                not stat.S_ISREG(before.st_mode)
-                or before.st_uid != os.geteuid()
-                or before.st_mode & 0o022
-            ):
+        for provider_root in provider_roots:
+            derived_env_path = os.path.join(provider_root, "derived.env")
+            try:
+                fd = os.open(
+                    derived_env_path,
+                    os.O_RDONLY
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
+                )
+            except OSError:
                 continue
-            with os.fdopen(fd, encoding="utf-8") as cache_file:
-                fd = -1
-                contents = cache_file.read()
-                after = os.fstat(cache_file.fileno())
-            stable_fields = (
-                "st_dev",
-                "st_ino",
-                "st_size",
-                "st_mtime_ns",
-                "st_ctime_ns",
-                "st_uid",
-                "st_mode",
-            )
-            if any(
-                getattr(before, field) != getattr(after, field)
-                for field in stable_fields
-            ):
+            try:
+                before = os.fstat(fd)
+                if (
+                    not stat.S_ISREG(before.st_mode)
+                    or before.st_uid != os.geteuid()
+                    or before.st_mode & 0o022
+                ):
+                    continue
+                with os.fdopen(fd, encoding="utf-8") as cache_file:
+                    fd = -1
+                    contents = cache_file.read()
+                    after = os.fstat(cache_file.fileno())
+                stable_fields = (
+                    "st_dev",
+                    "st_ino",
+                    "st_size",
+                    "st_mtime_ns",
+                    "st_ctime_ns",
+                    "st_uid",
+                    "st_mode",
+                )
+                if any(
+                    getattr(before, field) != getattr(after, field)
+                    for field in stable_fields
+                ):
+                    continue
+                cache = load_derived_cache_text(contents)
+            except OSError:
                 continue
-            cache = load_derived_cache_text(contents)
-        except OSError:
-            continue
-        finally:
-            if fd >= 0:
-                os.close(fd)
-        for record in cache.values():
-            raw_fingerprints = (
-                record.get("fingerprint") if isinstance(record, dict) else None
-            )
-            record_abspath = record.get("abspath") if isinstance(record, dict) else None
-            primary_fingerprint = (
-                raw_fingerprints[0]
-                if isinstance(raw_fingerprints, list) and raw_fingerprints
-                else None
-            )
-            if (
-                isinstance(record, dict)
-                and record.get("provider_name") == provider_name
-                and record.get("bin_name") == binary_name
-                and isinstance(record_abspath, str)
-                and os.path.isabs(record_abspath)
-                and os.access(record_abspath, os.X_OK)
-                and isinstance(primary_fingerprint, dict)
-                and os.path.realpath(record_abspath)
-                == cast(dict[str, object], primary_fingerprint).get("path")
-                and _fingerprints_match(raw_fingerprints)
-            ):
-                yield record
+            finally:
+                if fd >= 0:
+                    os.close(fd)
+            for record in cache.values():
+                raw_fingerprints = (
+                    record.get("fingerprint") if isinstance(record, dict) else None
+                )
+                record_abspath = (
+                    record.get("abspath") if isinstance(record, dict) else None
+                )
+                primary_fingerprint = (
+                    raw_fingerprints[0]
+                    if isinstance(raw_fingerprints, list) and raw_fingerprints
+                    else None
+                )
+                if (
+                    isinstance(record, dict)
+                    and record.get("provider_name") == provider_name
+                    and record.get("bin_name") == binary_name
+                    and isinstance(record_abspath, str)
+                    and os.path.isabs(record_abspath)
+                    and os.access(record_abspath, os.X_OK)
+                    and isinstance(primary_fingerprint, dict)
+                    and os.path.realpath(record_abspath)
+                    == cast(dict[str, object], primary_fingerprint).get("path")
+                    and _fingerprints_match(raw_fingerprints)
+                ):
+                    yield record
 
 
 def _find_executable(name: str, path: str) -> str | None:

@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -516,8 +517,8 @@ def test_binary_service_projects_managed_uv_install_through_env_bin(
     projected_entrypoint = lib / "env" / "bin" / "forum-dl"
     managed_entrypoint = package_root / "venv" / "bin" / "forum-dl"
 
-    async def run() -> tuple[Any, BinaryEvent]:
-        bus = abxbus.EventBus(name="test_binary_service_projects_uv_via_env")
+    async def run(bus_name: str, *, no_cache: bool = False) -> tuple[Any, BinaryEvent]:
+        bus = abxbus.EventBus(name=bus_name)
         BinaryService(bus)
         request = await bus.emit(
             BinaryRequestEvent(
@@ -525,7 +526,7 @@ def test_binary_service_projects_managed_uv_install_through_env_bin(
                 binproviders="env,uv",
                 lib_dir=lib,
                 min_release_age=3,
-                no_cache=True,
+                no_cache=no_cache,
                 overrides={
                     "uv": {
                         "install_root": str(package_root),
@@ -566,15 +567,44 @@ def test_binary_service_projects_managed_uv_install_through_env_bin(
             name="forum-dl",
         )
         assert isinstance(event, BinaryEvent)
+        await bus.destroy(clear=False)
         return request, event
 
-    _, event = asyncio.run(run())
+    _, event = asyncio.run(
+        run("test_binary_service_projects_uv_via_env_first", no_cache=True),
+    )
 
     assert event.abspath == str(projected_entrypoint)
     assert event.binprovider == "uv"
     assert projected_entrypoint.is_symlink()
     assert projected_entrypoint.resolve() == managed_entrypoint
     assert os.access(managed_entrypoint, os.X_OK)
+
+    asyncio.run(run("test_binary_service_projects_uv_via_env_prime_cache"))
+
+    binary_load_calls = 0
+
+    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
+        del arg
+        nonlocal binary_load_calls
+        if event == "call" and frame.f_code is BinaryService._load.__code__:
+            binary_load_calls += 1
+
+    sys.setprofile(count_binary_loads)
+    threading.setprofile(count_binary_loads)
+    started_at = time.perf_counter()
+    try:
+        _, cached_event = asyncio.run(
+            run("test_binary_service_projects_uv_via_env_cached"),
+        )
+    finally:
+        elapsed = time.perf_counter() - started_at
+        sys.setprofile(None)
+        threading.setprofile(None)
+
+    assert cached_event.abspath == event.abspath
+    assert binary_load_calls == 0
+    assert elapsed < 0.1
 
 
 def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) -> None:
