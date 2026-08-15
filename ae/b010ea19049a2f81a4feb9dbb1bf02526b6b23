@@ -1,0 +1,16 @@
+abxpkg/binprovider.py
+  h_923c208e183a7b 1129-1135
+tests/test_binary_service.py
+  h_923c208e183a7b 196-224
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "aeb010ea19049a2f81a4feb9dbb1bf02526b6b23",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
