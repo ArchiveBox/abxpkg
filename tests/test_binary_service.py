@@ -193,6 +193,35 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     }
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux provider lock ordering")
+def test_parallel_cross_provider_cache_checks_do_not_deadlock(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+
+    async def run() -> None:
+        bus = abxbus.EventBus(name="test_parallel_cross_provider_cache_checks")
+        BinaryService(bus, auto_install=False, lib_dir=tmp_path / "lib")
+        requests = [
+            BinaryRequestEvent(name=name, binproviders=providers, auto_install=False)
+            for _ in range(8)
+            for name, providers in (
+                ("node", "env,node,brew,apt"),
+                ("postlight-parser", "env,npm"),
+            )
+        ]
+        emitted = [bus.emit(request) for request in requests]
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(event.now() for event in emitted)),
+                timeout=10,
+            )
+        finally:
+            await bus.destroy(clear=False)
+
+    asyncio.run(run())
+
+
 def _real_python_binary(lib_dir: Path) -> Binary:
     provider = EnvProvider(install_root=lib_dir / "env")
     binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)

@@ -1119,7 +1119,6 @@ class BinProvider(BaseModel):
             },
         )
 
-    @mutation_locked
     def load_cached_binary_by_name(
         self,
         bin_name: BinName,
@@ -1127,6 +1126,13 @@ class BinProvider(BaseModel):
     ) -> ShallowBinary | None:
         if setup_path:
             self.setup_PATH()
+        return self._load_cached_binary_by_name(bin_name)
+
+    @mutation_locked
+    def _load_cached_binary_by_name(
+        self,
+        bin_name: BinName,
+    ) -> ShallowBinary | None:
         derived_env_path = self.derived_env_path
         if derived_env_path is None or not derived_env_path.is_file():
             return None
