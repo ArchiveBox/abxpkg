@@ -207,6 +207,24 @@ class TestEnvProvider:
         assert projected_record["exec_plan"] == {"version": 5}
         assert projected_record["script_exec_plans"] == {"script": {"version": 5}}
 
+        alternate_provider = EnvProvider(
+            install_root=provider.install_root,
+            install_timeout=provider.install_timeout + 1,
+        )
+        alternate_provider.write_cached_request_projection(
+            "python3",
+            loaded.loaded_abspath,
+            request_key="alternate-provider-context",
+            exec_provider=alternate_provider,
+            base_env=os.environ,
+        )
+        projected_record = load_derived_cache(derived_env_path)[cache_key]
+        request_projections = cast(
+            dict[str, object],
+            projected_record.get("request_exec_projections", {}),
+        )
+        assert "alternate-provider-context" in request_projections
+
     def test_cache_fingerprint_survives_artifact_materialization(self, tmp_path):
         provider = EnvProvider(install_root=tmp_path / "lib" / "env")
         artifact = tmp_path / "artifact"

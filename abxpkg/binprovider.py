@@ -1312,21 +1312,49 @@ class BinProvider(BaseModel):
         if derived_env_path is None or not derived_env_path.is_file():
             return
         cache = load_derived_cache(derived_env_path)
-        cache_context = self._cache_context(bin_name)
-        cache_context_hash = self._cache_context_hash(bin_name, cache_context)
-        cache_key = self._cache_key(
-            bin_name,
-            abspath,
-            cache_context_hash=cache_context_hash,
+        resolved_abspath = Path(abspath).expanduser().resolve(strict=False)
+
+        def record_matches(record: object) -> bool:
+            if not isinstance(record, dict):
+                return False
+            typed_record = cast(dict[str, object], record)
+            cached_abspath = typed_record.get("abspath")
+            raw_fingerprints = typed_record.get("fingerprint")
+            if not isinstance(cached_abspath, str) or not isinstance(
+                raw_fingerprints,
+                list,
+            ):
+                return False
+            fingerprint_paths: list[Path] = []
+            for raw_fingerprint in raw_fingerprints:
+                if not isinstance(raw_fingerprint, dict):
+                    return False
+                fingerprint = cast(dict[str, object], raw_fingerprint)
+                fingerprint_path = fingerprint.get("path")
+                if not isinstance(fingerprint_path, str):
+                    return False
+                fingerprint_paths.append(Path(fingerprint_path))
+            return (
+                typed_record.get("provider_name") == self.name
+                and typed_record.get("bin_name") == str(bin_name)
+                and Path(cached_abspath).expanduser().resolve(strict=False)
+                == resolved_abspath
+                and typed_record.get("resolved_provider_name") == exec_provider.name
+                and len(fingerprint_paths) == len(raw_fingerprints)
+                and raw_fingerprints == self._fingerprint_paths(fingerprint_paths)
+            )
+
+        cache_entry = next(
+            (
+                (cache_key, record)
+                for cache_key, record in cache.items()
+                if record_matches(record)
+            ),
+            None,
         )
-        record = cache.get(cache_key)
-        if not isinstance(record, dict):
+        if cache_entry is None:
             return
-        if (
-            record.get("cache_context") != cache_context
-            or record.get("cache_context_hash") != cache_context_hash
-        ):
-            return
+        cache_key, record = cache_entry
 
         from .config import provider_exec_env_layers
 
