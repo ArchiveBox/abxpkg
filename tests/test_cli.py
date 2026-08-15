@@ -1290,8 +1290,16 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     env_key_config.write_text(
         json.dumps(
             {
-                "properties": {"GIT_BINARY": {"default": "git"}},
+                "properties": {
+                    "PYTHON3_BINARY": {"default": "python3"},
+                    "GIT_BINARY": {"default": "git"},
+                },
                 "required_binaries": [
+                    {
+                        "name": "{PYTHON3_BINARY}",
+                        "binproviders": "env",
+                        "min_version": "3.0.0",
+                    },
                     {"name": "{GIT_BINARY}", "binproviders": "env"},
                 ],
             },
@@ -1299,8 +1307,8 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     env_key_script = tmp_path / "env-key-script.py"
     env_key_script.write_text(
-        '# /// script\n# dependencies = [{name = "python3", min_version = "3.0.0"}]\n# ///\n'
-        'import os\nprint(os.environ["GIT_BINARY"])\n',
+        "# /// script\n# dependencies = []\n# ///\n"
+        'import os\nprint(os.environ["PYTHON3_BINARY"])\nprint(os.environ["GIT_BINARY"])\n',
     )
     env_key_args = (
         f"--lib={cached_dependencies_lib}",
@@ -1311,13 +1319,21 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         "python3",
         str(env_key_script),
     )
+    git_binary = shutil.which("git")
+    assert git_binary is not None
     asyncio.run(resolve_cached_dependencies("refresh_script_from_binary_cache"))
     projected_env_key = _run_abxpkg_cli(
         *env_key_args,
-        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+        env_overrides={
+            "PYTHON3_BINARY": sys.executable,
+            "GIT_BINARY": git_binary,
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
     )
     assert projected_env_key.returncode == 0, projected_env_key.stderr
-    assert Path(projected_env_key.stdout.strip()).name == "git"
+    projected_paths = projected_env_key.stdout.splitlines()
+    assert Path(projected_paths[0]).resolve() == Path(sys.executable).resolve()
+    assert Path(projected_paths[1]).name == "git"
     assert "rich_click" not in projected_env_key.stderr
 
     git_cache = cached_dependencies_lib / "env" / "derived.env"
@@ -1336,11 +1352,15 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     save_derived_cache(git_cache, corrupted_cache)
     corrupted_env_key = _run_abxpkg_cli(
         *env_key_args,
-        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+        env_overrides={
+            "PYTHON3_BINARY": sys.executable,
+            "GIT_BINARY": git_binary,
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
     )
 
     assert corrupted_env_key.returncode == 0, corrupted_env_key.stderr
-    assert Path(corrupted_env_key.stdout.strip()).name == "git"
+    assert Path(corrupted_env_key.stdout.splitlines()[1]).name == "git"
     assert "rich_click" in corrupted_env_key.stderr
 
     script = tmp_path / "warm-script.py"

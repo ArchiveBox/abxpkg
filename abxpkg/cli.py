@@ -315,7 +315,18 @@ def _deps_from_config_specs(
                     )
                     if template_match:
                         expanded = dict(expanded)
-                        expanded["_abxpkg_env_key"] = template_match.group(1)
+                        env_key = template_match.group(1)
+                        expanded["_abxpkg_env_key"] = env_key
+                        prop = (
+                            properties.get(env_key)
+                            if isinstance(properties, dict)
+                            else None
+                        )
+                        if isinstance(prop, dict) and isinstance(
+                            prop.get("default"),
+                            str,
+                        ):
+                            expanded["_abxpkg_declared_name"] = prop["default"]
                 deps.append(expanded)
     return deps
 
@@ -437,7 +448,7 @@ def _parse_warm_argv(
 def _script_request(
     dependency: object,
     default_provider_names: list[str],
-) -> tuple[dict[str, object], list[str], str | None] | None:
+) -> tuple[dict[str, object], list[str], str | None, str | None] | None:
     request = {"name": dependency} if isinstance(dependency, str) else None
     if isinstance(dependency, dict):
         typed_dependency = cast(dict[str, object], dependency)
@@ -467,17 +478,65 @@ def _script_request(
     request = dict(request)
     request["binproviders"] = provider_names
     env_key = request.pop("_abxpkg_env_key", None)
-    return request, provider_names, str(env_key) if env_key else None
+    declared_name = request.pop("_abxpkg_declared_name", None)
+    return (
+        request,
+        provider_names,
+        str(env_key) if env_key else None,
+        str(declared_name) if declared_name else None,
+    )
 
 
 def _cached_request_projection(
     lib_dir: str | os.PathLike[str],
     request: dict[str, object],
     provider_names: list[str],
+    *,
+    ignored_env_base_keys: tuple[str, ...] = (),
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
     from .config import _load_cached_request_projection
 
-    return _load_cached_request_projection(lib_dir, request, provider_names)
+    return _load_cached_request_projection(
+        lib_dir,
+        request,
+        provider_names,
+        ignored_env_base_keys=ignored_env_base_keys,
+    )
+
+
+def _cached_script_request_projection(
+    lib_dir: str | os.PathLike[str],
+    request: dict[str, object],
+    provider_names: list[str],
+    env_key: str | None,
+    declared_name: str | None,
+) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
+    resolved = _cached_request_projection(lib_dir, request, provider_names)
+    requested_name = request.get("name")
+    if (
+        resolved is not None
+        or declared_name is None
+        or not isinstance(requested_name, str)
+        or not os.path.isabs(requested_name)
+    ):
+        return resolved
+
+    declared_request = {**request, "name": declared_name}
+    resolved = _cached_request_projection(
+        lib_dir,
+        declared_request,
+        provider_names,
+        ignored_env_base_keys=(env_key,) if env_key else (),
+    )
+    if resolved is None:
+        return None
+    record = resolved[0]
+    resolved_abspath = record.get("abspath")
+    if not isinstance(resolved_abspath, str) or os.path.realpath(
+        resolved_abspath,
+    ) != os.path.realpath(requested_name):
+        return None
+    return resolved
 
 
 def _cached_records(
@@ -508,6 +567,7 @@ def _exec_cached_script_requests(
     }
     target_provider_names = provider_names
     target_env_key: str | None = None
+    target_declared_name: str | None = None
     target_declaration_seen = False
 
     for dependency in dependencies:
@@ -517,8 +577,8 @@ def _exec_cached_script_requests(
             return None
         if parsed is None:
             continue
-        request, dependency_provider_names, env_key = parsed
-        if request["name"] == binary_name:
+        request, dependency_provider_names, env_key, declared_name = parsed
+        if request["name"] == binary_name or declared_name == binary_name:
             if target_declaration_seen:
                 return None
             target_declaration_seen = True
@@ -528,21 +588,26 @@ def _exec_cached_script_requests(
                 target_request["binproviders"] = provider_names
             else:
                 target_provider_names = dependency_provider_names
+            target_declared_name = declared_name
             continue
-        resolved = _cached_request_projection(
+        resolved = _cached_script_request_projection(
             lib_dir,
             request,
             dependency_provider_names,
+            env_key,
+            declared_name,
         )
         if resolved is None:
             return None
         record, projection, _exec_abspath, _validation_env = resolved
         resolved_dependencies.append((record, projection, env_key))
 
-    target = _cached_request_projection(
+    target = _cached_script_request_projection(
         lib_dir,
         target_request,
         target_provider_names,
+        target_env_key,
+        target_declared_name,
     )
     if target is None:
         return None

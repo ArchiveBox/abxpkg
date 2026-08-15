@@ -628,6 +628,7 @@ def _validated_cached_plan(
     run_context: str,
     *,
     base_env: Mapping[str, str] | None = None,
+    ignored_env_base_keys: Iterable[str] = (),
 ) -> tuple[str, dict[str, str]] | None:
     if os.getuid() != os.geteuid() or not isinstance(raw_plan, dict):
         return None
@@ -672,6 +673,7 @@ def _validated_cached_plan(
     typed_env = cast(dict[str, str], env)
     typed_env_base = cast(dict[str, str | None], env_base)
     typed_cache_context_env = cast(dict[str, str | None], cache_context_env)
+    ignored_env_keys = frozenset(ignored_env_base_keys)
     current_env = os.environ if base_env is None else base_env
     if any(
         current_env.get(key) != value for key, value in typed_cache_context_env.items()
@@ -680,7 +682,7 @@ def _validated_cached_plan(
     if any(
         current_env.get(key) != value
         for key, value in typed_env_base.items()
-        if not (is_script and key in typed_env)
+        if key not in ignored_env_keys and not (is_script and key in typed_env)
     ):
         return None
     final_env = dict(current_env)
@@ -722,6 +724,7 @@ def _load_cached_request_projection(
     provider_names: list[str],
     *,
     base_env: Mapping[str, str] | None = None,
+    ignored_env_base_keys: Iterable[str] = (),
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
     current_env = os.environ if base_env is None else base_env
     request_key = binary_request_cache_key(
@@ -784,6 +787,7 @@ def _load_cached_request_projection(
             projection.get("validation"),
             request_key,
             base_env=current_env,
+            ignored_env_base_keys=ignored_env_base_keys,
         )
         if validated is None:
             return None
