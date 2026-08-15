@@ -1,0 +1,20 @@
+abxpkg/binary_service.py
+  h_923c208e183a7b 5,339-341,346
+pyproject.toml
+  h_923c208e183a7b 3
+tests/test_playwrightprovider.py
+  h_923c208e183a7b 1,5,7,9,11,15,180-233
+uv.lock
+  h_923c208e183a7b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "a18feae6f37cf0e5908d872c05e7a38833e021e1",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
