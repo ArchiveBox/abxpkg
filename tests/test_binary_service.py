@@ -1,5 +1,6 @@
 import asyncio
 import os
+import subprocess
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -197,29 +198,35 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
 def test_parallel_cross_provider_cache_checks_do_not_deadlock(
     tmp_path: Path,
 ) -> None:
-    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+    script = """
+import asyncio
+import sys
+import abxbus
+from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
-    async def run() -> None:
-        bus = abxbus.EventBus(name="test_parallel_cross_provider_cache_checks")
-        BinaryService(bus, auto_install=False, lib_dir=tmp_path / "lib")
-        requests = [
-            BinaryRequestEvent(name=name, binproviders=providers, auto_install=False)
-            for _ in range(8)
-            for name, providers in (
-                ("node", "env,node,brew,apt"),
-                ("postlight-parser", "env,npm"),
-            )
-        ]
-        emitted = [bus.emit(request) for request in requests]
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*(event.now() for event in emitted)),
-                timeout=10,
-            )
-        finally:
-            await bus.destroy(clear=False)
+async def main():
+    bus = abxbus.EventBus(name="parallel_cross_provider_cache_checks")
+    BinaryService(bus, auto_install=False, lib_dir=sys.argv[1])
+    requests = [
+        BinaryRequestEvent(name=name, binproviders=providers, auto_install=False)
+        for _ in range(8)
+        for name, providers in (
+            ("node", "env,node,brew,apt"),
+            ("postlight-parser", "env,npm"),
+        )
+    ]
+    await asyncio.gather(*(bus.emit(request).now() for request in requests))
 
-    asyncio.run(run())
+asyncio.run(main())
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path / "lib")],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def _real_python_binary(lib_dir: Path) -> Binary:
