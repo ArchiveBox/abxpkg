@@ -1294,12 +1294,23 @@ def build_deps_from_exec_env(
     return env
 
 
-def _write_cached_exec_plans(binary: Binary, run_context: str) -> None:
+def _write_cached_execution(binary: Binary, run_context: str) -> None:
     if binary.loaded_binprovider is None or binary.loaded_abspath is None:
         return
     cache_providers = [*binary.binproviders]
     if all(provider is not binary.loaded_binprovider for provider in cache_providers):
         cache_providers.append(binary.loaded_binprovider)
+    provider_names = list(
+        dict.fromkeys(provider.name for provider in binary.binproviders),
+    )
+    if not provider_names:
+        provider_names = [binary.loaded_binprovider.name]
+    from .config import binary_request_cache_key
+
+    request_key = binary_request_cache_key(
+        {"name": binary.name, "binproviders": provider_names},
+        default_provider_names=provider_names,
+    )
     for provider in cache_providers:
         provider.write_cached_exec_plan(
             binary.name,
@@ -1307,6 +1318,12 @@ def _write_cached_exec_plans(binary: Binary, run_context: str) -> None:
             exec_provider=binary.loaded_binprovider,
             run_context=run_context,
             loaded_version=binary.loaded_version,
+        )
+        provider.write_cached_request_projection(
+            binary.name,
+            binary.loaded_abspath,
+            request_key=request_key,
+            exec_provider=binary.loaded_binprovider,
         )
 
 
@@ -1338,7 +1355,7 @@ def run_binary_command(
     if action == "load":
         run_context = warm_run_context(options)
         if run_context is not None:
-            _write_cached_exec_plans(result, run_context)
+            _write_cached_execution(result, run_context)
 
     provider = result.loaded_binprovider
     provider_name = provider.name if provider is not None else "unknown"
@@ -2382,7 +2399,7 @@ def _run_command_impl(
     if not script_mode:
         run_context = warm_run_context(run_options)
         if run_context is not None:
-            _write_cached_exec_plans(binary, run_context)
+            _write_cached_execution(binary, run_context)
         exec_kwargs = {"capture_output": False}
     proc = binary.loaded_binprovider.exec(
         bin_name=binary.loaded_abspath,

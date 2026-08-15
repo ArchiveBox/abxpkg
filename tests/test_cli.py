@@ -1085,6 +1085,28 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     )
     assert default_elapsed < 0.1
 
+    default_script = tmp_path / "default-script.py"
+    default_script.write_text(
+        '# /// script\n# dependencies = []\n# ///\nprint("default-script")\n',
+    )
+    default_cache = tmp_path / "default-lib" / "env" / "derived.env"
+    default_cache_stat = default_cache.stat()
+    default_script_first = _run_abxpkg_cli(
+        f"--lib={tmp_path / 'default-lib'}",
+        "run",
+        "--script",
+        "python3",
+        str(default_script),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
+
+    assert default_script_first.returncode == 0, default_script_first.stderr
+    assert default_script_first.stdout.strip() == "default-script"
+    assert "rich_click" not in default_script_first.stderr
+    assert "pydantic" not in default_script_first.stderr
+    assert default_cache.stat().st_ino == default_cache_stat.st_ino
+    assert default_cache.stat().st_mtime_ns == default_cache_stat.st_mtime_ns
+
     cached_dependencies_lib = tmp_path / "cached-dependencies-lib"
 
     async def resolve_cached_dependencies(bus_name: str) -> None:
