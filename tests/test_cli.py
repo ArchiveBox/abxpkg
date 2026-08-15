@@ -1121,7 +1121,12 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
 
     cached_dependencies_lib = tmp_path / "cached-dependencies-lib"
 
-    async def resolve_cached_dependencies(bus_name: str) -> None:
+    async def resolve_cached_dependencies(
+        bus_name: str,
+        *,
+        lib_dir: Path = cached_dependencies_lib,
+        output_env_keys: dict[str, str] | None = None,
+    ) -> None:
         import abxbus
 
         from abxpkg.binary_service import BinaryRequestEvent, BinaryService
@@ -1131,14 +1136,18 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
             bus,
             auto_install=False,
             provider_names="env",
-            lib_dir=cached_dependencies_lib,
+            lib_dir=lib_dir,
         )
         for binary_name, min_version in (("python3", "3.0.0"), ("git", None)):
+            output_env_key = (output_env_keys or {}).get(binary_name)
             await bus.emit(
                 BinaryRequestEvent(
                     name=binary_name,
                     binproviders="env",
                     min_version=min_version,
+                    base_env={**os.environ, output_env_key: binary_name}
+                    if output_env_key
+                    else None,
                 ),
             ).now()
         await bus.wait_until_idle()
@@ -1310,8 +1319,9 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         "# /// script\n# dependencies = []\n# ///\n"
         'import os\nprint(os.environ["PYTHON3_BINARY"])\nprint(os.environ["GIT_BINARY"])\n',
     )
+    env_key_lib = tmp_path / "env-key-lib"
     env_key_args = (
-        f"--lib={cached_dependencies_lib}",
+        f"--lib={env_key_lib}",
         "--binproviders=env",
         "run",
         "--script",
@@ -1319,16 +1329,17 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         "python3",
         str(env_key_script),
     )
-    git_binary = shutil.which("git")
-    assert git_binary is not None
     asyncio.run(resolve_cached_dependencies("refresh_script_from_binary_cache"))
+    asyncio.run(
+        resolve_cached_dependencies(
+            "output_env_script_from_binary_cache",
+            lib_dir=env_key_lib,
+            output_env_keys={"python3": "PYTHON3_BINARY", "git": "GIT_BINARY"},
+        ),
+    )
     projected_env_key = _run_abxpkg_cli(
         *env_key_args,
-        env_overrides={
-            "PYTHON3_BINARY": sys.executable,
-            "GIT_BINARY": git_binary,
-            "PYTHONPROFILEIMPORTTIME": "1",
-        },
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
     assert projected_env_key.returncode == 0, projected_env_key.stderr
     projected_paths = projected_env_key.stdout.splitlines()
@@ -1336,7 +1347,9 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert Path(projected_paths[1]).name == "git"
     assert "rich_click" not in projected_env_key.stderr
 
-    git_cache = cached_dependencies_lib / "env" / "derived.env"
+    git_binary = shutil.which("git")
+    assert git_binary is not None
+    git_cache = env_key_lib / "env" / "derived.env"
     corrupted_cache = load_derived_cache(git_cache)
     git_record = next(
         (

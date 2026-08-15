@@ -511,7 +511,12 @@ def _cached_script_request_projection(
     env_key: str | None,
     declared_name: str | None,
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
-    resolved = _cached_request_projection(lib_dir, request, provider_names)
+    resolved = _cached_request_projection(
+        lib_dir,
+        request,
+        provider_names,
+        ignored_env_base_keys=(env_key,) if env_key else (),
+    )
     requested_name = request.get("name")
     if (
         resolved is not None
