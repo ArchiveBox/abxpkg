@@ -1,0 +1,20 @@
+abxpkg/binprovider.py
+  h_923c208e183a7b 1315-1353,1355,1357
+pyproject.toml
+  h_923c208e183a7b 3
+tests/test_envprovider.py
+  h_923c208e183a7b 210-227
+uv.lock
+  h_923c208e183a7b 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "f98eee1b4ee37c2ed9b65e79aa5b420246880e71",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
