@@ -390,16 +390,13 @@ def warm_run_context(options: Any) -> str | None:
         ),
     ):
         return None
+    from .config import abxpkg_cache_env
+
     return json.dumps(
         {
             "lib_dir": str(options.lib_dir),
             "provider_names": list(options.provider_names),
-            "abxpkg_env": {
-                key: value
-                for key, value in sorted(os.environ.items())
-                if key.startswith("ABXPKG_")
-                and key not in {"ABXPKG_LIB_DIR", "ABXPKG_BINPROVIDERS"}
-            },
+            "abxpkg_env": abxpkg_cache_env(os.environ),
         },
         separators=(",", ":"),
         sort_keys=True,

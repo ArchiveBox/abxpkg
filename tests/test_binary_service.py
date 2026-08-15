@@ -254,6 +254,15 @@ def test_binary_request_cache_key_ignores_operational_cache_env() -> None:
         )
         == base_key
     )
+    for name in ("ABXPKG_DRY_RUN", "ABXPKG_DEBUG", "ABXPKG_NO_CACHE"):
+        assert (
+            binary_request_cache_key(
+                request,
+                default_provider_names=["env"],
+                env={name: "False"},
+            )
+            == base_key
+        )
     assert (
         binary_request_cache_key(
             request,

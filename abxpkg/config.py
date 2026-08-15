@@ -54,6 +54,25 @@ _BINARY_REQUEST_CACHE_FIELDS = (
     "install_args",
     "packages",
 )
+_OPERATIONAL_ABXPKG_ENV_KEYS = frozenset(
+    {
+        "ABXPKG_BINPROVIDERS",
+        "ABXPKG_DEBUG",
+        "ABXPKG_DRY_RUN",
+        "ABXPKG_LIB_DIR",
+        "ABXPKG_NO_CACHE",
+        "ABXPKG_TMP_CACHE_DIR",
+    },
+)
+
+
+def abxpkg_cache_env(env: Mapping[str, str]) -> dict[str, str]:
+    """Project environment variables that can change binary resolution."""
+    return {
+        key: value
+        for key, value in sorted(env.items())
+        if key.startswith("ABXPKG_") and key not in _OPERATIONAL_ABXPKG_ENV_KEYS
+    }
 
 
 def binary_request_cache_key(
@@ -86,19 +105,9 @@ def binary_request_cache_key(
     payload["dry_run"] = bool(payload["dry_run"])
     payload["no_cache"] = bool(payload["no_cache"])
     payload["binproviders"] = provider_names
-    payload["abxpkg_env"] = {
-        key: value
-        for key, value in sorted(
-            (env if env is not None else os.environ).items(),
-        )
-        if key.startswith("ABXPKG_")
-        and key
-        not in {
-            "ABXPKG_BINPROVIDERS",
-            "ABXPKG_LIB_DIR",
-            "ABXPKG_TMP_CACHE_DIR",
-        }
-    }
+    payload["abxpkg_env"] = abxpkg_cache_env(
+        env if env is not None else os.environ,
+    )
     canonical = json.dumps(payload, default=str, separators=(",", ":"), sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
 

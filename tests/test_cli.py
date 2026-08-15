@@ -1155,6 +1155,8 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert not any(
         record.get("script_exec_plans") for record in cached_dependency_records
     )
+    cached_dependencies_cache = cached_dependencies_lib / "env" / "derived.env"
+    cached_dependencies_stat = cached_dependencies_cache.stat()
 
     cached_script = tmp_path / "cached-dependencies.py"
     cached_script.write_text(
@@ -1168,7 +1170,10 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         "--script",
         "python3",
         str(cached_script),
-        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+        env_overrides={
+            "ABXPKG_NO_CACHE": "False",
+            "PYTHONPROFILEIMPORTTIME": "1",
+        },
     )
     cached_script_started_at = time.perf_counter()
     cached_script_timed = _run_abxpkg_cli(
@@ -1185,6 +1190,11 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert cached_script_first.stdout.strip() == "cached-dependencies"
     assert "rich_click" not in cached_script_first.stderr
     assert "pydantic" not in cached_script_first.stderr
+    assert cached_dependencies_cache.stat().st_ino == cached_dependencies_stat.st_ino
+    assert (
+        cached_dependencies_cache.stat().st_mtime_ns
+        == cached_dependencies_stat.st_mtime_ns
+    )
     assert cached_script_timed.returncode == 0, cached_script_timed.stderr
     assert cached_script_timed.stdout.strip() == "cached-dependencies"
     assert cached_script_elapsed < 0.1
