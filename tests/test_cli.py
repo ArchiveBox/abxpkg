@@ -4257,6 +4257,21 @@ def test_run_env_python3_keeps_each_cached_runtime_target(tmp_path):
     first = load(runtimes[0])
     second = load(runtimes[1])
 
+    def run_direct(runtime):
+        return _run_cli(
+            runtime[1],
+            f"--lib={lib}",
+            "--binproviders=env",
+            "run",
+            "python3",
+            "-c",
+            "import runtime_marker; print(runtime_marker.VALUE)",
+        )
+
+    first_direct = run_direct(runtimes[0])
+    second_direct = run_direct(runtimes[1])
+    first_direct_again = run_direct(runtimes[0])
+
     script = tmp_path / "runtime_script.py"
     (tmp_path / "config.json").write_text('{"required_binaries": []}\n')
     script.write_text(
@@ -4281,6 +4296,12 @@ def test_run_env_python3_keeps_each_cached_runtime_target(tmp_path):
 
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
+    assert first_direct.returncode == 0, first_direct.stderr
+    assert second_direct.returncode == 0, second_direct.stderr
+    assert first_direct_again.returncode == 0, first_direct_again.stderr
+    assert first_direct.stdout.strip() == "first"
+    assert second_direct.stdout.strip() == "second"
+    assert first_direct_again.stdout.strip() == "first"
     assert first_again.returncode == 0, first_again.stderr
     assert second_again.returncode == 0, second_again.stderr
     assert first_again.stdout.strip() == "first"

@@ -1353,7 +1353,7 @@ def run_binary_command(
         return
 
     if action == "load":
-        run_context = warm_run_context(options)
+        run_context = warm_run_context(options, result.name)
         if run_context is not None:
             _write_cached_execution(result, run_context)
 
@@ -2397,7 +2397,7 @@ def _run_command_impl(
     assert binary.loaded_binprovider is not None
     assert binary.loaded_abspath is not None
     if not script_mode:
-        run_context = warm_run_context(run_options)
+        run_context = warm_run_context(run_options, binary.name)
         if run_context is not None:
             _write_cached_execution(binary, run_context)
         exec_kwargs = {"capture_output": False}

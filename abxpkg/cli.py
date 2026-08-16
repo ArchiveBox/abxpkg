@@ -343,7 +343,7 @@ def _script_cache_context(
 
     if set(raw_options) - {"--lib", "--binproviders", "--deps-from"}:
         return None
-    base_context = warm_run_context(options)
+    base_context = warm_run_context(options, binary_name)
     if base_context is None:
         return None
 
@@ -382,7 +382,7 @@ def _script_cache_context(
     return context
 
 
-def warm_run_context(options: Any) -> str | None:
+def warm_run_context(options: Any, binary_name: str) -> str | None:
     """Return the canonical context for CLI runs eligible for direct cache exec."""
     if any(
         (
@@ -403,12 +403,15 @@ def warm_run_context(options: Any) -> str | None:
         return None
     from .config import abxpkg_cache_env
 
+    context = {
+        "lib_dir": str(options.lib_dir),
+        "provider_names": list(options.provider_names),
+        "abxpkg_env": abxpkg_cache_env(os.environ),
+    }
+    if binary_name in {"python", "python3"} and "env" in options.provider_names:
+        context["runtime_prefix"] = os.path.abspath(sys.prefix)
     return json.dumps(
-        {
-            "lib_dir": str(options.lib_dir),
-            "provider_names": list(options.provider_names),
-            "abxpkg_env": abxpkg_cache_env(os.environ),
-        },
+        context,
         separators=(",", ":"),
         sort_keys=True,
     )
@@ -768,6 +771,7 @@ def _load_cached(argv: list[str]) -> int | None:
         os.environ.pop("ABXPKG_BINPROVIDERS", None)
     run_context = warm_run_context(
         ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+        binary_name,
     )
     if run_context is None:
         return None
@@ -920,6 +924,7 @@ def _run_cached(argv: list[str]) -> int | None:
 
     context = warm_run_context(
         ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+        binary_name,
     )
     if context is None:
         return None
