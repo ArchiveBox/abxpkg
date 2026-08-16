@@ -693,8 +693,10 @@ def test_binary_cache_service_invalidates_stale_cached_binary(tmp_path: Path) ->
     )
 
     stale_binary = _real_python_binary(tmp_path)
-    missing_path = stale_binary.loaded_abspath
-    assert missing_path is not None
+    assert stale_binary.loaded_abspath is not None
+    missing_path = tmp_path / "cached-python"
+    missing_path.symlink_to(stale_binary.loaded_abspath)
+    stale_binary = stale_binary.model_copy(update={"loaded_abspath": missing_path})
     backend = JSONFileBinaryCacheBackend(tmp_path / "binary-cache.json")
     cache_request = BinaryRequestEvent(name="python")
     backend.set(cache_request, stale_binary)
