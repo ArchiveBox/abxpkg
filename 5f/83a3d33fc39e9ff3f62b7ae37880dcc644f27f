@@ -1,0 +1,14 @@
+abxpkg/config.py
+  h_923c208e183a7b 144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "5f83a3d33fc39e9ff3f62b7ae37880dcc644f27f",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
