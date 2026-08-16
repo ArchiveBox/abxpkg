@@ -1,0 +1,14 @@
+tests/test_binary_service.py
+  h_923c208e183a7b 696-699
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e3b0479774770a6039e69569e43ee3baaf45d120",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
