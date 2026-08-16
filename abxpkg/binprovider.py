@@ -4151,7 +4151,7 @@ class EnvProvider(BinProvider):
 
     def _cache_context(self, bin_name: BinName) -> str:
         provider_config = json.loads(super()._cache_context(bin_name))
-        provider_config["env_projection_version"] = 4
+        provider_config["env_projection_version"] = 5
         if str(bin_name) in {"python", "python3"}:
             provider_config["runtime_python"] = str(Path(sys.executable).absolute())
         return json.dumps(
@@ -4588,8 +4588,8 @@ class EnvProvider(BinProvider):
                 # installed package deps. Respecting the normal *_BINARY
                 # override keeps ``abxpkg run --script ... python3`` from
                 # drifting to the interpreter that happens to run abxpkg.
-                return self._link_loaded_binary(bin_name, manual_path)
-        return self._link_loaded_binary(bin_name, Path(sys.executable).absolute())
+                return TypeAdapter(HostBinPath).validate_python(manual_path)
+        return TypeAdapter(HostBinPath).validate_python(Path(sys.executable).absolute())
 
     def default_abspath_handler(
         self,

@@ -706,7 +706,7 @@ def test_version_command_with_binary_aliases_load(tmp_path):
 
     assert result.exit_code == 0
     assert "(env) python3" in result.output
-    assert (tmp_path / "env" / "bin" / "python3").is_symlink()
+    assert not (tmp_path / "env" / "bin" / "python3").exists()
 
 
 def test_expand_bare_bool_flags_rewrites_debug_before_run():
@@ -1553,6 +1553,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert prepared_cache.stat().st_mtime_ns == prepared_stat.st_mtime_ns
 
     unrelated_projection = tmp_path / "script-lib" / "env" / "bin" / "unrelated"
+    unrelated_projection.parent.mkdir(parents=True, exist_ok=True)
     unrelated_projection.write_text("#!/bin/sh\nexit 0\n")
     unrelated_projection.chmod(0o755)
     script_after_projection = _run_abxpkg_cli(
@@ -4210,46 +4211,81 @@ def test_run_script_applies_install_args_to_side_dependency(tmp_path):
     assert "24.2.0" in proc.stdout
 
 
-def test_run_env_linked_python3_executes_active_venv_target(tmp_path):
-    """EnvProvider-linked python3 should run with active venv semantics intact."""
+def test_run_env_python3_keeps_each_cached_runtime_target(tmp_path):
+    """Cached Python contexts must not share one mutable projection target."""
 
     lib = tmp_path / "lib"
+    runtimes = []
+    source_root = Path(cli_module.__file__).parents[1]
+    for label in ("first", "second"):
+        runtime_root = tmp_path / label
+        subprocess.run(
+            ["uv", "venv", "--python", sys.executable, str(runtime_root)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        runtime = runtime_root / "bin" / "python3"
+        subprocess.run(
+            ["uv", "pip", "install", "--python", str(runtime), str(source_root)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        purelib = subprocess.run(
+            [
+                str(runtime),
+                "-c",
+                "import sysconfig; print(sysconfig.get_paths()['purelib'])",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        Path(purelib, "runtime_marker.py").write_text(f"VALUE = {label!r}\n")
+        runtimes.append((runtime, runtime_root / "bin" / "abxpkg"))
 
-    load_proc = _run_abxpkg_cli(
-        f"--lib={lib}",
-        "--binproviders=env",
-        "load",
-        "python3",
+    def load(runtime):
+        return _run_cli(
+            runtime[1],
+            f"--lib={lib}",
+            "--binproviders=env",
+            "load",
+            "python3",
+            env_overrides={
+                "PATH": f"{runtime[0].parent}{os.pathsep}{os.environ['PATH']}",
+                "VIRTUAL_ENV": str(runtime[0].parent.parent),
+            },
+        )
+
+    first = load(runtimes[0])
+    second = load(runtimes[1])
+
+    script = tmp_path / "runtime_script.py"
+    (tmp_path / "config.json").write_text('{"required_binaries": []}\n')
+    script.write_text(
+        "# /// script\n# ///\nimport runtime_marker\nprint(runtime_marker.VALUE)\n",
     )
-    assert load_proc.returncode == 0, load_proc.stderr
-    linked_python = lib / "env" / "bin" / "python3"
-    assert linked_python.is_symlink()
-    assert linked_python.samefile(sys.executable)
-
-    proc = _run_abxpkg_cli(
+    first_again = _run_cli(
+        runtimes[0][1],
         f"--lib={lib}",
         "--binproviders=env",
         "run",
+        "--script",
+        "--deps-from=./config.json:required_binaries",
         "python3",
-        "-c",
-        (
-            "import abxpkg, json, sys; "
-            "print(json.dumps({"
-            "'abxpkg_file': abxpkg.__file__, "
-            "'executable': sys.executable, "
-            "'prefix': sys.prefix"
-            "}))"
-        ),
+        str(script),
+        cwd=tmp_path,
+        env_overrides={
+            "PATH": f"{runtimes[0][0].parent}{os.pathsep}{os.environ['PATH']}",
+            "VIRTUAL_ENV": str(runtimes[0][0].parent.parent),
+        },
     )
 
-    assert proc.returncode == 0, proc.stderr
-    payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert (
-        Path(payload["abxpkg_file"]).resolve()
-        == Path(cli_module.__file__).parents[0] / "__init__.py"
-    )
-    assert Path(payload["executable"]).samefile(sys.executable)
-    assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    assert first_again.returncode == 0, first_again.stderr
+    assert first_again.stdout.strip() == "first"
 
 
 def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_path):

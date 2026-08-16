@@ -762,7 +762,7 @@ class TestEnvProvider:
         assert after.loaded_abspath == before.loaded_abspath
         assert after.loaded_version == before.loaded_version
 
-    def test_provider_with_install_root_links_loaded_binary_and_writes_derived_env(
+    def test_provider_with_install_root_caches_runtime_python_without_linking(
         self,
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -780,11 +780,11 @@ class TestEnvProvider:
             assert loaded.loaded_version is not None
             assert provider.bin_dir == (install_root / "bin").resolve()
             assert provider.bin_dir is not None
-            assert provider.bin_dir.exists()
+            assert not provider.bin_dir.exists()
+            assert loaded.loaded_abspath == Path(sys.executable).absolute()
             assert loaded.loaded_respath == Path(sys.executable).resolve()
             linked_binary = provider.bin_dir / "python3"
-            assert linked_binary.is_symlink()
-            assert linked_binary.resolve() == Path(sys.executable).resolve()
+            assert not linked_binary.exists()
 
             derived_env_path = install_root / "derived.env"
             cache = load_derived_cache(derived_env_path)
@@ -808,7 +808,7 @@ class TestEnvProvider:
             )
 
             assert provider.uninstall("python3") is False
-            assert linked_binary.is_symlink()
+            assert not linked_binary.exists()
             assert load_derived_cache(derived_env_path) == {}
             assert provider.load("python3", no_cache=True) is not None
 
