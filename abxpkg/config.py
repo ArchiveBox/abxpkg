@@ -79,7 +79,8 @@ def abxpkg_cache_env(env: Mapping[str, str]) -> dict[str, str]:
 def _canonical_request_path(value: object) -> object:
     if not isinstance(value, (str, os.PathLike)):
         return value
-    return os.path.realpath(os.path.expanduser(os.fspath(value)))
+    path = os.path.expanduser(os.fspath(value))
+    return os.path.realpath(path) if os.path.isabs(path) else path
 
 
 def binary_request_cache_key(

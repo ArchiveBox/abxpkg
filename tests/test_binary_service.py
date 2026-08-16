@@ -323,6 +323,15 @@ def test_binary_request_cache_key_normalizes_inputs(tmp_path: Path) -> None:
         default_provider_names=["env"],
         env={},
     )
+    assert binary_request_cache_key(
+        {**request, "abspath": "python3"},
+        default_provider_names=["env"],
+        env={},
+    ) != binary_request_cache_key(
+        {**request, "abspath": str(Path.cwd() / "python3")},
+        default_provider_names=["env"],
+        env={},
+    )
 
 
 def test_binary_service_request_projection_uses_effective_service_options(
