@@ -54,6 +54,7 @@ _BINARY_REQUEST_CACHE_FIELDS = (
     "install_args",
     "packages",
 )
+_BINARY_REQUEST_PATH_FIELDS = frozenset({"abspath", "bin_dir", "install_root"})
 _OPERATIONAL_ABXPKG_ENV_KEYS = frozenset(
     {
         "ABXPKG_BINPROVIDERS",
@@ -73,6 +74,12 @@ def abxpkg_cache_env(env: Mapping[str, str]) -> dict[str, str]:
         for key, value in sorted(env.items())
         if key.startswith("ABXPKG_") and key not in _OPERATIONAL_ABXPKG_ENV_KEYS
     }
+
+
+def _canonical_request_path(value: object) -> object:
+    if not isinstance(value, (str, os.PathLike)):
+        return value
+    return os.path.realpath(os.path.expanduser(os.fspath(value)))
 
 
 def binary_request_cache_key(
@@ -99,6 +106,13 @@ def binary_request_cache_key(
         for field in _BINARY_REQUEST_CACHE_FIELDS
         if field != "binproviders"
     }
+    raw_name = payload["name"]
+    if isinstance(raw_name, (str, os.PathLike)) and os.path.isabs(
+        os.path.expanduser(os.fspath(raw_name)),
+    ):
+        payload["name"] = _canonical_request_path(raw_name)
+    for field in _BINARY_REQUEST_PATH_FIELDS:
+        payload[field] = _canonical_request_path(payload[field])
     min_release_age = payload["min_release_age"]
     if isinstance(min_release_age, (int, float)):
         payload["min_release_age"] = float(min_release_age)
@@ -106,11 +120,11 @@ def binary_request_cache_key(
     if isinstance(raw_overrides, Mapping):
         payload["overrides"] = {
             provider_name: {
-                key: (
-                    float(value)
-                    if key == "min_release_age" and isinstance(value, (int, float))
-                    else value
-                )
+                key: _canonical_request_path(value)
+                if key in _BINARY_REQUEST_PATH_FIELDS
+                else float(value)
+                if key == "min_release_age" and isinstance(value, (int, float))
+                else value
                 for key, value in provider_overrides.items()
             }
             if isinstance(provider_overrides, Mapping)
@@ -696,7 +710,9 @@ def _validated_cached_plan(
     ignored_env_keys = frozenset(ignored_env_base_keys)
     current_env = os.environ if base_env is None else base_env
     if any(
-        current_env.get(key) != value for key, value in typed_cache_context_env.items()
+        current_env.get(key) != value
+        for key, value in typed_cache_context_env.items()
+        if not (is_script and key in typed_env)
     ):
         return None
     if any(
@@ -733,11 +749,7 @@ def _validated_cached_plan(
         resolved_ambient = (
             os.path.realpath(current_ambient) if current_ambient is not None else None
         )
-        projected_ambient = (
-            is_script
-            and ambient_abspath is None
-            and resolved_ambient == os.path.realpath(abspath)
-        )
+        projected_ambient = is_script and resolved_ambient == os.path.realpath(abspath)
         if resolved_ambient != ambient_abspath and not projected_ambient:
             return None
     return exec_abspath, final_env

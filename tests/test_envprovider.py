@@ -225,6 +225,23 @@ class TestEnvProvider:
         )
         assert "alternate-provider-context" in request_projections
 
+        cache = load_derived_cache(derived_env_path)
+        cache["legacy-cache-key"] = cache.pop(cache_key)
+        save_derived_cache(derived_env_path, cache)
+
+        assert provider.load_cached_binary("python3", loaded.loaded_abspath) is not None
+        normalized_cache = load_derived_cache(derived_env_path)
+        assert "legacy-cache-key" not in normalized_cache
+        normalized_record = next(
+            record
+            for record in normalized_cache.values()
+            if record.get("bin_name") == "python3"
+        )
+        assert "alternate-provider-context" in cast(
+            dict[str, object],
+            normalized_record.get("request_exec_projections", {}),
+        )
+
     def test_cache_fingerprint_survives_artifact_materialization(self, tmp_path):
         provider = EnvProvider(install_root=tmp_path / "lib" / "env")
         artifact = tmp_path / "artifact"

@@ -1076,6 +1076,7 @@ class BinProvider(BaseModel):
                 for key in (
                     "exec_plan",
                     "script_exec_plans",
+                    "request_exec_projections",
                 )
                 if key in cached_record
             }

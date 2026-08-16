@@ -4840,6 +4840,8 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
         "PATH": os.pathsep.join(
             (str(node_modules_dir / ".bin"), os.environ.get("PATH", "")),
         ),
+        "NODE_PATH": str(node_modules_dir),
+        "PNPM_HOME": str(node_modules_dir / ".bin"),
         "PYTHONPATH": str(tmp_path / "active-runtime"),
     }
 

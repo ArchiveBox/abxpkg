@@ -237,7 +237,7 @@ def _real_python_binary(lib_dir: Path) -> Binary:
     return binary
 
 
-def test_binary_request_cache_key_ignores_operational_cache_env() -> None:
+def test_binary_request_cache_key_normalizes_inputs(tmp_path: Path) -> None:
     from abxpkg.config import binary_request_cache_key
 
     request = {"name": "python3", "binproviders": "env"}
@@ -291,6 +291,35 @@ def test_binary_request_cache_key_ignores_operational_cache_env() -> None:
             **request,
             "overrides": {"env": {"min_release_age": 0.0}},
         },
+        default_provider_names=["env"],
+        env={},
+    )
+
+    real_root = tmp_path / "real-root"
+    real_root.mkdir()
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(real_root, target_is_directory=True)
+
+    def path_request(root: Path) -> dict[str, object]:
+        return {
+            "name": str(root / "python"),
+            "binproviders": "env",
+            "install_root": root / "install",
+            "bin_dir": root / "bin",
+            "overrides": {
+                "env": {
+                    "install_root": str(root / "provider"),
+                    "abspath": str(root / "python"),
+                },
+            },
+        }
+
+    assert binary_request_cache_key(
+        path_request(linked_root),
+        default_provider_names=["env"],
+        env={},
+    ) == binary_request_cache_key(
+        path_request(real_root),
         default_provider_names=["env"],
         env={},
     )
