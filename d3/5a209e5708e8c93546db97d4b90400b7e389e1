@@ -1,0 +1,14 @@
+pyproject.toml
+  h_923c208e183a7b 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "d35a209e5708e8c93546db97d4b90400b7e389e1",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
