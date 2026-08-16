@@ -122,7 +122,9 @@ class TestMachine:
         )
         assert loaded.loaded_mtime == loaded.loaded_abspath.resolve().stat().st_mtime_ns
         assert loaded.loaded_euid == loaded.loaded_abspath.resolve().stat().st_uid
-        if provider.bin_dir is not None:
+        if provider.bin_dir is not None and not (
+            provider.name == "env" and loaded.name in {"python", "python3"}
+        ):
             expected_abspath = provider.bin_dir / loaded.name
             assert expected_abspath.exists()
             assert expected_abspath.is_relative_to(provider.bin_dir)

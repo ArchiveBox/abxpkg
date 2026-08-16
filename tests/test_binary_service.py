@@ -273,6 +273,14 @@ def test_binary_request_cache_key_normalizes_inputs(tmp_path: Path) -> None:
     )
     assert (
         binary_request_cache_key(
+            request,
+            default_provider_names=["env"],
+            env={"VIRTUAL_ENV": "/opt/alternate-runtime"},
+        )
+        != base_key
+    )
+    assert (
+        binary_request_cache_key(
             {**request, "overrides": {}},
             default_provider_names=["env"],
             env={},

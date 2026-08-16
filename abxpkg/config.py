@@ -72,7 +72,9 @@ def abxpkg_cache_env(env: Mapping[str, str]) -> dict[str, str]:
     return {
         key: value
         for key, value in sorted(env.items())
-        if key.startswith("ABXPKG_") and key not in _OPERATIONAL_ABXPKG_ENV_KEYS
+        if key == "VIRTUAL_ENV"
+        or key.startswith("ABXPKG_")
+        and key not in _OPERATIONAL_ABXPKG_ENV_KEYS
     }
 
 
