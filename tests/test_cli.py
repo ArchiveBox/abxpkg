@@ -4252,10 +4252,6 @@ def test_run_env_python3_keeps_each_cached_runtime_target(tmp_path):
             "--binproviders=env",
             "load",
             "python3",
-            env_overrides={
-                "PATH": f"{runtime[0].parent}{os.pathsep}{os.environ['PATH']}",
-                "VIRTUAL_ENV": str(runtime[0].parent.parent),
-            },
         )
 
     first = load(runtimes[0])
@@ -4266,26 +4262,29 @@ def test_run_env_python3_keeps_each_cached_runtime_target(tmp_path):
     script.write_text(
         "# /// script\n# ///\nimport runtime_marker\nprint(runtime_marker.VALUE)\n",
     )
-    first_again = _run_cli(
-        runtimes[0][1],
-        f"--lib={lib}",
-        "--binproviders=env",
-        "run",
-        "--script",
-        "--deps-from=./config.json:required_binaries",
-        "python3",
-        str(script),
-        cwd=tmp_path,
-        env_overrides={
-            "PATH": f"{runtimes[0][0].parent}{os.pathsep}{os.environ['PATH']}",
-            "VIRTUAL_ENV": str(runtimes[0][0].parent.parent),
-        },
-    )
+
+    def run(runtime):
+        return _run_cli(
+            runtime[1],
+            f"--lib={lib}",
+            "--binproviders=env",
+            "run",
+            "--script",
+            "--deps-from=./config.json:required_binaries",
+            "python3",
+            str(script),
+            cwd=tmp_path,
+        )
+
+    first_again = run(runtimes[0])
+    second_again = run(runtimes[1])
 
     assert first.returncode == 0, first.stderr
     assert second.returncode == 0, second.stderr
     assert first_again.returncode == 0, first_again.stderr
+    assert second_again.returncode == 0, second_again.stderr
     assert first_again.stdout.strip() == "first"
+    assert second_again.stdout.strip() == "second"
 
 
 def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_path):

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import stat
+import sys
 from collections.abc import Iterable, Mapping, MutableMapping
 from functools import lru_cache
 
@@ -139,6 +140,8 @@ def binary_request_cache_key(
     payload["dry_run"] = bool(payload["dry_run"])
     payload["no_cache"] = bool(payload["no_cache"])
     payload["binproviders"] = provider_names
+    if payload["name"] in {"python", "python3"} and "env" in provider_names:
+        payload["runtime_python"] = os.path.abspath(sys.executable)
     payload["abxpkg_env"] = abxpkg_cache_env(
         env if env is not None else os.environ,
     )
