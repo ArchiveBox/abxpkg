@@ -4350,6 +4350,79 @@ def test_concurrent_script_runs_reuse_host_python_before_managed_fallback(tmp_pa
     assert all(not any(path.iterdir()) for path in managed_provider_dirs)
 
 
+def test_dependency_scripts_with_distinct_paths_keep_warm_exec_plans(tmp_path):
+    lib = tmp_path / "lib"
+    git = shutil.which("git")
+    node = shutil.which("node")
+    assert git is not None
+    assert node is not None
+
+    (tmp_path / "config.json").write_text(
+        json.dumps({"required_binaries": ["node", "git"]}),
+    )
+    scripts = []
+    for name in ("first", "second"):
+        git_dir = tmp_path / f"{name}-bin"
+        git_dir.mkdir()
+        shutil.copy2(git, git_dir / "git")
+        script = tmp_path / f"{name}.js"
+        script.write_text(
+            "#!/usr/bin/env -S abxpkg run --script "
+            "--deps-from=./config.json:required_binaries node\n"
+            "// /// script\n"
+            "// ///\n"
+            f'console.log("{name}");\n',
+        )
+        script.chmod(0o755)
+        scripts.append(script)
+
+    def script_env(script):
+        return {
+            "ABXPKG_LIB_DIR": str(lib),
+            "PATH": os.pathsep.join(
+                (
+                    str(_abxpkg_executable().parent),
+                    str(tmp_path / f"{script.stem}-bin"),
+                    str(Path(node).parent),
+                    os.defpath,
+                ),
+            ),
+        }
+
+    for script in scripts:
+        result = _run_cli(script, env_overrides=script_env(script))
+        assert result.returncode == 0, result.stderr
+
+    plans = [
+        plan
+        for record in load_derived_cache(lib / "env" / "derived.env").values()
+        for plan in cast(
+            dict[str, object],
+            record.get("script_exec_plans", {}),
+        ).values()
+    ]
+    assert len(plans) == len(scripts)
+
+    for script in scripts:
+        profiled = _run_cli(
+            script,
+            env_overrides={
+                **script_env(script),
+                "PYTHONPROFILEIMPORTTIME": "1",
+            },
+        )
+        started_at = time.perf_counter()
+        timed = _run_cli(script, env_overrides=script_env(script))
+        elapsed = time.perf_counter() - started_at
+
+        assert profiled.returncode == 0, profiled.stderr
+        assert profiled.stdout.strip() == script.stem
+        assert "pydantic" not in profiled.stderr
+        assert timed.returncode == 0, timed.stderr
+        assert timed.stdout.strip() == script.stem
+        assert elapsed < 0.1
+
+
 def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallbacks(
     tmp_path,
 ):

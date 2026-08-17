@@ -363,14 +363,23 @@ def _script_cache_context(
     tool_env_names = sorted(
         str(key) for key in tool_config if key != "runtime_binproviders"
     )
+    projected_bin_dir = os.path.abspath(os.path.join(options.lib_dir, "env", "bin"))
+    caller_path = os.pathsep.join(
+        entry
+        for entry in os.environ.get("PATH", "").split(os.pathsep)
+        if not entry or os.path.abspath(entry) != projected_bin_dir
+    )
     context = json.dumps(
         {
             "base": json.loads(base_context),
             "binary_name": binary_name,
             "dependencies": dependencies,
             "exec_env_inputs": {
-                name: os.environ.get(name)
-                for name in ("NODE_PATH", "PYTHONPATH", "LD_LIBRARY_PATH")
+                "PATH": caller_path,
+                **{
+                    name: os.environ.get(name)
+                    for name in ("NODE_PATH", "PYTHONPATH", "LD_LIBRARY_PATH")
+                },
             },
             "explicit_provider_selection": explicit_provider_selection,
             "metadata": meta,
