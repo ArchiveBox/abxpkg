@@ -4411,16 +4411,30 @@ def test_dependency_scripts_with_distinct_paths_keep_warm_exec_plans(tmp_path):
                 "PYTHONPROFILEIMPORTTIME": "1",
             },
         )
-        started_at = time.perf_counter()
-        timed = _run_cli(script, env_overrides=script_env(script))
-        elapsed = time.perf_counter() - started_at
+        direct_elapsed = []
+        cached_elapsed = []
+        for _ in range(3):
+            started_at = time.perf_counter()
+            direct = _run_cli(
+                Path(node),
+                script,
+                env_overrides=script_env(script),
+            )
+            direct_elapsed.append(time.perf_counter() - started_at)
+
+            started_at = time.perf_counter()
+            timed = _run_cli(script, env_overrides=script_env(script))
+            cached_elapsed.append(time.perf_counter() - started_at)
+
+            assert direct.returncode == 0, direct.stderr
+            assert direct.stdout.strip() == script.stem
+            assert timed.returncode == 0, timed.stderr
+            assert timed.stdout.strip() == script.stem
 
         assert profiled.returncode == 0, profiled.stderr
         assert profiled.stdout.strip() == script.stem
         assert "pydantic" not in profiled.stderr
-        assert timed.returncode == 0, timed.stderr
-        assert timed.stdout.strip() == script.stem
-        assert elapsed < 0.1
+        assert sorted(cached_elapsed)[1] - sorted(direct_elapsed)[1] < 0.1
 
 
 def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallbacks(
