@@ -481,10 +481,10 @@ class AptProvider(BinProvider):
             custom_repositories_configured = self.setup_apt_repositories(
                 no_cache=no_cache,
             )
-            if self.should_update_apt_cache(
+            should_update_apt_cache = self.should_update_apt_cache(
                 custom_repositories_configured=custom_repositories_configured,
-            ):
-                # only update if we haven't checked in the last day
+            )
+            if custom_repositories_configured and should_update_apt_cache:
                 self.exec(
                     bin_name=installer_bin,
                     cmd=["update", "-qq"],
@@ -497,6 +497,28 @@ class AptProvider(BinProvider):
                 cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args],
                 timeout=timeout,
             )
+            if (
+                proc.returncode != 0
+                and should_update_apt_cache
+                and not custom_repositories_configured
+            ):
+                self.exec(
+                    bin_name=installer_bin,
+                    cmd=["update", "-qq"],
+                    timeout=timeout,
+                )
+                _LAST_UPDATE_CHECK = time.time()
+                proc = self.exec(
+                    bin_name=installer_bin,
+                    cmd=[
+                        "install",
+                        "-y",
+                        "-qq",
+                        "--no-install-recommends",
+                        *install_args,
+                    ],
+                    timeout=timeout,
+                )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
         return (
