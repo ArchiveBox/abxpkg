@@ -137,8 +137,8 @@ require_clean_exact_checkout() {
     local branch_head
     branch_head="$(git rev-parse "refs/remotes/origin/${release_branch}")"
     if [[ "${release_sha}" != "${branch_head}" ]]; then
-        echo "Refusing to release ${release_sha}: current origin/${release_branch} is ${branch_head}" >&2
-        return 1
+        echo "Skipping obsolete release ${release_sha}: current origin/${release_branch} is ${branch_head}" >&2
+        exit 0
     fi
 }
 
