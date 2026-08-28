@@ -103,30 +103,18 @@ print(max(versions, key=parse) if versions else '')
 PY
 }
 
-pypi_has_release() {
-    local version="$1" simple
-    simple="$(curl -fsSL -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
-        "https://pypi.org/simple/${PYPI_PACKAGE}/?cache_bust=$(date +%s)-${RANDOM}")" || return 1
-    grep -Fq ">${PYPI_PACKAGE}-${version}-py3-none-any.whl<" <<<"${simple}" \
-        && grep -Fq ">${PYPI_PACKAGE}-${version}.tar.gz<" <<<"${simple}"
-}
-
 pypi_release_json() {
-    curl -fsSL --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+    curl -fsSL \
         -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
         "https://pypi.org/pypi/${PYPI_PACKAGE}/$1/json?cache_bust=$(date +%s)-${RANDOM}"
 }
 
-pypi_wait_for_release() {
+pypi_has_release() {
     local version="$1"
-    pypi_release_json "${version}" >/dev/null
-    for _ in {1..30}; do
-        curl -fsSL -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
-            "https://pypi.org/simple/${PYPI_PACKAGE}/?cache_bust=$(date +%s)-${RANDOM}" | \
-            grep -Fq ">abxpkg-${version}-py3-none-any.whl<" && return
-        sleep 2
-    done
-    return 1
+    pypi_release_json "${version}" | jq -e \
+        --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" \
+        --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
+        '([.urls[].filename] | sort) == ([$wheel, $sdist] | sort)' >/dev/null
 }
 
 require_clean_exact_checkout() {
@@ -270,7 +258,6 @@ publish_artifacts() {
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
         uv publish --no-cache --trusted-publishing always "${artifacts[@]}"
-        pypi_wait_for_release "${version}"
     fi
 }
 
