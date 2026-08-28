@@ -342,7 +342,6 @@ main() {
     download_tested_artifacts "${slug}" "${release_sha}" "${version}" "${REQUIRED_TEST_RUN_ID}"
     create_release "${slug}" "${version}" "${release_sha}"
     publish_artifacts "${version}"
-    sleep 60
     gh release upload "${TAG_PREFIX}${version}" --repo "${slug}" \
         "${REPO_DIR}"/dist/abxpkg-*.whl \
         "${REPO_DIR}"/dist/abxpkg-*.tar.gz \

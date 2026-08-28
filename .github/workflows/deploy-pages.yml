@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'push' || github.event.head_commit.author.email != 'release-bot@archivebox.io'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

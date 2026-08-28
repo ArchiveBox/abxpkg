@@ -13,10 +13,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  artifacts:
+    name: Prepare, build, and smoke-test release artifacts
     runs-on: ubuntu-24.04
-    outputs:
-      action: ${{ steps.version.outputs.action }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -31,20 +30,13 @@ jobs:
           tag-prefix: v
           version-scheme: patch
 
-  artifacts:
-    name: Build and smoke-test release artifacts
-    needs: prepare
-    if: needs.prepare.outputs.action == 'ready' || needs.prepare.outputs.action == 'reserved'
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
         with:
           version: "0.10.6"
           enable-cache: false
 
       - name: Build and smoke-test the wheel
+        if: steps.version.outputs.action == 'ready' || steps.version.outputs.action == 'reserved'
         shell: bash
         run: |
           set -Eeuo pipefail
@@ -64,6 +56,7 @@ jobs:
           PY
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.version.outputs.action == 'ready' || steps.version.outputs.action == 'reserved'
         with:
           name: abxpkg-dist-${{ github.sha }}
           path: dist/*
