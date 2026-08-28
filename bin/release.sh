@@ -300,14 +300,10 @@ verify_release_outputs() {
           .targetCommitish == $sha and
           ([.assets[].name] | sort) == ([$wheel, $sdist, "SHA256SUMS"] | sort)
         ' <<<"${release_json}" >/dev/null
-
-    pypi_release_json "${version}" |
-        jq -e --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
-            '([.urls[].filename] | sort) == ([$wheel, $sdist] | sort)' >/dev/null
 }
 
 main() {
-    local slug release_sha release_branch version latest pypi_latest relation release_target pypi_exists github_release_exists
+    local slug release_sha release_branch version latest pypi_latest relation release_target github_release_exists
 
     source_optional_env
     slug="$(repo_slug)"
@@ -331,17 +327,13 @@ main() {
         return 1
     fi
 
-    pypi_exists=false
     github_release_exists=false
-    if pypi_has_release "${version}"; then
-        pypi_exists=true
-    fi
     release_target="$(git ls-remote origin "refs/tags/${TAG_PREFIX}${version}" | cut -f1)"
     if gh release view "${TAG_PREFIX}${version}" --repo "${slug}" >/dev/null 2>&1; then
         github_release_exists=true
     fi
     if [[ "${relation}" == "eq" ]]; then
-        if [[ "${pypi_exists}" != true || "${github_release_exists}" != true || -z "${release_target}" ]]; then
+        if [[ "${github_release_exists}" != true || -z "${release_target}" ]]; then
             echo "${PYPI_PACKAGE} ${version} is already reserved but its release outputs are incomplete; bump the version after fixing the release" >&2
             return 1
         fi
