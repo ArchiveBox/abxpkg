@@ -302,7 +302,9 @@ verify_release_outputs() {
           ([.assets[].name] | sort) == ([$wheel, $sdist, "SHA256SUMS"] | sort)
         ' <<<"${release_json}" >/dev/null
 
-    pypi_has_release "${version}"
+    pypi_release_json "${version}" |
+        jq -e --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
+            '([.urls[].filename] | sort) == ([$wheel, $sdist] | sort)' >/dev/null
 }
 
 main() {
