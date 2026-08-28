@@ -9,7 +9,7 @@ cd "${REPO_DIR}"
 TAG_PREFIX="v"
 PYPI_PACKAGE="abxpkg"
 REQUIRED_WORKFLOWS=(
-    "tests.yml|Run Tests"
+    "release-candidate.yml|Release candidate"
 )
 TESTED_ARTIFACT_NAME_PREFIX="abxpkg-dist"
 REQUIRED_TEST_RUN_ID="${REQUIRED_TEST_RUN_ID:-}"
@@ -137,7 +137,7 @@ require_successful_workflows() {
         workflow_file="${workflow_spec%%|*}"
         workflow_name="${workflow_spec#*|}"
 
-        if [[ "${workflow_file}" == "tests.yml" && -n "${REQUIRED_TEST_RUN_ID}" ]]; then
+        if [[ "${workflow_file}" == "release-candidate.yml" && -n "${REQUIRED_TEST_RUN_ID}" ]]; then
             run_id="${REQUIRED_TEST_RUN_ID}"
             run="$(env -u GH_FORCE_TTY GH_PROMPT_DISABLED=1 GH_PAGER=cat NO_COLOR=1 gh run view \
                 "${run_id}" \
@@ -172,7 +172,7 @@ require_successful_workflows() {
         fi
 
         echo "Required workflow passed: ${workflow_name} (${run_id})"
-        if [[ "${workflow_file}" == "tests.yml" ]]; then
+        if [[ "${workflow_file}" == "release-candidate.yml" ]]; then
             REQUIRED_TEST_RUN_ID="${run_id}"
         fi
     done

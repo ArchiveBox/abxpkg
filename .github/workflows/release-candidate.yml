@@ -1,0 +1,71 @@
+name: Release candidate
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: release-candidate-main
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      action: ${{ steps.version.outputs.action }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_GH_TOKEN }}
+
+      - id: version
+        uses: ArchiveBox/monorepo/.github/actions/prepare-release-version@fcd68592e9300adacfc3fe1f12b86982413bd215
+        with:
+          package: abxpkg
+          branch: main
+          tag-prefix: v
+          version-scheme: patch
+
+  artifacts:
+    name: Build and smoke-test release artifacts
+    needs: prepare
+    if: needs.prepare.outputs.action == 'ready' || needs.prepare.outputs.action == 'reserved'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8
+        with:
+          version: "0.10.6"
+          enable-cache: false
+
+      - name: Build and smoke-test the wheel
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          uv build --out-dir dist
+          uv publish --dry-run --trusted-publishing never dist/*.whl dist/*.tar.gz
+          wheel=(dist/abxpkg-*.whl)
+          smoke_env="$(mktemp -d)/.venv"
+          uv venv --python 3.12 "$smoke_env"
+          uv pip install --no-cache --python "$smoke_env" "${wheel[0]}"
+          VIRTUAL_ENV="$smoke_env" uv run --no-cache --active --no-project python -c 'import abxpkg'
+          VIRTUAL_ENV="$smoke_env" uv run --no-cache --active --no-project abxpkg --help >/dev/null
+          uv run --no-cache --no-project python - <<'PY' > dist/SHA256SUMS
+          from hashlib import sha256
+          from pathlib import Path
+          for path in sorted((*Path("dist").glob("*.whl"), *Path("dist").glob("*.tar.gz"))):
+              print(f"{sha256(path.read_bytes()).hexdigest()}  {path.name}")
+          PY
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: abxpkg-dist-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
