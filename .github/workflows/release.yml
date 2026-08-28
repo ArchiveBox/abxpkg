@@ -100,10 +100,12 @@ jobs:
     needs: publish
     if: needs.publish.outputs.cascade_ready == 'true'
     permissions:
+      actions: read
       contents: read
     uses: ArchiveBox/monorepo/.github/workflows/cascade-release.yml@main
     with:
       upstream_package: abxpkg
       upstream_version: ${{ needs.publish.outputs.version }}
+      upstream_artifact_name: abxpkg-dist-${{ github.event.workflow_run.head_sha }}
     secrets:
       release_token: ${{ secrets.RELEASE_GH_TOKEN }}
