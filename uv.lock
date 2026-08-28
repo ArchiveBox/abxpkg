@@ -18,7 +18,7 @@ wheels = [
 
 [[package]]
 name = "abxpkg"
-version = "1.12.106"
+version = "1.12.107"
 source = { editable = "." }
 dependencies = [
     { name = "platformdirs" },
