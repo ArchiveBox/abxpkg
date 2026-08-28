@@ -40,7 +40,18 @@ if version == current:
 if parse(version) <= parse(current):
     raise SystemExit(f'New version {version} must be greater than {current}')
 path.write_text(re.sub(r'^version = "[^"]+"$', f'version = "{version}"', text, count=1, flags=re.MULTILINE))
+
+lock_path = Path('uv.lock')
+lock, count = re.subn(
+    r'(?m)^(name = "abxpkg"\nversion = ")[^"]+("$)',
+    rf'\g<1>{version}\2',
+    lock_path.read_text(),
+    count=1,
+)
+if count != 1:
+    raise SystemExit('Failed to update abxpkg version in uv.lock')
+lock_path.write_text(lock)
 print(version)
 PY
 
-uv lock --no-cache
+uv lock --check --offline --no-cache
