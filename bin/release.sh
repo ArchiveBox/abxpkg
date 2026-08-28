@@ -117,6 +117,18 @@ pypi_release_json() {
         "https://pypi.org/pypi/${PYPI_PACKAGE}/$1/json?cache_bust=$(date +%s)-${RANDOM}"
 }
 
+pypi_wait_for_release() {
+    local version="$1"
+    pypi_release_json "${version}" >/dev/null
+    for _ in {1..30}; do
+        curl -fsSL -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
+            "https://pypi.org/simple/${PYPI_PACKAGE}/?cache_bust=$(date +%s)-${RANDOM}" | \
+            grep -Fq ">abxpkg-${version}-py3-none-any.whl<" && return
+        sleep 2
+    done
+    return 1
+}
+
 require_clean_exact_checkout() {
     local release_sha="$1"
     local release_branch="$2"
@@ -258,7 +270,7 @@ publish_artifacts() {
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
         uv publish --no-cache --trusted-publishing always "${artifacts[@]}"
-        pypi_release_json "${version}" >/dev/null
+        pypi_wait_for_release "${version}"
     fi
 }
 
