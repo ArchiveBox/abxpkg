@@ -103,6 +103,20 @@ print(max(versions, key=parse) if versions else '')
 PY
 }
 
+pypi_has_release() {
+    local version="$1" simple
+    simple="$(curl -fsSL -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
+        "https://pypi.org/simple/${PYPI_PACKAGE}/?cache_bust=$(date +%s)-${RANDOM}")" || return 1
+    grep -Fq ">${PYPI_PACKAGE}-${version}-py3-none-any.whl<" <<<"${simple}" \
+        && grep -Fq ">${PYPI_PACKAGE}-${version}.tar.gz<" <<<"${simple}"
+}
+
+pypi_release_json() {
+    curl -fsSL --retry 30 --retry-all-errors --retry-delay 2 --retry-max-time 60 \
+        -H 'Cache-Control: no-cache, no-store, max-age=0' -H 'Pragma: no-cache' \
+        "https://pypi.org/pypi/${PYPI_PACKAGE}/$1/json?cache_bust=$(date +%s)-${RANDOM}"
+}
+
 require_clean_exact_checkout() {
     local release_sha="$1"
     local release_branch="$2"
@@ -240,10 +254,11 @@ publish_artifacts() {
         echo "Missing build artifacts for ${PYPI_PACKAGE}==${version}" >&2
         return 1
     fi
-    if curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null 2>&1; then
+    if pypi_has_release "${version}"; then
         echo "${PYPI_PACKAGE} ${version} already published on PyPI"
     else
         uv publish --no-cache --trusted-publishing always "${artifacts[@]}"
+        pypi_release_json "${version}" >/dev/null
     fi
 }
 
@@ -287,11 +302,7 @@ verify_release_outputs() {
           ([.assets[].name] | sort) == ([$wheel, $sdist, "SHA256SUMS"] | sort)
         ' <<<"${release_json}" >/dev/null
 
-    curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/${version}/json" |
-        jq -e \
-            --arg wheel "${PYPI_PACKAGE}-${version}-py3-none-any.whl" \
-            --arg sdist "${PYPI_PACKAGE}-${version}.tar.gz" \
-            '([.urls[].filename] | sort) == ([$wheel, $sdist] | sort)' >/dev/null
+    pypi_has_release "${version}"
 }
 
 main() {
@@ -321,7 +332,7 @@ main() {
 
     pypi_exists=false
     github_release_exists=false
-    if curl -fsSL "https://pypi.org/pypi/${PYPI_PACKAGE}/json" | jq -e --arg version "${version}" '.releases[$version] | length > 0' >/dev/null 2>&1; then
+    if pypi_has_release "${version}"; then
         pypi_exists=true
     fi
     release_target="$(git ls-remote origin "refs/tags/${TAG_PREFIX}${version}" | cut -f1)"
