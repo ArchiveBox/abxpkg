@@ -11,14 +11,14 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "uuid7" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/50/81/9891168ad505aa1706065a5afa30e02f22a67023be0454f2b9f38170e82f/abxbus-2.5.49.tar.gz", hash = "sha256:fca7dc9f948823da31222b24edf8cce3076fbd2b14e27d04cc34f7af1cb31964", size = 133381, upload-time = "2026-08-28T20:00:32.102001Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/50/81/9891168ad505aa1706065a5afa30e02f22a67023be0454f2b9f38170e82f/abxbus-2.5.49.tar.gz", hash = "sha256:fca7dc9f948823da31222b24edf8cce3076fbd2b14e27d04cc34f7af1cb31964", size = 133381, upload-time = "2026-08-28T20:00:32.102Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/a8/7ef31fd0d5c32ccf9bbd7531bfbbb6024696047ad8477b816344896b0ac4/abxbus-2.5.49-py3-none-any.whl", hash = "sha256:a43b23a1f94447ecc41ce267ef30deabe2d30f1735daacba322d5ebe3549cddd", size = 127245, upload-time = "2026-08-28T20:00:30.628585Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/a8/7ef31fd0d5c32ccf9bbd7531bfbbb6024696047ad8477b816344896b0ac4/abxbus-2.5.49-py3-none-any.whl", hash = "sha256:a43b23a1f94447ecc41ce267ef30deabe2d30f1735daacba322d5ebe3549cddd", size = 127245, upload-time = "2026-08-28T20:00:30.628Z" },
 ]
 
 [[package]]
 name = "abxpkg"
-version = "1.12.99"
+version = "1.12.100"
 source = { editable = "." }
 dependencies = [
     { name = "platformdirs" },
