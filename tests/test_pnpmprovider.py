@@ -853,6 +853,36 @@ class TestPnpmProvider:
                     min_release_age=3,
                 ).update("zx", min_version=SemVer("999.0.0"))
 
+    def test_literal_version_override_cannot_replace_installed_package_version(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("node")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            install_root = Path(tmpdir) / "pnpm"
+            provider = PnpmProvider(
+                install_root=install_root,
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={
+                    "zx": {
+                        "install_args": ["zx@7.2.3"],
+                        "version": "999.0.0",
+                    },
+                },
+            )
+
+            installed = provider.install("zx", min_version=SemVer("1.0.0"))
+
+            assert installed is not None
+            package_json = install_root / "node_modules" / "zx" / "package.json"
+            assert package_json.exists()
+            import json as _json
+
+            observed_version = _json.loads(package_json.read_text())["version"]
+            assert str(installed.loaded_version) == observed_version
+
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,

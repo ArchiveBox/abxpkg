@@ -838,6 +838,19 @@ class PnpmProvider(BinProvider):
         ):
             if not (modules_dir / package / "package.json").exists():
                 return True
+        installed_version = self._installed_package_version(str(bin_name))
+        raw_cached_version = cached_record.get("loaded_version")
+        cached_version = (
+            SemVer.parse(raw_cached_version)
+            if isinstance(raw_cached_version, (str, bytes))
+            else None
+        )
+        if (
+            installed_version is not None
+            and cached_version is not None
+            and installed_version != cached_version
+        ):
+            return True
         return False
 
     def _node_modules_dir(self) -> Path | None:
@@ -1349,6 +1362,22 @@ class PnpmProvider(BinProvider):
             bin_name,
             package or str(bin_name),
             no_cache=no_cache,
+        )
+
+    def _get_version_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool,
+    ) -> SemVer | None:
+        installed_package_version = self._installed_package_version(str(bin_name))
+        if installed_package_version is not None:
+            return installed_package_version
+        return super()._get_version_at_abspath(
+            bin_name,
+            installed_abspath,
+            quiet=quiet,
         )
 
     def default_version_handler(
