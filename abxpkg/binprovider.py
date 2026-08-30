@@ -1332,8 +1332,8 @@ class BinProvider(BaseModel):
                 requested_path.is_absolute()
                 and isinstance(cached_name, str)
                 and Path(cached_name).name == requested_path.name
-                and Path(cached_abspath).expanduser().absolute()
-                == requested_path.absolute()
+                and os.path.abspath(os.path.expanduser(cached_abspath))
+                == os.path.abspath(os.path.expanduser(str(requested_path)))
             )
             fingerprint_paths: list[Path] = []
             for raw_fingerprint in raw_fingerprints:

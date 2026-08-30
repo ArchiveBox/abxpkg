@@ -830,15 +830,21 @@ class PnpmProvider(BinProvider):
         bin_name: BinName,
         cached_record: Mapping[str, object],
     ) -> bool:
-        if self.install_root is None:
-            return False
-        modules_dir = self.install_root / "node_modules"
-        for package in self._package_names_from_install_args(
-            self.get_install_args(bin_name, quiet=True, no_cache=True),
-        ):
-            if not (modules_dir / package / "package.json").exists():
-                return True
-        installed_version = self._installed_package_version(str(bin_name))
+        if self.install_root is not None:
+            modules_dir = self.install_root / "node_modules"
+            for package in self._package_names_from_install_args(
+                self.get_install_args(bin_name, quiet=True, no_cache=True),
+            ):
+                if not (modules_dir / package / "package.json").exists():
+                    return True
+            installed_version = self._installed_package_version(str(bin_name))
+        else:
+            raw_abspath = cached_record.get("abspath")
+            installed_version = (
+                self._installed_abspath_package_version(Path(raw_abspath))
+                if isinstance(raw_abspath, str)
+                else None
+            )
         raw_cached_version = cached_record.get("loaded_version")
         cached_version = (
             SemVer.parse(raw_cached_version)
@@ -852,6 +858,22 @@ class PnpmProvider(BinProvider):
         ):
             return True
         return False
+
+    @classmethod
+    def _installed_abspath_package_version(cls, abspath: Path) -> SemVer | None:
+        """Read the package version behind a global pnpm executable without pnpm."""
+        package_target = cls.host_projection_target(abspath) or abspath.resolve(
+            strict=False,
+        )
+        for parent in package_target.parents:
+            package_json = parent / "package.json"
+            try:
+                package = json.loads(package_json.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            version = package.get("version") if isinstance(package, dict) else None
+            return SemVer.parse(version) if isinstance(version, str) else None
+        return None
 
     def _node_modules_dir(self) -> Path | None:
         if self.install_root:

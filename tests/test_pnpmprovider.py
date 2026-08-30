@@ -881,7 +881,29 @@ class TestPnpmProvider:
             import json as _json
 
             observed_version = _json.loads(package_json.read_text())["version"]
-            assert str(installed.loaded_version) == observed_version
+            assert installed.loaded_version == SemVer("7.2.3")
+            assert observed_version == "7.2.3"
+            assert str(installed.loaded_version) != "999.0.0"
+
+    def test_global_cache_compares_installed_package_version(self, tmp_path):
+        package_dir = tmp_path / "node_modules" / "zx"
+        executable = package_dir / "build" / "cli.js"
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/usr/bin/env node\n")
+        executable.chmod(0o755)
+        (package_dir / "package.json").write_text(
+            '{"name": "zx", "version": "7.2.3"}',
+        )
+        provider = PnpmProvider(install_root=None)
+
+        assert provider.cached_binary_state_mismatch(
+            "zx",
+            {"abspath": str(executable), "loaded_version": "999.0.0"},
+        )
+        assert not provider.cached_binary_state_mismatch(
+            "zx",
+            {"abspath": str(executable), "loaded_version": "7.2.3"},
+        )
 
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
