@@ -830,18 +830,22 @@ class PnpmProvider(BinProvider):
         bin_name: BinName,
         cached_record: Mapping[str, object],
     ) -> bool:
+        package_names = self._package_names_from_install_args(
+            self.get_install_args(bin_name, quiet=True, no_cache=True),
+        )
         if self.install_root is not None:
             modules_dir = self.install_root / "node_modules"
-            for package in self._package_names_from_install_args(
-                self.get_install_args(bin_name, quiet=True, no_cache=True),
-            ):
+            for package in package_names:
                 if not (modules_dir / package / "package.json").exists():
                     return True
             installed_version = self._installed_package_version(str(bin_name))
         else:
             raw_abspath = cached_record.get("abspath")
             installed_version = (
-                self._installed_abspath_package_version(Path(raw_abspath))
+                self._installed_abspath_package_version(
+                    Path(raw_abspath),
+                    package_names=set(package_names),
+                )
                 if isinstance(raw_abspath, str)
                 else None
             )
@@ -860,7 +864,12 @@ class PnpmProvider(BinProvider):
         return False
 
     @classmethod
-    def _installed_abspath_package_version(cls, abspath: Path) -> SemVer | None:
+    def _installed_abspath_package_version(
+        cls,
+        abspath: Path,
+        *,
+        package_names: set[str],
+    ) -> SemVer | None:
         """Read the package version behind a global pnpm executable without pnpm."""
         package_target = cls.host_projection_target(abspath) or abspath.resolve(
             strict=False,
@@ -871,7 +880,12 @@ class PnpmProvider(BinProvider):
                 package = json.loads(package_json.read_text())
             except (OSError, json.JSONDecodeError):
                 continue
-            version = package.get("version") if isinstance(package, dict) else None
+            if (
+                not isinstance(package, dict)
+                or package.get("name") not in package_names
+            ):
+                continue
+            version = package.get("version")
             return SemVer.parse(version) if isinstance(version, str) else None
         return None
 

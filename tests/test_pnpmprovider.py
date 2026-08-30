@@ -886,23 +886,35 @@ class TestPnpmProvider:
             assert str(installed.loaded_version) != "999.0.0"
 
     def test_global_cache_compares_installed_package_version(self, tmp_path):
-        package_dir = tmp_path / "node_modules" / "zx"
+        global_root = tmp_path / "global"
+        package_dir = global_root / ".pnpm" / "zx@7.2.3" / "node_modules" / "zx"
         executable = package_dir / "build" / "cli.js"
         executable.parent.mkdir(parents=True)
         executable.write_text("#!/usr/bin/env node\n")
         executable.chmod(0o755)
+        (executable.parent / "package.json").write_text(
+            '{"name": "not-zx", "version": "999.0.0"}',
+        )
         (package_dir / "package.json").write_text(
             '{"name": "zx", "version": "7.2.3"}',
         )
+        launcher = global_root / "bin" / "zx"
+        launcher.parent.mkdir()
+        launcher.write_text(
+            '#!/bin/sh\nexec node "$basedir/../.pnpm/zx@7.2.3/node_modules/zx/build/cli.js" "$@"\n',
+        )
+        launcher.chmod(0o755)
         provider = PnpmProvider(install_root=None)
+
+        assert provider.host_projection_target(launcher) == executable
 
         assert provider.cached_binary_state_mismatch(
             "zx",
-            {"abspath": str(executable), "loaded_version": "999.0.0"},
+            {"abspath": str(launcher), "loaded_version": "999.0.0"},
         )
         assert not provider.cached_binary_state_mismatch(
             "zx",
-            {"abspath": str(executable), "loaded_version": "7.2.3"},
+            {"abspath": str(launcher), "loaded_version": "7.2.3"},
         )
 
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
