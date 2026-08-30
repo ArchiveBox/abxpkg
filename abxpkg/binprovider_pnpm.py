@@ -855,11 +855,9 @@ class PnpmProvider(BinProvider):
             if isinstance(raw_cached_version, (str, bytes))
             else None
         )
-        if (
-            installed_version is not None
-            and cached_version is not None
-            and installed_version != cached_version
-        ):
+        if installed_version is None:
+            return True
+        if cached_version is not None and installed_version != cached_version:
             return True
         return False
 

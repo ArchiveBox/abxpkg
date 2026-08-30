@@ -917,6 +917,37 @@ class TestPnpmProvider:
             {"abspath": str(launcher), "loaded_version": "7.2.3"},
         )
 
+    def test_global_cache_rejects_executable_without_owned_package(self, tmp_path):
+        global_root = tmp_path / "global"
+        executable = (
+            global_root
+            / ".pnpm"
+            / "not-zx@7.2.3"
+            / "node_modules"
+            / "not-zx"
+            / "build"
+            / "cli.js"
+        )
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/usr/bin/env node\n")
+        executable.chmod(0o755)
+        (executable.parent.parent / "package.json").write_text(
+            '{"name": "not-zx", "version": "7.2.3"}',
+        )
+        launcher = global_root / "bin" / "zx"
+        launcher.parent.mkdir()
+        launcher.write_text(
+            '#!/bin/sh\nexec node "$basedir/../.pnpm/not-zx@7.2.3/node_modules/not-zx/build/cli.js" "$@"\n',
+        )
+        launcher.chmod(0o755)
+        provider = PnpmProvider(install_root=None)
+
+        assert provider.host_projection_target(launcher) == executable
+        assert provider.cached_binary_state_mismatch(
+            "zx",
+            {"abspath": str(launcher), "loaded_version": "7.2.3"},
+        )
+
     def test_provider_defaults_and_binary_overrides_enforce_min_release_age(
         self,
         test_machine,
