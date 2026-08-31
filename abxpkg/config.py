@@ -569,6 +569,10 @@ def _cached_records(
     *,
     require_executable: bool = True,
 ):
+    requested_path = os.path.expanduser(os.fspath(binary_name))
+    requested_abspath = (
+        os.path.abspath(requested_path) if os.path.isabs(requested_path) else None
+    )
     for provider_name in provider_names:
         default_root = os.path.join(lib_dir, provider_name)
         provider_roots = dict.fromkeys(
@@ -629,10 +633,22 @@ def _cached_records(
                     if isinstance(raw_fingerprints, list) and raw_fingerprints
                     else None
                 )
+                record_name = (
+                    record.get("bin_name") if isinstance(record, dict) else None
+                )
+                record_name_matches = record_name == binary_name or (
+                    requested_abspath is not None
+                    and isinstance(record_name, str)
+                    and os.path.basename(record_name)
+                    == os.path.basename(requested_path)
+                    and isinstance(record_abspath, str)
+                    and os.path.abspath(os.path.expanduser(record_abspath))
+                    == requested_abspath
+                )
                 if (
                     isinstance(record, dict)
                     and record.get("provider_name") == provider_name
-                    and record.get("bin_name") == binary_name
+                    and record_name_matches
                     and isinstance(record_abspath, str)
                     and os.path.isabs(record_abspath)
                     and (not require_executable or os.access(record_abspath, os.X_OK))

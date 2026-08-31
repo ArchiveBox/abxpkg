@@ -449,6 +449,107 @@ def test_binary_service_request_projection_uses_effective_service_options(
     )
 
 
+def test_binary_service_reuses_absolute_path_request_projection(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+
+    lib_dir = tmp_path / "lib"
+    provider = EnvProvider(install_root=lib_dir / "env")
+    loaded = provider.load("python3")
+    assert loaded is not None
+    projected_path = provider.project_binary(loaded, "python3")
+    assert projected_path is not None
+
+    run_id = 0
+
+    async def run() -> None:
+        nonlocal run_id
+        run_id += 1
+        bus = abxbus.EventBus(name=f"test_absolute_request_projection_{run_id}")
+        BinaryService(bus, auto_install=False, lib_dir=lib_dir)
+        await bus.emit(
+            BinaryRequestEvent(
+                name=str(projected_path),
+                binproviders="env",
+            ),
+        ).now()
+        await bus.wait_until_idle()
+        await bus.destroy(clear=False)
+
+    asyncio.run(run())
+
+    binary_load_calls = 0
+
+    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
+        del arg
+        nonlocal binary_load_calls
+        if event == "call" and frame.f_code is BinaryService._load.__code__:
+            binary_load_calls += 1
+
+    sys.setprofile(count_binary_loads)
+    threading.setprofile(count_binary_loads)
+    try:
+        asyncio.run(run())
+    finally:
+        sys.setprofile(None)
+        threading.setprofile(None)
+
+    assert binary_load_calls == 0
+
+
+def test_binary_service_reuses_normalized_absolute_path_request_projection(
+    tmp_path: Path,
+) -> None:
+    from abxpkg.binary_service import BinaryRequestEvent, BinaryService
+
+    lib_dir = tmp_path / "lib"
+    provider = EnvProvider(install_root=lib_dir / "env")
+    loaded = provider.load("python3")
+    assert loaded is not None
+    projected_path = provider.project_binary(loaded, "python3")
+    assert projected_path is not None
+    requested_path = (
+        projected_path.parent / ".." / projected_path.parent.name / projected_path.name
+    )
+
+    run_id = 0
+
+    async def run() -> None:
+        nonlocal run_id
+        run_id += 1
+        bus = abxbus.EventBus(name=f"test_normalized_request_projection_{run_id}")
+        BinaryService(bus, auto_install=False, lib_dir=lib_dir)
+        await bus.emit(
+            BinaryRequestEvent(
+                name=str(requested_path),
+                binproviders="env",
+            ),
+        ).now()
+        await bus.wait_until_idle()
+        await bus.destroy(clear=False)
+
+    asyncio.run(run())
+
+    binary_load_calls = 0
+
+    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
+        del arg
+        nonlocal binary_load_calls
+        if event == "call" and frame.f_code is BinaryService._load.__code__:
+            binary_load_calls += 1
+
+    sys.setprofile(count_binary_loads)
+    threading.setprofile(count_binary_loads)
+    try:
+        asyncio.run(run())
+    finally:
+        sys.setprofile(None)
+        threading.setprofile(None)
+
+    assert binary_load_calls == 0
+
+
 def test_binary_event_env_does_not_prepend_shared_host_projections(
     tmp_path: Path,
 ) -> None:

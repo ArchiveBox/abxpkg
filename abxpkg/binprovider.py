@@ -1326,6 +1326,15 @@ class BinProvider(BaseModel):
                 list,
             ):
                 return False
+            requested_path = Path(str(bin_name)).expanduser()
+            cached_name = typed_record.get("bin_name")
+            cached_name_matches = cached_name == str(bin_name) or (
+                requested_path.is_absolute()
+                and isinstance(cached_name, str)
+                and Path(cached_name).name == requested_path.name
+                and os.path.abspath(os.path.expanduser(cached_abspath))
+                == os.path.abspath(os.path.expanduser(str(requested_path)))
+            )
             fingerprint_paths: list[Path] = []
             for raw_fingerprint in raw_fingerprints:
                 if not isinstance(raw_fingerprint, dict):
@@ -1337,7 +1346,7 @@ class BinProvider(BaseModel):
                 fingerprint_paths.append(Path(fingerprint_path))
             return (
                 typed_record.get("provider_name") == self.name
-                and typed_record.get("bin_name") == str(bin_name)
+                and cached_name_matches
                 and Path(cached_abspath).expanduser().resolve(strict=False)
                 == resolved_abspath
                 and typed_record.get("resolved_provider_name") == exec_provider.name

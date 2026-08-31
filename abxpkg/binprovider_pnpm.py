@@ -830,15 +830,62 @@ class PnpmProvider(BinProvider):
         bin_name: BinName,
         cached_record: Mapping[str, object],
     ) -> bool:
-        if self.install_root is None:
-            return False
-        modules_dir = self.install_root / "node_modules"
-        for package in self._package_names_from_install_args(
+        package_names = self._package_names_from_install_args(
             self.get_install_args(bin_name, quiet=True, no_cache=True),
-        ):
-            if not (modules_dir / package / "package.json").exists():
-                return True
+        )
+        if self.install_root is not None:
+            modules_dir = self.install_root / "node_modules"
+            for package in package_names:
+                if not (modules_dir / package / "package.json").exists():
+                    return True
+            installed_version = self._installed_package_version(str(bin_name))
+        else:
+            raw_abspath = cached_record.get("abspath")
+            installed_version = (
+                self._installed_abspath_package_version(
+                    Path(raw_abspath),
+                    package_names=set(package_names),
+                )
+                if isinstance(raw_abspath, str)
+                else None
+            )
+        raw_cached_version = cached_record.get("loaded_version")
+        cached_version = (
+            SemVer.parse(raw_cached_version)
+            if isinstance(raw_cached_version, (str, bytes))
+            else None
+        )
+        if installed_version is None:
+            return True
+        if cached_version is not None and installed_version != cached_version:
+            return True
         return False
+
+    @classmethod
+    def _installed_abspath_package_version(
+        cls,
+        abspath: Path,
+        *,
+        package_names: set[str],
+    ) -> SemVer | None:
+        """Read the package version behind a global pnpm executable without pnpm."""
+        package_target = cls.host_projection_target(abspath) or abspath.resolve(
+            strict=False,
+        )
+        for parent in package_target.parents:
+            package_json = parent / "package.json"
+            try:
+                package = json.loads(package_json.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (
+                not isinstance(package, dict)
+                or package.get("name") not in package_names
+            ):
+                continue
+            version = package.get("version")
+            return SemVer.parse(version) if isinstance(version, str) else None
+        return None
 
     def _node_modules_dir(self) -> Path | None:
         if self.install_root:
@@ -1349,6 +1396,22 @@ class PnpmProvider(BinProvider):
             bin_name,
             package or str(bin_name),
             no_cache=no_cache,
+        )
+
+    def _get_version_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool,
+    ) -> SemVer | None:
+        installed_package_version = self._installed_package_version(str(bin_name))
+        if installed_package_version is not None:
+            return installed_package_version
+        return super()._get_version_at_abspath(
+            bin_name,
+            installed_abspath,
+            quiet=quiet,
         )
 
     def default_version_handler(
