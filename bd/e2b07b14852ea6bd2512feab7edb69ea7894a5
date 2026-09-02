@@ -1,0 +1,22 @@
+tests/test_cli.py
+  s_5bb32a7a6ab331::t_c6786313cbfd59 4824-4853
+  s_5bb32a7a6ab331::t_2908cbffaea05c 4854-4857
+abxpkg/binprovider_uv.py
+  s_5bb32a7a6ab331::t_1b06a9acf83487 1223-1228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bde2b07b14852ea6bd2512feab7edb69ea7894a5",
+  "prompts": {},
+  "sessions": {
+    "s_5bb32a7a6ab331": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a061ba-d733-7dc0-9218-b3d19f4bd53c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
