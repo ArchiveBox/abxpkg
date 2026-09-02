@@ -49,7 +49,7 @@ class TestNodeProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert installed.loaded_abspath == install_root / "bin" / "npm"
+            assert installed.loaded_abspath == install_root.resolve() / "bin" / "npm"
             assert (install_root / "bin" / "node").is_file()
             assert (install_root / "bin" / "npm").exists()
             assert (

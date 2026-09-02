@@ -64,7 +64,7 @@ class TestUvProvider:
 
             assert installer.loaded_abspath is not None
             assert installer.loaded_abspath.is_relative_to(
-                install_root / "pip",
+                (install_root / "pip").resolve(),
             )
             test_machine.assert_shallow_binary_loaded(
                 installed,
@@ -72,7 +72,10 @@ class TestUvProvider:
             )
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert installed.loaded_abspath == install_root / "venv" / "bin" / "cowsay"
+            assert (
+                installed.loaded_abspath
+                == (install_root / "venv" / "bin" / "cowsay").resolve()
+            )
 
     def test_installer_binary_is_cached_in_provider_local_derived_env(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -124,7 +127,10 @@ class TestUvProvider:
                 assert_version_command=False,
             )
             assert installed is not None
-            assert installed.loaded_abspath == package_root / "venv" / "bin" / "cowsay"
+            assert (
+                installed.loaded_abspath
+                == (package_root / "venv" / "bin" / "cowsay").resolve()
+            )
 
             parent_provider = UvProvider(
                 install_root=install_root,
@@ -161,8 +167,8 @@ class TestUvProvider:
             provider.setup_PATH(no_cache=True)
             path_entries = provider.PATH.split(os.pathsep)
 
-            assert path_entries.index(str(package_bin)) < path_entries.index(
-                str(shared_bin),
+            assert path_entries.index(str(package_bin.resolve())) < path_entries.index(
+                str(shared_bin.resolve()),
             )
 
     def test_env_excludes_site_packages_from_foreign_python_minors(self, tmp_path):
@@ -283,11 +289,17 @@ class TestUvProvider:
             assert pyfiglet is not None
             assert cowsay.loaded_abspath is not None
             assert pyfiglet.loaded_abspath is not None
-            assert cowsay.loaded_abspath == (
-                install_root / "packages" / "cowsay" / "venv" / "bin" / "cowsay"
+            assert (
+                cowsay.loaded_abspath
+                == (
+                    install_root / "packages" / "cowsay" / "venv" / "bin" / "cowsay"
+                ).resolve()
             )
-            assert pyfiglet.loaded_abspath == (
-                install_root / "packages" / "pyfiglet" / "venv" / "bin" / "pyfiglet"
+            assert (
+                pyfiglet.loaded_abspath
+                == (
+                    install_root / "packages" / "pyfiglet" / "venv" / "bin" / "pyfiglet"
+                ).resolve()
             )
             assert cowsay.loaded_abspath.exists()
             assert pyfiglet.loaded_abspath.exists()
@@ -425,7 +437,10 @@ class TestUvProvider:
             # The provider-level 100yr ``min_release_age`` was overridden by
             # the explicit ``--exclude-newer=2100-01-01`` in install_args so
             # the resolver was able to pick a real version.
-            assert installed.loaded_abspath == venv_path / "venv" / "bin" / "cowsay"
+            assert (
+                installed.loaded_abspath
+                == (venv_path / "venv" / "bin" / "cowsay").resolve()
+            )
 
     def test_install_root_alias_installs_into_the_requested_venv(self, test_machine):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -446,8 +461,8 @@ class TestUvProvider:
             )
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "venv" / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             # Real on-disk side effects: ``uv venv`` created a real venv.
             assert (install_root / "venv" / "pyvenv.cfg").exists()
@@ -541,8 +556,8 @@ class TestUvProvider:
             )
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "venv" / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_abspath != ambient_installed.loaded_abspath
             assert installed.loaded_version == SemVer("6.1.0")
@@ -838,7 +853,7 @@ class TestUvProvider:
                 assert installed is not None
                 assert installed.loaded_abspath is not None
                 # Global mode lays shims in UV_TOOL_BIN_DIR.
-                assert installed.loaded_abspath.parent == tool_bin_dir
+                assert installed.loaded_abspath.parent == tool_bin_dir.resolve()
                 # And gives each tool its own venv under UV_TOOL_DIR.
                 assert (tool_dir / "cowsay" / "pyvenv.cfg").exists()
 
@@ -885,7 +900,10 @@ class TestUvProvider:
                     assert_version_command=False,
                 )
                 assert reloaded is not None
-                assert reloaded.loaded_abspath == tool_dir / "cowsay" / "bin" / "cowsay"
+                assert (
+                    reloaded.loaded_abspath.resolve()
+                    == (tool_dir / "cowsay" / "bin" / "cowsay").resolve()
+                )
 
                 assert provider.uninstall("cowsay") is True
                 assert provider.load("cowsay", quiet=True, no_cache=True) is None

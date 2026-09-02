@@ -128,8 +128,8 @@ class TestPuppeteerProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
 
@@ -160,8 +160,8 @@ class TestPuppeteerProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == bin_dir
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == bin_dir.resolve()
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
 
@@ -203,7 +203,7 @@ class TestPuppeteerProvider:
 
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
-            assert provider.bin_dir == temp_dir_path / "custom-bin"
+            assert provider.bin_dir == (temp_dir_path / "custom-bin").resolve()
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert ambient_installed.loaded_abspath is not None
