@@ -30,8 +30,8 @@ class TestDenoProvider:
             )
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             # Real on-disk side effect: deno's shim landed in <root>/bin/cowsay
             # and the global module cache is populated under cache_dir.

@@ -48,8 +48,8 @@ class TestGemProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_install_root_and_bin_dir_aliases_install_into_the_requested_paths(
@@ -75,8 +75,8 @@ class TestGemProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == install_root
-            assert provider.bin_dir == bin_dir
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == bin_dir.resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_explicit_gem_bin_dir_takes_precedence_over_existing_PATH_entries(
@@ -118,8 +118,8 @@ class TestGemProvider:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            assert provider.install_root == gem_home
-            assert provider.bin_dir == gem_bindir
+            assert provider.install_root == gem_home.resolve()
+            assert provider.bin_dir == gem_bindir.resolve()
             assert installed.loaded_abspath.parent == provider.bin_dir
             assert installed.loaded_version is not None
             assert ambient_installed.loaded_version is not None

@@ -109,8 +109,8 @@ class TestBrewProvider:
             assert bin_dir is not None
 
             test_machine.assert_shallow_binary_loaded(installed)
-            assert provider.install_root == install_root
-            assert bin_dir == install_root / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert bin_dir == (install_root / "bin").resolve()
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath == bin_dir / formula
             assert installed.loaded_abspath.is_symlink()
