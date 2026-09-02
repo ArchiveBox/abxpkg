@@ -1,0 +1,50 @@
+abxpkg/binprovider_npm.py
+  s_5bb32a7a6ab331::t_554367121412a4 153,730,758-759,766,829
+  s_5bb32a7a6ab331::t_15d74af41e37ed 225
+tests/test_binprovider.py
+  s_5bb32a7a6ab331::t_cc4f6de1b077ae 18-19,32-82
+  s_5bb32a7a6ab331::t_ccc1a36ce70c22 668
+abxpkg/binprovider_pnpm.py
+  s_5bb32a7a6ab331::t_15d74af41e37ed 206
+  s_5bb32a7a6ab331::t_7bce6a38975b5b 161,806,885,1184,1323,1362-1364,1413
+abxpkg/binprovider_yarn.py
+  s_5bb32a7a6ab331::t_15d74af41e37ed 176
+abxpkg/binprovider.py
+  s_5bb32a7a6ab331::t_6b7c8c6d7218e1 2262-2266,2271
+  s_5bb32a7a6ab331::t_c0bb3f9a4d1f0c 508-509,2267-2270,2272-2279,2281-2302,5097-5098
+  s_5bb32a7a6ab331::t_15d74af41e37ed 2259-2260
+abxpkg/binprovider_bun.py
+  s_5bb32a7a6ab331::t_15d74af41e37ed 162
+abxpkg/binprovider_gem.py
+  s_5bb32a7a6ab331::t_ada0b2fc06d029 230-231
+  s_5bb32a7a6ab331::t_7bb7eb7189ddf4 8,219-220,223-227,229,252-253,257-264
+  s_5bb32a7a6ab331::t_1fca0c5c258911 217-218,221,228,232-250,254-256,265-272
+  s_5bb32a7a6ab331::t_1550716804c48e 16,222,251
+abxpkg/binprovider_uv.py
+  s_5bb32a7a6ab331::t_a6a347c7324feb 468,720,893,996,1139,1168-1171,1187,1198,1209
+abxpkg/binprovider_pip.py
+  s_5bb32a7a6ab331::t_6b7c8c6d7218e1 706,710,733-740,753,774,806
+abxpkg/click_cli.py
+  s_5bb32a7a6ab331::t_c0bb3f9a4d1f0c 84-91
+abxpkg/binprovider_goget.py
+  s_5bb32a7a6ab331::t_daf2a134406d88 274-275,291-293
+tests/test_cli.py
+  s_5bb32a7a6ab331::t_cc4f6de1b077ae 4833
+  s_5bb32a7a6ab331::t_14c82de71b050b 4824-4832,4834-4857
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "536477303f93ea79a3a7e2a1be0bdd5e5fa5e2e2",
+  "prompts": {},
+  "sessions": {
+    "s_5bb32a7a6ab331": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a061ba-d733-7dc0-9218-b3d19f4bd53c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
