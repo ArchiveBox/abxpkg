@@ -1,0 +1,23 @@
+tests/test_gemprovider.py
+  s_cec16ad9ba0455::t_f909a552e1013b 51-52,78-79,121-122
+tests/test_denoprovider.py
+  s_cec16ad9ba0455::t_f909a552e1013b 33-34
+tests/test_brewprovider.py
+  s_cec16ad9ba0455::t_f909a552e1013b 112-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "49183ed03baae3e9f3a56932c402c6fc48da5fcb",
+  "prompts": {},
+  "sessions": {
+    "s_cec16ad9ba0455": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05b1d-30f5-7a51-87b6-8499bac7baa6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
