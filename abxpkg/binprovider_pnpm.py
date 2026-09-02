@@ -158,9 +158,7 @@ class PnpmProvider(BinProvider):
         if cache_info is None or self.install_root is None:
             return cache_info
 
-        for package in self._package_names_from_install_args(
-            self.get_install_args(str(bin_name), quiet=True) or [str(bin_name)],
-        ):
+        for package in self.get_package_names(str(bin_name)):
             package_json = self.install_root / "node_modules" / package / "package.json"
             if package_json.exists():
                 cache_info["fingerprint_paths"].append(package_json)
@@ -205,7 +203,7 @@ class PnpmProvider(BinProvider):
         bin_name: BinName,
         **context,
     ) -> str | None:
-        package = self._docs_url_package_name(bin_name, allow_leading_at=True)
+        package = self._docs_url_package_name(bin_name)
         if not package:
             return None
         return f"https://www.npmjs.com/package/{package}"
@@ -800,39 +798,12 @@ class PnpmProvider(BinProvider):
             return None
         return self.bin_dir / str(bin_name)
 
-    @staticmethod
-    def _package_name_from_install_args(install_args: InstallArgs) -> str:
-        main_package = next(
-            iter(PnpmProvider._package_names_from_install_args(install_args)),
-            "",
-        )
-        if not main_package:
-            return ""
-        return main_package
-
-    @staticmethod
-    def _package_names_from_install_args(install_args: InstallArgs) -> list[str]:
-        packages: list[str] = []
-        for arg in install_args:
-            if not arg or arg.startswith("-"):
-                continue
-            package = (
-                "@" + arg[1:].split("@", 1)[0]
-                if arg.startswith("@")
-                else arg.split("@", 1)[0]
-            )
-            if package and package not in packages:
-                packages.append(package)
-        return packages
-
     def cached_binary_state_mismatch(
         self,
         bin_name: BinName,
         cached_record: Mapping[str, object],
     ) -> bool:
-        package_names = self._package_names_from_install_args(
-            self.get_install_args(bin_name, quiet=True, no_cache=True),
-        )
+        package_names = self.get_package_names(bin_name)
         if self.install_root is not None:
             modules_dir = self.install_root / "node_modules"
             for package in package_names:
@@ -911,8 +882,7 @@ class PnpmProvider(BinProvider):
             return None
 
     def _installed_package_dir(self, bin_name: str) -> Path | None:
-        install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
-        package = self._package_name_from_install_args(install_args)
+        package = self.get_package_names(bin_name)[0]
         modules_dir = self._node_modules_dir()
         if not package or modules_dir is None:
             return None
@@ -1211,7 +1181,7 @@ class PnpmProvider(BinProvider):
         )
         if proc.returncode != 0:
             self._raise_proc_error("install", install_args, proc)
-        package = self._package_name_from_install_args(install_args)
+        package = self.get_package_names(bin_name, install_args)[0]
         linked_bin_path = self._linked_bin_path(
             TypeAdapter(BinName).validate_python(bin_name),
         )
@@ -1350,10 +1320,7 @@ class PnpmProvider(BinProvider):
         if direct_abspath:
             return direct_abspath
 
-        install_args = self.get_install_args(str(bin_name), quiet=True) or [
-            str(bin_name),
-        ]
-        package = self._package_name_from_install_args(install_args)
+        package = self.get_package_names(str(bin_name))[0]
         package_dir = self._installed_package_dir(str(bin_name))
         if package_dir is None:
             return self._refresh_pnpm_exec_link(
@@ -1392,6 +1359,9 @@ class PnpmProvider(BinProvider):
                     bin_name,
                     TypeAdapter(HostBinPath).validate_python(package_abspath),
                 )
+        package_json = package_dir / "package.json"
+        if package_json.is_file():
+            return TypeAdapter(HostBinPath).validate_python(package_json)
         return self._refresh_pnpm_exec_link(
             bin_name,
             package or str(bin_name),
@@ -1440,12 +1410,7 @@ class PnpmProvider(BinProvider):
 
         # Fallback: ask `pnpm ls --json` for the installed version of the
         # main package, and finally fall back to reading its package.json.
-        install_args = self.get_install_args(str(bin_name), **context) or [
-            str(bin_name),
-        ]
-        package = self._package_name_from_install_args(install_args)
-        if not package:
-            package = str(bin_name)
+        package = self.get_package_names(str(bin_name))[0]
         if pnpm_abspath is not None:
             try:
                 json_output = self.exec(

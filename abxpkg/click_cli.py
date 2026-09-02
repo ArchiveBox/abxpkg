@@ -81,7 +81,14 @@ _NONE_STRINGS = frozenset({"", "none", "null"})
 _ACTIVATE_SHELL_NAMES = frozenset({"bash", "zsh", "fish"})
 _CLI_OPTION_FIELD_NAMES = frozenset(field.name for field in fields(CliOptions))
 _SCRIPT_DEPENDENCY_HANDLER_KEYS = frozenset(
-    {"abspath", "version", "install_args", "packages"},
+    {
+        "abspath",
+        "version",
+        "install_args",
+        "packages",
+        "package_names",
+        "library_names",
+    },
 )
 
 

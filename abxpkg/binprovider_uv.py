@@ -2,7 +2,6 @@
 __package__ = "abxpkg"
 import json
 import os
-import re
 import shutil
 import stat
 import subprocess
@@ -466,10 +465,7 @@ class UvProvider(BinProvider):
             return self.install_root
         if self.install_root.name != "uv":
             return self.install_root
-        package_name = self._package_name_for_bin(
-            bin_name,
-            install_args=install_args,
-        )
+        package_name = self.get_package_names(bin_name, install_args)[0]
         return self.install_root / "packages" / package_name
 
     def _managed_venv_roots(self, bin_name: BinName | None = None) -> list[Path]:
@@ -697,40 +693,6 @@ class UvProvider(BinProvider):
             flags.append(f"--exclude-newer={cutoff}")
         return flags
 
-    @staticmethod
-    def _package_name_from_install_arg(install_arg: str) -> str | None:
-        """Extract a bare Python package name from a uv install arg when possible."""
-        if not install_arg or install_arg.startswith("-"):
-            return None
-        if "://" in install_arg:
-            return None
-        if install_arg.startswith((".", "/", "~")):
-            return None
-        package_name = re.split(r"[<>=!~;]", install_arg, maxsplit=1)[0]
-        package_name = package_name.split("[", 1)[0].strip()
-        return package_name or None
-
-    def _package_name_for_bin(
-        self,
-        bin_name: BinName,
-        install_args: InstallArgs | None = None,
-        **context,
-    ) -> str:
-        """Pick the owning Python package name used for uv metadata lookups."""
-        install_args = (
-            install_args
-            or self.get_install_args(
-                str(bin_name),
-                **context,
-            )
-            or [str(bin_name)]
-        )
-        for install_arg in install_args:
-            package_name = self._package_name_from_install_arg(install_arg)
-            if package_name:
-                return package_name
-        return str(bin_name)
-
     def cached_binary_state_mismatch(
         self,
         bin_name: BinName,
@@ -755,7 +717,7 @@ class UvProvider(BinProvider):
         if cache_info is None or self.install_root is None:
             return cache_info
 
-        package_name = self._package_name_for_bin(str(bin_name))
+        package_name = self.get_package_names(str(bin_name))[0]
         normalized_name = package_name.lower().replace("-", "_")
         venv_roots = self._managed_venv_roots(str(bin_name))
         owning_venv = next(
@@ -834,17 +796,6 @@ class UvProvider(BinProvider):
             if len(parts) == 2 and parts[0] == package_name:
                 return SemVer.parse(parts[1])
         return None
-
-    @staticmethod
-    def _package_names_from_install_args(
-        install_args: InstallArgs,
-        fallback: str,
-    ) -> list[str]:
-        return [
-            arg.split("[", 1)[0].split("=", 1)[0].split(">", 1)[0].split("<", 1)[0]
-            for arg in install_args
-            if arg and not arg.startswith("-")
-        ] or [fallback]
 
     def _clear_venv_site_packages_pycache(self) -> None:
         if self.install_root is None:
@@ -939,10 +890,7 @@ class UvProvider(BinProvider):
             target_python = target_root / "venv" / "bin" / "python"
             self._ensure_venv(target_root, no_cache=no_cache)
             if min_version:
-                tool_names = self._package_names_from_install_args(
-                    install_args,
-                    bin_name,
-                )
+                tool_names = self.get_package_names(bin_name, install_args)
                 installed_versions = [
                     self._version_from_uv_metadata(
                         package_name,
@@ -1045,10 +993,7 @@ class UvProvider(BinProvider):
             # ``uv pip install --upgrade --reinstall`` so the venv's
             # site-packages is fully repopulated from scratch (uv's
             # in-place upgrade path can leave stale files otherwise).
-            tool_names = self._package_names_from_install_args(
-                install_args,
-                bin_name,
-            )
+            tool_names = self.get_package_names(bin_name, install_args)
             uninstall_proc = self.exec(
                 bin_name=installer_bin,
                 cmd=[
@@ -1191,7 +1136,7 @@ class UvProvider(BinProvider):
             return None
         # Fallback: ``uv pip show`` for venv mode.
         if self.install_root:
-            tool_name = self._package_name_for_bin(str(bin_name), **context)
+            tool_name = self.get_package_names(str(bin_name))[0]
             assert installer_binary.loaded_abspath
 
             for venv_root in self._managed_venv_roots(str(bin_name)):
@@ -1220,16 +1165,10 @@ class UvProvider(BinProvider):
                     for line in proc.stdout.splitlines()
                     if line.startswith("Location: ")
                 ]
-                module_names = [tool_name.replace("-", "_").replace(".", "_")]
-                for line in proc.stdout.splitlines():
-                    if line.startswith("Name: "):
-                        package_name = line.split("Name: ", 1)[1].strip()
-                        normalized_package_name = package_name.replace(
-                            "-",
-                            "_",
-                        ).replace(".", "_")
-                        if normalized_package_name not in module_names:
-                            module_names.append(normalized_package_name)
+                module_names = [
+                    name.replace("-", "_").replace(".", "_")
+                    for name in self.get_library_names(str(bin_name))
+                ]
                 for location in site_packages_locations:
                     if location.resolve(strict=False) != self._runtime_site_packages(
                         venv_root,
@@ -1245,7 +1184,7 @@ class UvProvider(BinProvider):
                                     module_candidate,
                                 )
         else:
-            tool_name = self._package_name_for_bin(str(bin_name), **context)
+            tool_name = self.get_package_names(str(bin_name))[0]
             candidate = self.tool_dir / tool_name / "bin" / str(bin_name)
             if candidate.exists():
                 return TypeAdapter(HostBinPath).validate_python(candidate)
@@ -1256,9 +1195,7 @@ class UvProvider(BinProvider):
         bin_name: BinName,
         **context,
     ) -> str | None:
-        package = self._package_name_for_bin(str(bin_name), **context) or str(bin_name)
-        if not package:
-            return None
+        package = self.get_package_names(str(bin_name))[0]
         return f"https://pypi.org/project/{package}"
 
     def default_version_handler(
@@ -1269,7 +1206,7 @@ class UvProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> SemVer | None:
-        tool_name = self._package_name_for_bin(str(bin_name), **context)
+        tool_name = self.get_package_names(str(bin_name))[0]
         metadata_version = self._version_from_uv_metadata(
             tool_name,
             timeout=timeout,

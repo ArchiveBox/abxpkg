@@ -159,7 +159,7 @@ class BunProvider(BinProvider):
         bin_name: BinName,
         **context,
     ) -> str | None:
-        package = self._docs_url_package_name(bin_name, allow_leading_at=True)
+        package = self._docs_url_package_name(bin_name)
         if not package:
             return None
         return f"https://www.npmjs.com/package/{package}"

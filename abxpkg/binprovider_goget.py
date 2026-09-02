@@ -271,9 +271,8 @@ class GoGetProvider(BinProvider):
         # Also remove the short binary name (e.g. "shfmt" for
         # "mvdan.cc/sh/v3/cmd/shfmt") from bin_dir.
         if self.bin_dir:
-            install_args = self.get_install_args(str(bin_name))
-            install_target = install_args[0] if install_args else str(bin_name)
-            short_name = Path(str(install_target).split("@", 1)[0].rstrip("/")).name
+            install_target = self.get_package_names(str(bin_name))[0]
+            short_name = Path(install_target.rstrip("/")).name
             if short_name and short_name != str(bin_name):
                 (self.bin_dir / short_name).unlink(missing_ok=True)
         return True
@@ -289,16 +288,9 @@ class GoGetProvider(BinProvider):
         if abspath:
             return TypeAdapter(HostBinPath).validate_python(abspath)
 
-        install_args = list(
-            context.get("install_args") or self.get_install_args(bin_name_str),
-        )
-        install_target = install_args[0] if install_args else bin_name_str
-        candidate_name = (
-            Path(
-                str(install_target).split("@", 1)[0].rstrip("/"),
-            ).name
-            or bin_name_str
-        )
+        install_args = context.get("install_args")
+        install_target = self.get_package_names(bin_name_str, install_args)[0]
+        candidate_name = Path(install_target.rstrip("/")).name or bin_name_str
         if candidate_name == bin_name_str:
             return None
         candidate_abspath = bin_abspath(candidate_name, PATH=str(self.bin_dir))

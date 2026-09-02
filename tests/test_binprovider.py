@@ -15,6 +15,8 @@ from abxpkg import (
     BunProvider,
     DenoProvider,
     EnvProvider,
+    GemProvider,
+    GoGetProvider,
     NpmProvider,
     PipProvider,
     PnpmProvider,
@@ -27,6 +29,57 @@ from abxpkg.binprovider import ShallowBinary
 
 
 class TestBinProvider:
+    @pytest.mark.parametrize(
+        ("provider_class", "artifact_name", "install_arg", "package_name"),
+        (
+            (UvProvider, "sonic", "sonic-client>=1.0", "sonic-client"),
+            (PipProvider, "sonic", "sonic-client>=1.0", "sonic-client"),
+            (NpmProvider, "babel", "@babel/core@^7", "@babel/core"),
+            (PnpmProvider, "babel", "@babel/core@^7", "@babel/core"),
+            (YarnProvider, "babel", "@babel/core@^7", "@babel/core"),
+            (BunProvider, "babel", "@babel/core@^7", "@babel/core"),
+            (GemProvider, "http", "net-http", "net-http"),
+            (
+                GoGetProvider,
+                "shfmt",
+                "mvdan.cc/sh/v3/cmd/shfmt@latest",
+                "mvdan.cc/sh/v3/cmd/shfmt",
+            ),
+        ),
+    )
+    def test_artifact_package_and_library_names_share_one_provider_contract(
+        self,
+        provider_class,
+        artifact_name,
+        install_arg,
+        package_name,
+    ):
+        provider = provider_class(
+            overrides={artifact_name: {"install_args": [install_arg]}},
+        ).get_provider_with_overrides(
+            overrides={artifact_name: {"install_args": [install_arg]}},
+        )
+
+        assert provider.get_package_names(artifact_name) == (package_name,)
+        assert provider.get_library_names(artifact_name) == (artifact_name,)
+
+    def test_explicit_package_and_library_names_override_install_arg_inference(self):
+        provider = UvProvider().get_provider_with_overrides(
+            overrides={
+                "logical-name": {
+                    "install_args": ["distribution-name>=1"],
+                    "package_names": ["canonical-distribution"],
+                    "library_names": ["first_import", "second.import"],
+                },
+            },
+        )
+
+        assert provider.get_package_names("logical-name") == ("canonical-distribution",)
+        assert provider.get_library_names("logical-name") == (
+            "first_import",
+            "second.import",
+        )
+
     def test_invalidate_cache_clears_every_in_process_context(self, tmp_path):
         provider = EnvProvider(install_root=tmp_path / "env")
 
@@ -612,7 +665,7 @@ class TestBinProvider:
         )
 
         assert (
-            PnpmProvider._package_name_from_install_args(install_args)
+            PnpmProvider().get_package_names("parser", install_args)[0]
             == "@postlight/parser"
         )
 

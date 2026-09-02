@@ -5,7 +5,7 @@ import os
 
 from pathlib import Path
 
-from pydantic import Field, model_validator, computed_field
+from pydantic import Field, TypeAdapter, model_validator, computed_field
 from typing import Self, ClassVar
 
 from .binary import Binary
@@ -13,6 +13,7 @@ from .base_types import (
     BinProviderName,
     PATHStr,
     BinName,
+    HostBinPath,
     InstallArgs,
     abxpkg_install_root_default,
 )
@@ -212,6 +213,62 @@ class GemProvider(BinProvider):
         if not package:
             return None
         return f"https://rubygems.org/gems/{package}"
+
+    def default_abspath_handler(
+        self,
+        bin_name: BinName | HostBinPath,
+        no_cache: bool = False,
+        **context,
+    ) -> HostBinPath | None:
+        abspath = super().default_abspath_handler(
+            bin_name,
+            no_cache=no_cache,
+            **context,
+        )
+        if abspath:
+            return TypeAdapter(HostBinPath).validate_python(abspath)
+        if isinstance(bin_name, Path):
+            return None
+        assert self.install_root is not None
+        package = self.get_package_names(bin_name)[0]
+        for gem_dir in sorted(
+            (self.install_root / "gems").glob(f"{package}-*"),
+            reverse=True,
+        ):
+            for library_name in self.get_library_names(bin_name):
+                library_path = Path(*library_name.split("/"))
+                for candidate in (
+                    gem_dir / "lib" / library_path.with_suffix(".rb"),
+                    gem_dir / "lib" / library_path / "version.rb",
+                ):
+                    if candidate.is_file():
+                        return candidate
+        return None
+
+    def default_version_handler(
+        self,
+        bin_name: BinName,
+        abspath: HostBinPath | None = None,
+        timeout: int | None = None,
+        no_cache: bool = False,
+        **context,
+    ) -> SemVer | None:
+        if abspath and os.access(abspath, os.X_OK):
+            try:
+                return self._version_from_exec(
+                    bin_name,
+                    abspath=abspath,
+                    timeout=timeout,
+                )
+            except ValueError:
+                pass
+        assert self.install_root is not None
+        package = self.get_package_names(bin_name)[0]
+        versions = [
+            SemVer.parse(path.name.removeprefix(f"{package}-"))
+            for path in (self.install_root / "gems").glob(f"{package}-*")
+        ]
+        return max((version for version in versions if version), default=None)
 
     def default_search_handler(
         self,

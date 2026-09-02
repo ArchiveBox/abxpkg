@@ -4821,6 +4821,40 @@ def test_run_script_keeps_active_runtime_imports_with_uv_provider_cache(
     assert Path(payload["rich_click_file"]).resolve() == Path(click.__file__).resolve()
 
 
+def test_run_script_uv_dependency_can_expose_import_with_a_different_distribution_name(
+    tmp_path,
+):
+    lib = tmp_path / "lib"
+    script = tmp_path / "import_sonic.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        '# requires-python = ">=3.12"\n'
+        '# dependencies = [{name = "sonic", binproviders = "uv", package_names = ["sonic-client"], library_names = ["sonic"], install_args = ["sonic-client>=1.0.0"], postinstall_scripts = false, min_release_age = 3}]\n'
+        "# ///\n"
+        "import json, sonic\n"
+        'print(json.dumps({"sonic_file": sonic.__file__}))\n',
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        "run",
+        "--script",
+        "python3",
+        str(script),
+        env_overrides={
+            "ABXPKG_LIB_DIR": str(lib),
+            "ABXPKG_BINPROVIDERS": "env,uv",
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert (
+        str(lib / "uv" / "packages" / "sonic-client" / "venv") in payload["sonic_file"]
+    )
+
+
 def test_run_script_uses_default_lib_dir_without_env_override(tmp_path):
     config_home = tmp_path / "xdg-config"
     default_lib = config_home / "abx" / "lib"

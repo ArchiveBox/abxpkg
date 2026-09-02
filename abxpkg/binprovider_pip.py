@@ -5,7 +5,6 @@ __package__ = "abxpkg"
 import os
 import sys
 import site
-import re
 import sysconfig
 from platformdirs import user_cache_path
 
@@ -704,10 +703,11 @@ class PipProvider(BinProvider):
                 return None
 
         # fallback to using pip show to get the site-packages bin path
+        package_name = self.get_package_names(str(bin_name))[0]
         output_lines = (
             self.exec(
                 bin_name=pip_abspath,
-                cmd=["show", "--no-input", str(bin_name)],
+                cmd=["show", "--no-input", package_name],
                 quiet=False,
                 timeout=self.version_timeout,
             )
@@ -729,38 +729,16 @@ class PipProvider(BinProvider):
         if abspath:
             return TypeAdapter(HostBinPath).validate_python(abspath)
 
-        package_name = self._package_name_for_bin(str(bin_name)) or str(bin_name)
-        normalized_name = package_name.lower().replace("-", "_")
         location_path = Path(location)
-        for candidate in (
-            location_path / normalized_name / "__init__.py",
-            location_path / f"{normalized_name}.py",
-        ):
-            if candidate.exists():
-                return TypeAdapter(HostBinPath).validate_python(candidate)
+        for library_name in self.get_library_names(str(bin_name)):
+            normalized_name = library_name.replace("-", "_").replace(".", "_")
+            for candidate in (
+                location_path / normalized_name / "__init__.py",
+                location_path / f"{normalized_name}.py",
+            ):
+                if candidate.exists():
+                    return TypeAdapter(HostBinPath).validate_python(candidate)
 
-        return None
-
-    @staticmethod
-    def _package_name_from_install_arg(install_arg: str) -> str | None:
-        """Extract a bare Python package name from a pip install arg when possible."""
-        if not install_arg or install_arg.startswith("-"):
-            return None
-        if "://" in install_arg:
-            return None
-        if install_arg.startswith((".", "/", "~")):
-            return None
-        package_name = re.split(r"[<>=!~;]", install_arg, maxsplit=1)[0]
-        package_name = package_name.split("[", 1)[0].strip()
-        return package_name or None
-
-    def _package_name_for_bin(self, bin_name: BinName) -> str | None:
-        """Pick the owning Python package name used to resolve version/metadata lookups."""
-        install_args = self.get_install_args(bin_name, quiet=True)
-        for install_arg in install_args:
-            package_name = self._package_name_from_install_arg(install_arg)
-            if package_name:
-                return package_name
         return None
 
     def get_cache_info(
@@ -772,9 +750,7 @@ class PipProvider(BinProvider):
         if cache_info is None or self.install_root is None:
             return cache_info
 
-        package_name = self._package_name_for_bin(bin_name)
-        if not package_name:
-            return cache_info
+        package_name = self.get_package_names(bin_name)[0]
 
         normalized_name = package_name.lower().replace("-", "_")
         metadata_files = sorted(
@@ -795,7 +771,7 @@ class PipProvider(BinProvider):
         bin_name: BinName,
         **context,
     ) -> str | None:
-        package = self._package_name_for_bin(bin_name) or str(bin_name)
+        package = self.get_package_names(bin_name)[0]
         if not package:
             return None
         return f"https://pypi.org/project/{package}"
@@ -827,7 +803,7 @@ class PipProvider(BinProvider):
             return None
 
         # fallback to using pip show to get the version (slower)
-        package_name = self._package_name_for_bin(bin_name) or str(bin_name)
+        package_name = self.get_package_names(bin_name)[0]
         output_lines = (
             self.exec(
                 bin_name=pip_abspath,

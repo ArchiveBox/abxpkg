@@ -150,18 +150,7 @@ class NpmProvider(BinProvider):
         if cache_info is None or self.install_root is None:
             return cache_info
 
-        install_args = self.get_install_args(str(bin_name), quiet=True) or [
-            str(bin_name),
-        ]
-        main_package = next(
-            (arg for arg in install_args if arg and not arg.startswith("-")),
-            str(bin_name),
-        )
-        package = (
-            "@" + main_package[1:].split("@", 1)[0]
-            if main_package.startswith("@")
-            else main_package.split("@", 1)[0]
-        )
+        package = self.get_package_names(str(bin_name))[0]
         package_json = self.install_root / "node_modules" / package / "package.json"
         if package_json.exists():
             cache_info["fingerprint_paths"].append(package_json)
@@ -233,7 +222,7 @@ class NpmProvider(BinProvider):
         bin_name: BinName,
         **context,
     ) -> str | None:
-        package = self._docs_url_package_name(bin_name, allow_leading_at=True)
+        package = self._docs_url_package_name(bin_name)
         if not package:
             return None
         return f"https://www.npmjs.com/package/{package}"
@@ -738,15 +727,7 @@ class NpmProvider(BinProvider):
         # registry request after a successful install makes entrypoint discovery
         # needlessly flaky.
         try:
-            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
-            main_package = install_args[
-                0
-            ]  # assume first package in list is the main one
-            package = (
-                "@" + main_package[1:].split("@", 1)[0]
-                if main_package.startswith("@")
-                else main_package.split("@", 1)[0]
-            )
+            package = self.get_package_names(str(bin_name))[0]
             package_json = (
                 self.install_root / "node_modules" / package / "package.json"
                 if self.install_root
@@ -774,14 +755,15 @@ class NpmProvider(BinProvider):
                     if str(alt_bin_name) == str(bin_name) or self.bin_dir is None:
                         return direct_abspath
                     return self._refresh_bin_link(bin_name, direct_abspath)
+            if package_json and package_json.is_file():
+                return TypeAdapter(HostBinPath).validate_python(package_json)
         except Exception:
             pass
 
         # Before installation there is no local package metadata yet, so keep
         # the registry lookup as the discovery fallback.
         try:
-            install_args = self.get_install_args(str(bin_name)) or [str(bin_name)]
-            main_package = install_args[0]
+            main_package = self.get_package_names(str(bin_name))[0]
             package_info = json.loads(
                 self.exec(
                     bin_name=npm_abspath,
@@ -844,18 +826,7 @@ class NpmProvider(BinProvider):
 
         # fallback to using npm list to get the installed package version
         try:
-            install_args = self.get_install_args(str(bin_name), **context) or [
-                str(bin_name),
-            ]
-            main_package = install_args[
-                0
-            ]  # assume first package in list is the main one
-
-            # remove the package version if it exists "@postslight/parser@^1.2.3" -> "@postlight/parser"
-            if main_package[0] == "@":
-                package = "@" + main_package[1:].split("@", 1)[0]
-            else:
-                package = main_package.split("@", 1)[0]
+            package = self.get_package_names(str(bin_name))[0]
 
             # npm list --depth=0 --json --prefix=<prefix> "@postlight/parser"
             # (dont use 'npm info @postlight/parser version', it shows *any* available version, not installed version)

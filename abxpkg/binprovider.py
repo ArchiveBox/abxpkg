@@ -505,6 +505,8 @@ class BinProvider(BaseModel):
     )
     postinstall_scripts: bool | None = Field(default=None)
     min_release_age: float | None = Field(default=None)
+    package_names: tuple[str, ...] = ()
+    library_names: tuple[str, ...] = ()
 
     overrides: "BinProviderOverrides" = Field(  # ty: ignore[invalid-assignment] https://github.com/astral-sh/ty/issues/2403
         default_factory=lambda: {
@@ -2253,44 +2255,51 @@ class BinProvider(BaseModel):
     def _docs_url_package_name(
         self,
         bin_name: BinName,
-        *,
-        allow_leading_at: bool = False,
     ) -> str | None:
-        """Pick a canonical package name from install_args for URL building.
+        """Pick the first canonical package name for provider documentation."""
+        return next(iter(self.get_package_names(bin_name)), None)
 
-        Strips version specifiers (``==1.0``, ``>=2,<3``), extras (``foo[all]``),
-        and trailing ``@version`` suffixes (npm-style). Falls back to ``bin_name``
-        if install_args don't yield a usable candidate.
-        """
-        try:
-            install_args = self.get_install_args(bin_name, quiet=True)
-        except Exception:
-            install_args = [str(bin_name)]
+    def get_package_names(
+        self,
+        bin_name: BinName,
+        install_args: InstallArgs | None = None,
+    ) -> tuple[str, ...]:
+        """Return package/distribution names, separate from logical artifact names."""
+        if self.package_names:
+            return self.package_names
+        names: list[str] = []
+        for install_arg in install_args or self.get_install_args(bin_name, quiet=True):
+            name = self._package_name_from_install_arg(install_arg)
+            if name and name not in names:
+                names.append(name)
+        return tuple(names or [str(bin_name)])
 
-        candidates = list(install_args) or [str(bin_name)]
-        for arg in candidates:
-            if not arg or arg.startswith("-"):
-                continue
-            if "://" in arg or arg.startswith((".", "/", "~")):
-                continue
-            name = arg
-            if allow_leading_at and name.startswith("@"):
-                # npm scoped pkg: keep leading @, only trim version after '@' that
-                # appears after the scope/name boundary.
-                _, _, after_slash = name[1:].partition("/")
-                if "@" in after_slash:
-                    pkg, _, _ = after_slash.partition("@")
-                    name = "@" + name[1:].split("/", 1)[0] + "/" + pkg
-            else:
-                name = name.split("@", 1)[0] if "@" in name else name
-            name = name.split("[", 1)[0]
-            for sep in ("==", ">=", "<=", "!=", "~=", ">", "<", ";", " "):
-                if sep in name:
-                    name = name.split(sep, 1)[0]
-            name = name.strip()
-            if name:
-                return name
-        return str(bin_name) or None
+    def get_library_names(self, bin_name: BinName) -> tuple[str, ...]:
+        """Return import/require names, separate from package and executable names."""
+        return self.library_names or (str(bin_name),)
+
+    @staticmethod
+    def _package_name_from_install_arg(install_arg: str) -> str | None:
+        """Extract a package name from common package-manager install syntax."""
+        if (
+            not install_arg
+            or install_arg.startswith("-")
+            or "://" in install_arg
+            or install_arg.startswith((".", "/", "~"))
+        ):
+            return None
+        name = install_arg
+        if name.startswith("@"):
+            scope, separator, package = name[1:].partition("/")
+            if not separator:
+                return None
+            name = f"@{scope}/{package.split('@', 1)[0]}"
+        else:
+            name = name.split("@", 1)[0]
+        name = name.split("[", 1)[0]
+        for separator in ("==", ">=", "<=", "!=", "~=", ">", "<", ";", " "):
+            name = name.split(separator, 1)[0]
+        return name.strip() or None
 
     def default_packages_handler(
         self,
@@ -5085,6 +5094,8 @@ class HandlerDict(TypedDict, total=False):
     dry_run: bool
     postinstall_scripts: bool | None
     min_release_age: float | None
+    package_names: tuple[str, ...] | list[str]
+    library_names: tuple[str, ...] | list[str]
     install_timeout: int
     version_timeout: int
     apt_gpg_keys: dict[str, str]
