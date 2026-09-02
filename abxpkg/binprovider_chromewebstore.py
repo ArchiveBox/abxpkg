@@ -359,6 +359,11 @@ class ChromeWebstoreProvider(BinProvider):
 
         webstore_id = str(install_args[0] if install_args else bin_name)
         extension_name = self._extension_name(bin_name, install_args)
+        source_options = [
+            str(arg)
+            for arg in install_args[2:]
+            if str(arg).startswith(("--url=", "--sha256="))
+        ]
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         unzip = self.unzip_binary().install(no_cache=no_cache)
@@ -378,6 +383,7 @@ class ChromeWebstoreProvider(BinProvider):
                 extension_name,
                 str(bin_dir),
                 str(unzip.loaded_abspath),
+                *source_options,
                 *(["--no-cache"] if no_cache else []),
             ],
             cwd=install_root,

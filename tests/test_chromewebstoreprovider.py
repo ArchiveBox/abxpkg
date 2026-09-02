@@ -1,9 +1,14 @@
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import threading
+import zipfile
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import abxbus
@@ -56,6 +61,53 @@ def restore_signed_store_metadata_from_real_crx(
 
 
 class TestChromeWebstoreProvider:
+    def test_install_accepts_pinned_extension_archive_url(self, test_machine):
+        test_machine.require_tool("node")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            archive_path = root / "extension.zip"
+            manifest = json.dumps(
+                {"manifest_version": 3, "name": "Local Extension", "version": "1.2.3"},
+            )
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("manifest.json", manifest)
+            sha256 = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+
+            server = ThreadingHTTPServer(
+                ("127.0.0.1", 0),
+                partial(SimpleHTTPRequestHandler, directory=str(root)),
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                provider = ChromeWebstoreProvider(
+                    install_root=root / "chromewebstore-root",
+                    bin_dir=root / "chromewebstore-root/extensions",
+                ).get_provider_with_overrides(
+                    overrides={
+                        "local-extension": {
+                            "install_args": [
+                                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                                "--name=local-extension",
+                                f"--url=http://127.0.0.1:{server.server_port}/extension.zip",
+                                f"--sha256={sha256}",
+                            ],
+                        },
+                    },
+                )
+
+                installed = provider.install("local-extension")
+
+                assert_extension_binary_loaded(installed)
+                assert installed is not None
+                assert str(installed.loaded_version) == "1.2.3"
+                metadata = json.loads(installed.loaded_abspath.read_text())
+                assert metadata["crx_sha256"] == sha256
+            finally:
+                server.shutdown()
+                thread.join()
+
     def test_unzip_dependency_uses_native_system_package_providers(self):
         provider = ChromeWebstoreProvider()
 

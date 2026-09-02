@@ -15,6 +15,15 @@ const { finished } = require('stream/promises');
 
 const execFileAsync = promisify(execFile);
 
+async function sha256File(filePath) {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(filePath);
+    for await (const chunk of stream) {
+        hash.update(chunk);
+    }
+    return hash.digest('hex');
+}
+
 function makeTreeWritable(targetPath) {
     if (!fs.existsSync(targetPath)) return;
 
@@ -90,6 +99,15 @@ async function installExtension(extension, options = {}) {
         } catch (err) {
             fs.rmSync(extension.crx_path, { force: true });
             console.error(`[❌] Failed to download extension ${extension.name}:`, err);
+            return false;
+        }
+    }
+
+    if (extension.crx_sha256) {
+        const actualSha256 = await sha256File(extension.crx_path);
+        if (actualSha256 !== extension.crx_sha256.toLowerCase()) {
+            fs.rmSync(extension.crx_path, { force: true });
+            console.error(`[❌] Downloaded extension ${extension.name} has SHA-256 ${actualSha256}, expected ${extension.crx_sha256}`);
             return false;
         }
     }
@@ -233,14 +251,22 @@ async function main() {
         }
 
         case 'installExtensionWithCache': {
-            const [webstoreId, name, extensionsDir, unzipPath, maybeNoCache] = args;
+            const [webstoreId, name, extensionsDir, unzipPath, ...options] = args;
             if (!webstoreId || !name) {
-                console.error('Usage: installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--no-cache]');
+                console.error('Usage: installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--url=URL] [--sha256=HEX] [--no-cache]');
                 process.exit(1);
             }
-            const noCache = maybeNoCache === '--no-cache';
+            const noCache = options.includes('--no-cache');
+            const urlOption = options.find(option => option.startsWith('--url='));
+            const sha256Option = options.find(option => option.startsWith('--sha256='));
+            const crxUrl = urlOption?.slice('--url='.length);
+            const crxSha256 = sha256Option?.slice('--sha256='.length);
+            if (crxSha256 && !/^[0-9a-f]{64}$/i.test(crxSha256)) {
+                console.error('--sha256 must be a 64-character hexadecimal digest');
+                process.exit(1);
+            }
             const ext = await installExtensionWithCache(
-                { webstore_id: webstoreId, name },
+                { webstore_id: webstoreId, name, crx_url: crxUrl, crx_sha256: crxSha256 },
                 { extensionsDir, unzipPath, noCache },
             );
             if (ext) {
@@ -254,7 +280,7 @@ async function main() {
         default:
             console.error('Usage: chromewebstore_utils.js <command> [args...]');
             console.error('  getExtensionId <path>');
-            console.error('  installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--no-cache]');
+            console.error('  installExtensionWithCache <webstore_id> <name> <extensions_dir> <unzip_path> [--url=URL] [--sha256=HEX] [--no-cache]');
             process.exit(1);
     }
 }
