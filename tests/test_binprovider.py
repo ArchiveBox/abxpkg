@@ -156,9 +156,7 @@ class TestBinProvider:
         assert second_acquired.is_set()
         assert contention == [True]
 
-    @pytest.mark.root_required
-    @pytest.mark.skipif(sys.platform != "linux", reason="Linux privilege-drop coverage")
-    def test_mutation_lock_can_be_reused_after_root_drops_privileges(self):
+    def test_mutation_lock_file_can_be_reused_by_a_second_process(self):
         install_root = Path("/tmp") / f"abxpkg-cross-user-lock-{os.getpid()}"
         provider = NpmProvider(install_root=install_root)
         lock_path = provider.mutation_lock_path()
@@ -172,7 +170,16 @@ class TestBinProvider:
         )
 
         cleanup = ["rm", "-f", str(lock_path)]
-        if os.geteuid() != 0:
+        can_sudo = (
+            os.geteuid() != 0
+            and subprocess.run(
+                ["sudo", "-n", "true"],
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+        expected_owner = os.geteuid()
+        if can_sudo:
             root_command_args = [
                 "sudo",
                 "-n",
@@ -183,18 +190,21 @@ class TestBinProvider:
             ]
             user_command_args = [sys.executable, "-c", root_command, str(install_root)]
             cleanup = ["sudo", "-n", *cleanup]
+            expected_owner = 0
         else:
             root_command_args = [sys.executable, "-c", root_command, str(install_root)]
-            user_command_args = [
-                "sudo",
-                "-n",
-                "-u",
-                "nobody",
-                sys.executable,
-                "-c",
-                root_command,
-                str(install_root),
-            ]
+            user_command_args = [sys.executable, "-c", root_command, str(install_root)]
+            if os.geteuid() == 0:
+                user_command_args = [
+                    "sudo",
+                    "-n",
+                    "-u",
+                    "nobody",
+                    sys.executable,
+                    "-c",
+                    root_command,
+                    str(install_root),
+                ]
 
         subprocess.run(cleanup, check=True)
 
@@ -205,7 +215,7 @@ class TestBinProvider:
                 text=True,
             )
             assert root_result.returncode == 0, root_result.stderr or root_result.stdout
-            assert lock_path.stat().st_uid == 0
+            assert lock_path.stat().st_uid == expected_owner
             assert lock_path.stat().st_mode & 0o777 == 0o644
 
             user_result = subprocess.run(
