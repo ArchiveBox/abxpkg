@@ -195,7 +195,6 @@ def test_binary_request_events_allow_parallel_scheduling_by_default(
     }
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="Linux provider lock ordering")
 def test_parallel_cross_provider_cache_checks_do_not_deadlock(
     tmp_path: Path,
 ) -> None:
