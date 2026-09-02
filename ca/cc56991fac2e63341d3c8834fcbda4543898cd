@@ -1,0 +1,25 @@
+abxpkg/binprovider_chromewebstore.py
+  s_750dfb69a92570::t_6630dbbd6825b2 362-366,386
+abxpkg/chromewebstore_utils.js
+  s_750dfb69a92570::t_6630dbbd6825b2 18-26,106-114,254,256-265,269,283
+tests/test_chromewebstoreprovider.py
+  s_750dfb69a92570::t_c27467935faf37 2,8-11,64-101,103-108
+  s_750dfb69a92570::t_2c43b27a0dcead 102
+  s_750dfb69a92570::t_1b47f22196acd9 109-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cacc56991fac2e63341d3c8834fcbda4543898cd",
+  "prompts": {},
+  "sessions": {
+    "s_750dfb69a92570": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05b67-229b-7b73-884d-437256ffa903",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
