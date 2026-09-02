@@ -1220,12 +1220,7 @@ class UvProvider(BinProvider):
                     for line in proc.stdout.splitlines()
                     if line.startswith("Location: ")
                 ]
-                module_names = list(
-                    dict.fromkeys(
-                        name.replace("-", "_").replace(".", "_")
-                        for name in (str(bin_name), tool_name)
-                    ),
-                )
+                module_names = [tool_name.replace("-", "_").replace(".", "_")]
                 for line in proc.stdout.splitlines():
                     if line.startswith("Name: "):
                         package_name = line.split("Name: ", 1)[1].strip()
