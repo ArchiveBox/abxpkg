@@ -1,0 +1,14 @@
+django_example_project/README.md
+  h_923c208e183a7b 37-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f480a07a0c18325388c2a81918e7ae8ea8cf9bcb",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
