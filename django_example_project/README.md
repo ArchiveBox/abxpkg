@@ -34,5 +34,5 @@ cd "$ABXPKG_REPO_ROOT"
 ```
 
 For interactive use, run
-`uv run --project .. ./manage.py runserver 127.0.0.1:8000` from
-`django_example_project/`, then open <http://127.0.0.1:8000/admin/>.
+`uv run --project .. ./manage.py runserver 127.0.0.1:5797` from
+`django_example_project/`, then open <http://127.0.0.1:5797/admin/>.
