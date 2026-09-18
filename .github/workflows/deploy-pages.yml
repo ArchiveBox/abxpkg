@@ -37,7 +37,9 @@ jobs:
         run: uv sync --all-extras --no-cache
 
       - name: Render landing page
-        run: uv run python docs/generate.py
+        run: |
+          uv run --no-sync pytest -xq tests/test_docs.py
+          uv run --no-sync python docs/generate.py
 
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5

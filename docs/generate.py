@@ -737,18 +737,8 @@ def resolve_global_env_vars() -> list[dict[str, str]]:
 
 
 def collect_providers() -> list[dict[str, Any]]:
-    providers: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    for attrname in sorted(dir(abxpkg)):
-        obj = getattr(abxpkg, attrname)
-        if not inspect.isclass(obj):
-            continue
-        if not issubclass(obj, BinProvider) or obj is BinProvider:
-            continue
-        if obj.__name__ in seen:
-            continue
-        seen.add(obj.__name__)
-        providers.append(build_provider(obj))
+    # Public provider exports load lazily and are not listed by dir(abxpkg).
+    providers = [build_provider(cls) for cls in abxpkg.ALL_PROVIDERS]
 
     category_rank = {name: idx for idx, name in enumerate(CATEGORY_ORDER)}
     providers.sort(
