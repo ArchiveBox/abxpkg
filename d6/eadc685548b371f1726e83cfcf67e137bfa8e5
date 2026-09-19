@@ -1,0 +1,24 @@
+README.md
+  h_923c208e183a7b 1
+docs/CNAME
+  h_923c208e183a7b 1
+docs/generate.py
+  h_923c208e183a7b 817
+docs/index.html
+  h_923c208e183a7b 7,11,14-15,832,1063
+docs/index.html.j2
+  h_923c208e183a7b 7,11,14-15,832,1174
+pyproject.toml
+  h_923c208e183a7b 144,146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d6eadc685548b371f1726e83cfcf67e137bfa8e5",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
