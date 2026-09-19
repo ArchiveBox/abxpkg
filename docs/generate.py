@@ -778,6 +778,9 @@ def copy_assets(output_dir: Path) -> None:
             continue
         shutil.copy2(asset, destination)
 
+    if (SITE_DIR / "assets").resolve() != (output_dir / "assets").resolve():
+        shutil.copytree(SITE_DIR / "assets", output_dir / "assets", dirs_exist_ok=True)
+
 
 def render_site(output_dir: Path, template_name: str) -> Path:
     providers = collect_providers()
