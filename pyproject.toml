@@ -141,9 +141,9 @@ exclude = [
 
 
 [project.urls]
-Homepage = "https://github.com/ArchiveBox/abxpkg"
+Homepage = "https://abxpkg.archivebox.io/"
 Source = "https://github.com/ArchiveBox/abxpkg"
-Documentation = "https://github.com/ArchiveBox/abxpkg"
+Documentation = "https://abxpkg.archivebox.io/"
 "Bug Tracker" = "https://github.com/ArchiveBox/abxpkg/issues"
 Changelog = "https://github.com/ArchiveBox/abxpkg/releases"
 Donate = "https://github.com/ArchiveBox/ArchiveBox/wiki/Donations"

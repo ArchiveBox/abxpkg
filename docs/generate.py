@@ -814,6 +814,7 @@ def render_site(output_dir: Path, template_name: str) -> Path:
     index_path = output_dir / "index.html"
     index_path.write_text(html + "\n", encoding="utf-8")
     copy_assets(output_dir)
+    (output_dir / "CNAME").write_text((SITE_DIR / "CNAME").read_text(), encoding="utf-8")
     (output_dir / ".nojekyll").write_text("", encoding="utf-8")
     return index_path
 
