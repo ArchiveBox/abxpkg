@@ -101,6 +101,7 @@ dev = [
     "ruff>=0.15.7",
     "ty>=0.0.24",
     "pytest-asyncio>=1.3.0",
+    "playwright>=1.63.0",
 ]
 
 [tool.mypy]

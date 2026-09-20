@@ -21,7 +21,7 @@ class Handler(SimpleHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def log_message(self, *args):
+    def log_message(self, format, *args):
         pass
 
 

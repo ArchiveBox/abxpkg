@@ -37,7 +37,10 @@ def render_metadata(text):
     """Keep product copy in native templates; render one consistent SEO block."""
     page = Page()
     page.feed(text)
-    title = unescape(re.search(r"<title>(.*?)</title>", text, re.DOTALL)[1])
+    title_match = re.search(r"<title>(.*?)</title>", text, re.DOTALL)
+    if title_match is None:
+        raise ValueError("Each page needs a title")
+    title = unescape(title_match[1])
     meta = page.metadata
     description = meta.get("description", meta.get("og:description", ""))
     image = meta.get("og:image", meta.get("twitter:image", ""))
