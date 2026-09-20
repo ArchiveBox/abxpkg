@@ -109,7 +109,7 @@ def render(output, source=None, baseurl=""):
     ).strip()
     assets = output / "site-base"
     assets.mkdir(parents=True, exist_ok=True)
-    has_marquee = render_marquee(output, baseurl)
+    has_marquee = render_marquee(output, baseurl, config.get("marquee_featured", []))
     common_assets = ["chrome.css", "chrome.js"] + (
         ["marquee.css", "marquee.js"] if has_marquee else []
     )
