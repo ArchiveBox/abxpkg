@@ -1,27 +1,41 @@
-name: Deploy abxpkg landing page to GitHub Pages
+name: Publish website
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+  actions: read
 
+env:
+  # Repository-specific output; all publication logic below is a local copy.
+  SITE_OUTPUT: _site
+  DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+
+# One production queue covers restore, build and deploy. PRs have separate queues.
 concurrency:
-  group: pages-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.ref || env.DEFAULT_BRANCH }}
+          persist-credentials: false
+      - name: Record website source revision
+        id: source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      # BEGIN REPOSITORY-SPECIFIC BUILD
       - name: Install uv
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
@@ -40,23 +54,49 @@ jobs:
         run: |
           uv run --no-sync pytest -xq tests/test_docs.py
           uv run --no-sync python docs/generate.py
+      # END REPOSITORY-SPECIFIC BUILD
 
-      - name: Setup Pages
-        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+      - name: Verify website in Chromium
+        run: |
+          uv run --no-config --no-project --with playwright==1.63.0 playwright install --with-deps chromium
+          uv run --no-config --no-project --with playwright==1.63.0 python .github/pages/verify.py "$SITE_OUTPUT" --evidence "$RUNNER_TEMP/site-evidence"
+      - name: Save website verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          path: ./docs
+          name: site-verification
+          path: ${{ runner.temp }}/site-evidence
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_OUTPUT }}
 
   deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-24.04
-    needs: build
-    timeout-minutes: 20
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Publish only the current default-branch revision
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ needs.build.outputs.revision }}
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq .sha)
+          echo "deploy=$([ "$latest" = "$REVISION" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/configure-pages@v5
+        if: steps.current.outputs.deploy == 'true'
+      - uses: actions/deploy-pages@v4
+        if: steps.current.outputs.deploy == 'true'
         id: deployment
-        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

@@ -4,27 +4,27 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import inspect
 import os
 import shutil
-import copy
-from datetime import datetime, timezone
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from abxpkg.base_types import DEFAULT_ABXPKG_LIB_DIR
+from abxpkg.binprovider import DEFAULT_ENV_PATH, BinProvider
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 from pydantic.fields import PydanticUndefined
 
 import abxpkg
-from abxpkg.binprovider import DEFAULT_ENV_PATH, BinProvider
-from abxpkg.base_types import DEFAULT_ABXPKG_LIB_DIR
-
 
 SITE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SITE_DIR.parent
 TEMPLATE_DIR = SITE_DIR
-DEFAULT_OUTPUT_DIR = SITE_DIR
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "_site"
 ASSETS_DIR = SITE_DIR / "css"
 GITHUB_REPO = "https://github.com/ArchiveBox/abxpkg"
 DEFAULT_GITHUB_REF = os.environ.get("ABXPKG_GITHUB_REF", "main")
@@ -562,7 +562,7 @@ def format_json_value_html(value: Any) -> Markup:
         return Markup('<span class="cfg-null">None</span>')
     if isinstance(value, bool):
         cls = "cfg-bool-true" if value else "cfg-bool-false"
-        return Markup(f'<span class="{cls}">{str(value)}</span>')
+        return Markup(f'<span class="{cls}">{value!s}</span>')
     if isinstance(value, (int, float)):
         if isinstance(value, float) and value.is_integer():
             value = int(value)
@@ -796,7 +796,7 @@ def render_site(output_dir: Path, template_name: str) -> Path:
     template = environment.get_template(template_name)
     html = template.render(
         site={
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
             "github_repo": GITHUB_REPO,
             "github_ref": DEFAULT_GITHUB_REF,
             "package_version": getattr(abxpkg, "__version__", ""),
@@ -814,8 +814,23 @@ def render_site(output_dir: Path, template_name: str) -> Path:
     index_path = output_dir / "index.html"
     index_path.write_text(html + "\n", encoding="utf-8")
     copy_assets(output_dir)
-    (output_dir / "CNAME").write_text((SITE_DIR / "CNAME").read_text(), encoding="utf-8")
+    (output_dir / "CNAME").write_text(
+        (SITE_DIR / "CNAME").read_text(),
+        encoding="utf-8",
+    )
     (output_dir / ".nojekyll").write_text("", encoding="utf-8")
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "python",
+            str(REPO_ROOT / ".github/pages/site.py"),
+            "render",
+            str(output_dir.resolve()),
+        ],
+        check=True,
+    )
     return index_path
 
 
