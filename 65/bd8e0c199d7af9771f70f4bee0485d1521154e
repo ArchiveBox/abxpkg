@@ -1,0 +1,20 @@
+.github/pages/README.md
+  h_923c208e183a7b 26-28,45-47,108-110
+.github/pages/base/marquee.css
+  h_923c208e183a7b 8
+.github/pages/base/marquee.js
+  h_923c208e183a7b 16
+.github/pages/verify.py
+  h_923c208e183a7b 100,103-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "65bd8e0c199d7af9771f70f4bee0485d1521154e",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
