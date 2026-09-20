@@ -93,24 +93,38 @@ def verify(output, evidence):
                         )
                         for strip in strips.all():
                             strip.scroll_into_view_if_needed()
+                            assert not strip.inner_text().strip(), (
+                                "Screenshot strips should have no visible captions or links"
+                            )
                             cards = strip.locator(".abx-marquee-card")
                             assert cards.count() > 0, "Screenshot strip is empty"
-                            button = strip.locator(".abx-marquee-toggle")
+                            expect(strip.locator("button")).to_have_count(0)
+                            expect(
+                                strip.locator("a:not(.abx-marquee-card)"),
+                            ).to_have_count(0)
                             viewport = strip.locator(".abx-marquee-viewport")
                             overflowing = viewport.evaluate(
                                 "node => node.scrollWidth > node.clientWidth",
                             )
                             if overflowing:
-                                expect(button).to_have_text("Play screenshots")
-                                button.click()
-                                expect(button).to_have_text("Pause screenshots")
+                                page.mouse.move(0, 0)
+                                page.emulate_media(reduced_motion="no-preference")
                                 initial = viewport.evaluate("node => node.scrollLeft")
                                 page.wait_for_function(
                                     "([node, initial]) => node.scrollLeft > initial",
                                     arg=[viewport.element_handle(), initial],
                                 )
-                                button.click()
-                                expect(button).to_have_text("Play screenshots")
+                                viewport.hover()
+                                stopped = viewport.evaluate("node => node.scrollLeft")
+                                viewport.evaluate(
+                                    "node => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+                                )
+                                assert (
+                                    viewport.evaluate("node => node.scrollLeft")
+                                    == stopped
+                                )
+                                page.emulate_media(reduced_motion="reduce")
+                                page.mouse.move(0, 0)
                                 stopped = viewport.evaluate("node => node.scrollLeft")
                                 viewport.evaluate(
                                     "node => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
@@ -124,9 +138,7 @@ def verify(output, evidence):
                                 assert viewport.evaluate(
                                     "node => node.scrollWidth > node.clientWidth",
                                 )
-                                expect(button).to_have_text("Play screenshots")
                             else:
-                                expect(button).to_be_hidden()
                                 centered = viewport.evaluate(
                                     """node => {
                                         const view = node.getBoundingClientRect();
@@ -211,7 +223,7 @@ def verify(output, evidence):
                 expect(plain.locator(".abx-footer-column a").first).to_be_visible()
                 if not route and "screenshots/index.html" in config["pages"]:
                     assert plain.locator(".abx-marquee-card").count() > 0
-                    expect(plain.locator(".abx-marquee-toggle").first).to_be_hidden()
+                    expect(plain.locator(".abx-marquee button")).to_have_count(0)
                     expect(plain.locator(".abx-marquee-card").first).to_be_visible()
                 context.close()
                 print(
