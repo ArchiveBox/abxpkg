@@ -35,6 +35,7 @@ def assert_extension_binary_loaded(loaded) -> None:
     assert loaded.loaded_sha256 is not None
 
     metadata = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
+    assert metadata["webstore_url"] == loaded.docs_url()
     unpacked_path = Path(metadata["unpacked_path"])
     assert unpacked_path.exists()
     assert not (unpacked_path / "_metadata").exists()

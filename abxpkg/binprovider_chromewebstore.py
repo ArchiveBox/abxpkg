@@ -166,7 +166,7 @@ class ChromeWebstoreProvider(BinProvider):
         slug = self._docs_url_name_slug(extension_name)
         if slug and slug != webstore_id:
             return f"https://chromewebstore.google.com/detail/{slug}/{webstore_id}"
-        return f"https://chromewebstore.google.com/detail/{webstore_id}"
+        return f"https://chromewebstore.google.com/detail/extension/{webstore_id}"
 
     def chromewebstore_search_handler(
         self,
@@ -179,7 +179,7 @@ class ChromeWebstoreProvider(BinProvider):
         """Resolve a Chrome Web Store extension by its 32-char ID.
 
         The Web Store has no JSON search API, but the public detail page
-        ``https://chromewebstore.google.com/detail/<id>`` always returns
+        ``https://chromewebstore.google.com/detail/extension/<id>`` returns
         the canonical extension name in its ``<title>`` tag, so we hit
         that to translate an extension ID into a human-readable name.
         Non-ID queries return an empty list — ID-based lookup is the
@@ -190,7 +190,7 @@ class ChromeWebstoreProvider(BinProvider):
         query = str(bin_name).strip()
         if not re.fullmatch(r"[a-p]{32}", query):
             return []
-        url = f"https://chromewebstore.google.com/detail/{query}"
+        url = f"https://chromewebstore.google.com/detail/extension/{query}"
         try:
             with urllib.request.urlopen(
                 url,

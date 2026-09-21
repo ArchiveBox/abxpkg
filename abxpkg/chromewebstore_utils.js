@@ -151,7 +151,8 @@ async function loadOrInstallExtension(ext, extensionsDir, unzipPath, forceInstal
 
     ext.webstore_id = ext.webstore_id || ext.id;
     ext.name = ext.name || ext.webstore_id;
-    ext.webstore_url = ext.webstore_url || `https://chromewebstore.google.com/detail/${ext.webstore_id}`;
+    const slug = String(ext.name || 'extension').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'extension';
+    ext.webstore_url = ext.webstore_url || `https://chromewebstore.google.com/detail/${slug}/${ext.webstore_id}`;
     ext.crx_url = ext.crx_url || `https://clients2.google.com/service/update2/crx?response=redirect&prodversion=1230&acceptformat=crx3&x=id%3D${ext.webstore_id}%26uc`;
     ext.crx_path = ext.crx_path || path.join(extensionsDir, `${ext.webstore_id}__${ext.name}.crx`);
     ext.unpacked_path = ext.unpacked_path || path.join(extensionsDir, `${ext.webstore_id}__${ext.name}`);
