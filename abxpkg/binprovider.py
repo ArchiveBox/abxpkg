@@ -3074,7 +3074,8 @@ class BinProvider(BaseModel):
                 ),
             )
         except Exception as err:
-            logger.warning(
+            log = logger.debug if quiet else logger.warning
+            log(
                 "%s failed to resolve version for %s: %s",
                 self.name,
                 bin_name,

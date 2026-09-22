@@ -14,6 +14,40 @@ from abxpkg import Binary, EnvProvider
 from abxpkg.semver import SemVer
 
 
+def test_binary_service_preserves_explicit_path_after_deletion(tmp_path: Path) -> None:
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+
+    binary_path = tmp_path / Path(sys.executable).name
+    binary_path.symlink_to(sys.executable)
+
+    async def resolve() -> BinaryEvent | None:
+        bus = abxbus.EventBus(name="explicit_binary_path")
+        BinaryService(bus, auto_install=False, lib_dir=tmp_path / "lib")
+        request = bus.emit(BinaryRequestEvent(name=str(binary_path), no_cache=True))
+        try:
+            await request.now()
+            result = await bus.find(
+                BinaryEvent,
+                child_of=request,
+                past=True,
+                future=False,
+            )
+            return result if isinstance(result, BinaryEvent) else None
+        finally:
+            await bus.wait_until_idle()
+            await bus.destroy(clear=False)
+
+    installed = asyncio.run(resolve())
+    assert installed is not None
+    assert Path(installed.abspath) == binary_path
+    assert (
+        installed.version
+        == f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    binary_path.unlink()
+    assert asyncio.run(resolve()) is None
+
+
 def test_binary_request_events_allow_parallel_scheduling_by_default(
     tmp_path: Path,
 ) -> None:

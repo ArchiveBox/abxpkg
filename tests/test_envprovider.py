@@ -1,4 +1,5 @@
 import cProfile
+import logging
 import json
 import os
 import shutil
@@ -27,6 +28,35 @@ from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:
+    def test_quiet_version_probe_does_not_warn_before_provider_fallback(
+        self,
+        tmp_path,
+        caplog,
+    ):
+        git_shell_path = shutil.which("git-shell")
+        assert git_shell_path is not None, "git-shell must be installed with git"
+        git_shell = Path(git_shell_path)
+        provider = EnvProvider(install_root=tmp_path / "env")
+        with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
+            assert (
+                provider.get_version(
+                    "git-shell",
+                    abspath=git_shell,
+                    quiet=True,
+                    no_cache=True,
+                )
+                is None
+            )
+        assert not caplog.records
+        with pytest.raises(Exception):
+            provider.get_version(
+                "git-shell",
+                abspath=git_shell,
+                quiet=False,
+                no_cache=True,
+            )
+        assert "failed to resolve version" in caplog.text
+
     def test_projects_execute_only_host_binary(self, tmp_path, test_machine):
         host_git = Path(test_machine.require_tool("git"))
         execute_only_git = tmp_path / "host" / "git"

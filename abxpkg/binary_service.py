@@ -538,7 +538,18 @@ class BinaryService:
         )
         return existing if isinstance(existing, BinaryEvent) else None
 
-    def _load(self, event: BinaryRequestEvent) -> Binary:
+    def _load(self, event: BinaryRequestEvent) -> Binary | None:
+        if event.name.startswith(("/", "./", "../", "~/")):
+            path = Path(event.name).expanduser()
+            if not path.is_file():
+                return None
+            # An explicit host command must be executable. Package-only
+            # requests can instead point at readable module/extension artifacts.
+            if "env" in self._provider_names(event.binproviders) and not os.access(
+                path,
+                os.X_OK,
+            ):
+                return None
         return self._binary_for_event(event).load(
             no_cache=self._no_cache_for_event(event),
         )
@@ -702,7 +713,17 @@ class BinaryService:
         )
 
     def _overrides_for_event(self, event: BinaryRequestEvent) -> dict[str, Any]:
-        return dict(self.overrides if event.overrides is None else event.overrides)
+        overrides = dict(self.overrides if event.overrides is None else event.overrides)
+        if event.name.startswith(("/", "./", "../", "~/")):
+            # Binary.name normalizes paths to basenames. Keep an explicitly
+            # requested path pinned so a missing file cannot resolve via PATH.
+            abspath = str(Path(event.name).expanduser().absolute())
+            for provider_name in self._provider_names(event.binproviders):
+                overrides[provider_name] = {
+                    **overrides.get(provider_name, {}),
+                    "abspath": abspath,
+                }
+        return overrides
 
     def _base_env_for_event(
         self,
