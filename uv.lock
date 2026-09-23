@@ -4,16 +4,16 @@ requires-python = ">=3.12, <3.15"
 
 [[package]]
 name = "abxbus"
-version = "2.5.58"
+version = "2.5.62"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "typing-extensions" },
     { name = "uuid7" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0c/91/c43d1ff68994278b1d52ffa603d1c9002baca8a8f7d9c882e8cdaf57c331/abxbus-2.5.58.tar.gz", hash = "sha256:c0f1aa8b12bd3f66cea15460df1938df3c6bfd554beb6d3e1267cc9f46ef4440", size = 134224 }
+sdist = { url = "https://files.pythonhosted.org/packages/32/25/ba31026685e5653c9e2c8efe35469c36376ff649e6cf7c37d89cae7cf35a/abxbus-2.5.62.tar.gz", hash = "sha256:1e5a372338e392310a83a03c0e2185e0711566c72c177f34b902cbb055c482b8", size = 134211 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/59/64eae264901dd48c79c549f4882fb1a83e8430b6d023f5c6204500ae92ea/abxbus-2.5.58-py3-none-any.whl", hash = "sha256:75657007482c0994334ff2aab34d176020b9cce209b6b429412d393aa0bf10e4", size = 127916 },
+    { url = "https://files.pythonhosted.org/packages/ea/e0/7f3b4c22606d7fed86aa3571949702ca6e92d1e6e09732ce68d61a65f9aa/abxbus-2.5.62-py3-none-any.whl", hash = "sha256:bc3d5f2ba3a9ccd568ac14b897d23e1beed292c0af7410bbc84a9240c35de1de", size = 127916 },
 ]
 
 [[package]]
