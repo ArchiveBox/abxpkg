@@ -11,6 +11,7 @@ permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
 
 concurrency:
   group: release-main
@@ -23,19 +24,48 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      actions: read
+      contents: read
     outputs:
-      ready: ${{ steps.owner.outputs.ready }}
+      ready: ${{ steps.verified.outcome == 'success' }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ env.RELEASE_SHA }}
       - id: owner
         shell: bash
         run: |
           VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' pyproject.toml | head -n 1)"
           TARGET="$(git ls-remote origin "refs/tags/release-candidate/$VERSION" | awk '{print $1}')"
-          [[ "$TARGET" == "${{ github.event.workflow_run.head_sha }}" ]] && echo 'ready=true' >> "$GITHUB_OUTPUT" || echo 'ready=false' >> "$GITHUB_OUTPUT"
+          [[ "$TARGET" == "$RELEASE_SHA" ]] && echo 'ready=true' >> "$GITHUB_OUTPUT" || echo 'ready=false' >> "$GITHUB_OUTPUT"
+
+      - name: Require successful full CI for this commit
+        id: verified
+        if: steps.owner.outputs.ready == 'true'
+        timeout-minutes: 50
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          TEST_RUN_ID=''
+          for _ in {1..12}; do
+            TEST_RUN_ID="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow tests.yml \
+              --commit "$RELEASE_SHA" \
+              --event push \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')"
+            [[ -n "$TEST_RUN_ID" ]] && break
+            sleep 5
+          done
+          [[ -n "$TEST_RUN_ID" ]]
+          gh run watch "$TEST_RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
 
   publish:
     needs: candidate
