@@ -132,7 +132,7 @@ jobs:
 
   cascade:
     name: Cascade verified release
-    needs: publish
+    needs: [candidate, publish]
     if: needs.publish.outputs.cascade_ready == 'true'
     permissions:
       actions: read
@@ -142,5 +142,6 @@ jobs:
       upstream_package: abxpkg
       upstream_version: ${{ needs.publish.outputs.version }}
       upstream_artifact_name: abxpkg-dist-${{ github.event.workflow_run.head_sha }}
+      upstream_run_id: ${{ needs.candidate.outputs.candidate_run_id }}
     secrets:
       release_token: ${{ secrets.RELEASE_GH_TOKEN }}
