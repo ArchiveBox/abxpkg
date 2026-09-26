@@ -373,6 +373,7 @@ def _script_cache_context(
         {
             "base": json.loads(base_context),
             "binary_name": binary_name,
+            "script_path": str(resolved_script),
             "dependencies": dependencies,
             "exec_env_inputs": {
                 "PATH": caller_path,

@@ -1455,15 +1455,21 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
         *equivalent_args(equivalent_hooks[1]),
         env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
     )
+    equivalent_second_warm = _run_abxpkg_cli(
+        *equivalent_args(equivalent_hooks[1]),
+        env_overrides={"PYTHONPROFILEIMPORTTIME": "1"},
+    )
 
     assert equivalent_first.returncode == 0, equivalent_first.stderr
     assert equivalent_first.stdout.strip() == "first"
     assert equivalent_second.returncode == 0, equivalent_second.stderr
     assert equivalent_second.stdout.strip() == "second"
-    assert "rich_click" not in equivalent_second.stderr
-    assert "pydantic" not in equivalent_second.stderr
-    assert equivalent_cache.stat().st_ino == equivalent_stat.st_ino
-    assert equivalent_cache.stat().st_mtime_ns == equivalent_stat.st_mtime_ns
+    assert "rich_click" in equivalent_second.stderr
+    assert equivalent_second_warm.returncode == 0, equivalent_second_warm.stderr
+    assert equivalent_second_warm.stdout.strip() == "second"
+    assert "rich_click" not in equivalent_second_warm.stderr
+    assert "pydantic" not in equivalent_second_warm.stderr
+    assert equivalent_cache.stat().st_mtime_ns != equivalent_stat.st_mtime_ns
 
     provider_precedence_args = tuple(
         arg
@@ -1491,7 +1497,7 @@ def test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks(tmp_path)
     assert implicit_providers.returncode == 0, implicit_providers.stderr
     assert explicit_providers.returncode == 0, explicit_providers.stderr
     assert different_exec_env.returncode == 0, different_exec_env.stderr
-    assert len(provider_precedence_plans) == 4
+    assert len(provider_precedence_plans) == 5
 
     prepared_lib = tmp_path / "prepared-script-lib"
     prepared_script = tmp_path / "prepared-script.py"
