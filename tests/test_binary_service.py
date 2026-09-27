@@ -10,8 +10,71 @@ from typing import Any, cast
 import pytest
 import abxbus
 
-from abxpkg import Binary, EnvProvider
+from abxpkg import Binary, EnvProvider, NodeProvider
 from abxpkg.semver import SemVer
+
+
+@pytest.mark.parametrize("no_cache", [False, True])
+def test_explicit_managed_binary_request_preserves_runtime_projection(
+    tmp_path: Path,
+    no_cache: bool,
+) -> None:
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+
+    lib_dir = tmp_path / "lib"
+    installed = NodeProvider(install_root=lib_dir / "node").install("node")
+    assert installed is not None
+    assert installed.loaded_abspath is not None
+    assert installed.loaded_version is not None
+    env_provider = EnvProvider(install_root=lib_dir / "env")
+    projected = env_provider.project_binary(installed, "node")
+    assert projected == lib_dir / "env" / "bin" / "node"
+    assert projected.resolve() == installed.loaded_abspath.resolve()
+
+    async def resolve_explicit_path() -> BinaryEvent | None:
+        bus = abxbus.EventBus(name="explicit_managed_runtime")
+        BinaryService(bus, auto_install=False, lib_dir=lib_dir)
+        request = bus.emit(
+            BinaryRequestEvent(
+                name=str(installed.loaded_abspath),
+                binproviders="env,node",
+                min_version=str(installed.loaded_version),
+                no_cache=no_cache,
+            ),
+        )
+        try:
+            await request.now()
+            result = await bus.find(
+                BinaryEvent,
+                child_of=request,
+                past=True,
+                future=False,
+            )
+            return result if isinstance(result, BinaryEvent) else None
+        finally:
+            await bus.wait_until_idle()
+            await bus.destroy(clear=False)
+
+    resolved = asyncio.run(resolve_explicit_path())
+    assert resolved is not None
+    assert Path(resolved.abspath).resolve() == installed.loaded_abspath.resolve()
+    assert resolved.version == str(installed.loaded_version)
+
+    # A later installer discovers node by name in this same collection.
+    # Inspecting its explicit managed path must not make that discovery
+    # replace the selected runtime with an unrelated host installation.
+    reloaded = EnvProvider(install_root=lib_dir / "env").load("node", no_cache=True)
+    assert reloaded is not None
+    assert reloaded.loaded_abspath == projected
+    assert projected.resolve() == installed.loaded_abspath.resolve()
+    assert reloaded.loaded_version == installed.loaded_version
+    version = subprocess.run(
+        [str(projected), "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert version.stdout.strip() == f"v{installed.loaded_version}"
 
 
 def test_binary_service_preserves_explicit_path_after_deletion(tmp_path: Path) -> None:
