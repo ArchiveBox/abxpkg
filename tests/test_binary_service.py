@@ -20,12 +20,15 @@ def test_explicit_managed_binary_request_preserves_runtime_projection(
     no_cache: bool,
 ) -> None:
     from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+    from abxpkg.config import load_derived_cache
 
     lib_dir = tmp_path / "lib"
-    installed = NodeProvider(install_root=lib_dir / "node").install("node")
+    node_provider = NodeProvider(install_root=lib_dir / "node")
+    installed = node_provider.install("node")
     assert installed is not None
     assert installed.loaded_abspath is not None
     assert installed.loaded_version is not None
+    assert installed.loaded_sha256 is not None
     env_provider = EnvProvider(install_root=lib_dir / "env")
     projected = env_provider.project_binary(installed, "node")
     assert projected == lib_dir / "env" / "bin" / "node"
@@ -60,6 +63,23 @@ def test_explicit_managed_binary_request_preserves_runtime_projection(
     assert Path(resolved.abspath).resolve() == installed.loaded_abspath.resolve()
     assert resolved.version == str(installed.loaded_version)
 
+    # Env must still refuse to cache another provider's native executable.
+    # That refusal must leave its separately owned projection intact.
+    cache_path = lib_dir / "env" / "derived.env"
+    projection_cache = load_derived_cache(cache_path)
+    assert projection_cache
+    assert env_provider.load_cached_binary("node", installed.loaded_abspath) is None
+    assert (
+        env_provider.write_cached_binary(
+            "node",
+            installed.loaded_abspath,
+            installed.loaded_version,
+            installed.loaded_sha256,
+        )
+        is None
+    )
+    assert load_derived_cache(cache_path) == projection_cache
+
     # A later installer discovers node by name in this same collection.
     # Inspecting its explicit managed path must not make that discovery
     # replace the selected runtime with an unrelated host installation.
@@ -75,6 +95,15 @@ def test_explicit_managed_binary_request_preserves_runtime_projection(
         check=True,
     )
     assert version.stdout.strip() == f"v{installed.loaded_version}"
+
+    # Preserving a valid projection must not preserve a usable cache hit after
+    # the owning provider removes the real installation.
+    assert node_provider.uninstall("node") is True
+    assert not installed.loaded_abspath.exists()
+    assert (
+        EnvProvider(install_root=lib_dir / "env").load_cached_binary("node", projected)
+        is None
+    )
 
 
 def test_binary_service_preserves_explicit_path_after_deletion(tmp_path: Path) -> None:
