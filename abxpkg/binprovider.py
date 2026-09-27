@@ -947,7 +947,8 @@ class BinProvider(BaseModel):
             return None
 
         if self._is_managed_by_other_provider(abspath, cache=cache):
-            self.invalidate_cache(bin_name)
+            # Declining ownership of this path must not invalidate a valid
+            # env/bin projection of the same binary into another provider.
             return None
 
         cache_info = self.get_cache_info(bin_name, abspath)
@@ -4813,7 +4814,6 @@ class EnvProvider(BinProvider):
         setup_path: bool = True,
     ) -> ShallowBinary | None:
         if self._is_managed_by_other_provider(abspath):
-            self.invalidate_cache(bin_name)
             return None
         if logger.isEnabledFor(py_logging.DEBUG):
             log_with_trace_depth(
@@ -4866,7 +4866,6 @@ class EnvProvider(BinProvider):
             resolved_provider_name = resolved_provider.name
             cache_kind = "projection"
         if not is_direct_projection and self._is_managed_by_other_provider(abspath):
-            self.invalidate_cache(bin_name)
             return None
         if logger.isEnabledFor(py_logging.DEBUG):
             log_with_trace_depth(
