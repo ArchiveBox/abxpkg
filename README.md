@@ -1392,20 +1392,11 @@ cd "$checkout_dir"
 
 # setup the venv and install packages
 uv sync --all-extras
-
-# run formatting/lint/type checks
-uv run prek run --all-files
 ```
 
-<!-- pytest.mark.live_required -->
-```bash
-# Exercise representative core, environment, and provider behavior.
-uv run pytest -s \
-    tests/test_semver.py \
-    tests/test_binary.py \
-    tests/test_envprovider.py \
-    tests/test_module_api.py
-```
+Run formatting, lint, and type checks with `uv run prek run --all-files`.
+For representative core, environment, and provider behavior, run
+`uv run pytest -s tests/test_semver.py tests/test_binary.py tests/test_envprovider.py tests/test_module_api.py`.
 
 The mandatory per-file CI matrix runs the complete standard suite, the
 host-mutating provider files, and every `root_required` and `docker_required`

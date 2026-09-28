@@ -54,12 +54,11 @@ print(binary.abspath, binary.version, binary.is_valid)
 
 ## Verification
 
-Use targeted tests and real providers:
+Use targeted tests and real providers with `uv run pytest tests/test_cli.py -q`,
+and run formatting, lint, and type checks with `uv run prek run --all-files`.
 
-<!-- pytest.mark.live_required -->
-```bash
-uv run pytest tests/test_cli.py -q
-uv run prek run --all-files
-```
+Keep test and lint invocations inline in documentation. Executable documentation
+blocks exercise product usage; invoking pytest or prek inside them recursively
+duplicates the discovered tests and checks without adding product coverage.
 
 Provider-specific logic belongs in provider classes. Shared provider infrastructure should stay provider-agnostic.

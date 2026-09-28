@@ -48,9 +48,8 @@ uv run abx yt-dlp --help
 
 ## Verification
 
-<!-- pytest.mark.live_required -->
-```bash
-uv run pytest tests/test_chromewebstoreprovider.py -q
-```
+Run `uv run pytest tests/test_chromewebstoreprovider.py -q` for targeted provider
+verification. Keep test invocations inline so documentation checks do not
+recursively rerun the test suite.
 
 Provider-specific logic belongs in provider classes. Shared provider infrastructure should stay provider-agnostic.
