@@ -4688,6 +4688,62 @@ def test_run_script_without_declared_dependency_keeps_target_runtime_env_clean(
     assert str(lib / "uv" / "venv" / "bin") not in payload["path"].split(os.pathsep)
 
 
+def test_run_script_uses_python_binary_projected_through_another_lib(tmp_path):
+    """A PYTHON_BINARY projection remains the active venv through a fresh lib root."""
+
+    docs_lib = tmp_path / "docs-lib"
+    isolated_lib = tmp_path / "isolated" / "lib"
+    docs_python = docs_lib / "env" / "bin" / "python"
+
+    docs_env = _run_abxpkg_cli(
+        f"--lib={docs_lib}",
+        "--binproviders=env",
+        "load",
+        "python",
+        env_overrides={"PYTHON_BINARY": sys.executable},
+    )
+    assert docs_env.returncode == 0, docs_env.stderr
+    assert docs_python.is_symlink()
+    assert docs_python.samefile(sys.executable)
+
+    script = tmp_path / "check_runtime.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        "# dependencies = []\n"
+        "# ///\n"
+        "import abxpkg.cli, json, sys\n"
+        "print(json.dumps({\n"
+        "    'executable': sys.executable,\n"
+        "    'prefix': sys.prefix,\n"
+        "    'abxpkg': abxpkg.cli.__file__,\n"
+        "}))\n",
+    )
+    script.chmod(0o755)
+
+    proc = _run_abxpkg_cli(
+        "run",
+        "--script",
+        "python3",
+        str(script),
+        env_overrides={
+            "ABXPKG_LIB_DIR": str(isolated_lib),
+            "ABXPKG_BINPROVIDERS": "env",
+            "PYTHON_BINARY": str(docs_python),
+        },
+    )
+
+    assert proc.returncode == 0, proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert Path(payload["executable"]).samefile(sys.executable)
+    assert Path(payload["prefix"]).resolve() == Path(sys.prefix).resolve()
+    assert Path(payload["abxpkg"]).resolve() == Path(cli_module.__file__).resolve()
+
+    isolated_python = isolated_lib / "env" / "bin" / "python3"
+    assert isolated_python.is_symlink()
+    assert isolated_python.samefile(sys.executable)
+
+
 def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
     """Script execution should use caller ABXPKG_LIB_DIR provider env."""
 
