@@ -4752,6 +4752,55 @@ def test_run_script_uses_python_binary_projected_through_another_lib(tmp_path):
         assert Path(payload["abxpkg"]).resolve() == Path(cli_module.__file__).resolve()
 
 
+@pytest.mark.parametrize("shared_lib_root", [False, True])
+def test_run_script_preserves_python_venv_named_env(tmp_path, shared_lib_root):
+    """Do not peel a real venv's env/bin/python as if it were an abxpkg link."""
+
+    venv = tmp_path / "env"
+    create_venv = subprocess.run(
+        ["uv", "venv", "--python", sys.executable, str(venv)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert create_venv.returncode == 0, create_venv.stderr
+
+    venv_python = venv / "bin" / "python"
+    assert (venv / "pyvenv.cfg").is_file()
+    assert venv_python.is_file()
+
+    script = tmp_path / "check_env_venv.py"
+    script.write_text(
+        "#!/usr/bin/env -S abxpkg run --script python3\n"
+        "# /// script\n"
+        "# dependencies = []\n"
+        "# ///\n"
+        "import json, sys\n"
+        "print(json.dumps({'executable': sys.executable, 'prefix': sys.prefix}))\n",
+    )
+    script.chmod(0o755)
+
+    lib = tmp_path if shared_lib_root else tmp_path / "lib"
+    run_env = {
+        "ABXPKG_LIB_DIR": str(lib),
+        "ABXPKG_BINPROVIDERS": "env",
+        "PYTHON_BINARY": str(venv_python),
+    }
+    for _ in range(2):
+        proc = _run_abxpkg_cli(
+            "run",
+            "--script",
+            "python3",
+            str(script),
+            env_overrides=run_env,
+        )
+
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert Path(payload["prefix"]).resolve() == venv.resolve()
+        assert Path(payload["executable"]) == venv_python
+
+
 def test_run_script_honors_lib_dir_env_and_uv_provider_cache(tmp_path):
     """Script execution should use caller ABXPKG_LIB_DIR provider env."""
 

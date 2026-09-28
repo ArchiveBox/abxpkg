@@ -99,6 +99,7 @@ from .config import (
     apply_exec_env,
     build_exec_env,
     load_derived_cache,
+    resolve_env_projection,
     save_derived_cache,
 )
 
@@ -4268,7 +4269,7 @@ class EnvProvider(BinProvider):
         # managed link hop so host launchers retain their original argv[0],
         # and a second env/bin hop would become argv[0] instead. Preserve the
         # final host/package-manager symlink; only peel abxpkg env/bin links.
-        source_path = self._host_projection_target(source_path)
+        source_path = Path(resolve_env_projection(source_path))
         target = source_path
         for provider in self._projection_providers:
             provider_target = provider.host_projection_target(source_path)
@@ -4320,24 +4321,6 @@ class EnvProvider(BinProvider):
                 temp_link.unlink()
         return TypeAdapter(HostBinPath).validate_python(link_path)
 
-    @staticmethod
-    def _host_projection_target(source_path: Path) -> Path:
-        seen_projection_paths: set[Path] = set()
-        while (
-            source_path.is_symlink()
-            and source_path.parent.name == "bin"
-            and source_path.parent.parent.name == "env"
-            and source_path not in seen_projection_paths
-        ):
-            seen_projection_paths.add(source_path)
-            projected_target = source_path.readlink()
-            source_path = (
-                projected_target
-                if projected_target.is_absolute()
-                else source_path.parent / projected_target
-            ).absolute()
-        return source_path
-
     def _host_candidate_names(self, bin_name: BinName | str) -> tuple[str, ...]:
         bin_name_str = str(bin_name)
         aliases = self.HOST_BINARY_ALIASES.get(bin_name_str, ())
@@ -4381,9 +4364,9 @@ class EnvProvider(BinProvider):
         # PATHs and cached Binary metadata stay portable. Executing those links
         # directly can still change runtime semantics for binaries that inspect
         # argv[0] / sys.executable, notably venv Python hiding its site-packages.
-        # Dereference only the managed link itself: run the binary EnvProvider
-        # discovered, but do not chase any further symlink chain owned by the OS
-        # or package manager.
+        # Explicit PYTHON_BINARY may name another lib root's projection, bypassing
+        # _link_loaded_binary entirely. Peel those aliases too, stopping at the
+        # original host/package-manager launcher so venv semantics survive.
         projected_version_path = ENV_PROJECTED_VERSION_PATH.get()
         if (
             projected_version_path is not None
@@ -4391,13 +4374,18 @@ class EnvProvider(BinProvider):
         ):
             return bin_abspath
         if (
-            self.bin_dir is None
-            or bin_abspath.parent != self.bin_dir
-            or not bin_abspath.is_symlink()
+            self.bin_dir is not None
+            and bin_abspath.parent == self.bin_dir
+            and bin_abspath.is_symlink()
+            and not (bin_abspath.parent.parent / "pyvenv.cfg").is_file()
         ):
-            return bin_abspath
-        linked_to = bin_abspath.readlink()
-        return linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to
+            linked_to = bin_abspath.readlink()
+            bin_abspath = (
+                linked_to
+                if linked_to.is_absolute()
+                else bin_abspath.parent / linked_to
+            )
+        return Path(resolve_env_projection(bin_abspath))
 
     def _get_version_at_abspath(
         self,
@@ -4531,7 +4519,7 @@ class EnvProvider(BinProvider):
         )
         if resolved_provider is not None:
             self.set_projection_providers([resolved_provider])
-            projected_target = self._host_projection_target(Path(installed_abspath))
+            projected_target = Path(resolve_env_projection(installed_abspath))
             if resolved_provider.cached_binary_state_mismatch(
                 bin_name,
                 {

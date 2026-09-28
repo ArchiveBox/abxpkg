@@ -79,6 +79,32 @@ def abxpkg_cache_env(env: Mapping[str, str]) -> dict[str, str]:
     }
 
 
+def resolve_env_projection(source_path: str | os.PathLike[str]) -> str:
+    """Peel abxpkg env/bin aliases without resolving the host launcher itself.
+
+    Python finds its venv from the path used to execute it, not just the final
+    executable inode. An alias from another lib root must therefore be peeled
+    on both cold execution and cached-plan execution. Full realpath() would
+    instead discard the venv, and a real venv named `env` is not a projection.
+    Keep this rule shared: old cached plans may still name a foreign alias.
+    """
+    source_path = os.path.abspath(os.path.expanduser(os.fspath(source_path)))
+    seen: set[str] = set()
+    while os.path.islink(source_path) and source_path not in seen:
+        bin_dir = os.path.dirname(source_path)
+        env_dir = os.path.dirname(bin_dir)
+        if (
+            os.path.basename(bin_dir) != "bin"
+            or os.path.basename(env_dir) != "env"
+            or os.path.isfile(os.path.join(env_dir, "pyvenv.cfg"))
+        ):
+            break
+        seen.add(source_path)
+        target = os.readlink(source_path)
+        source_path = os.path.abspath(os.path.join(bin_dir, target))
+    return source_path
+
+
 def _canonical_request_path(value: object) -> object:
     if not isinstance(value, (str, os.PathLike)):
         return value
@@ -774,7 +800,10 @@ def _validated_cached_plan(
         projected_ambient = is_script and resolved_ambient == os.path.realpath(abspath)
         if resolved_ambient != ambient_abspath and not projected_ambient:
             return None
-    return exec_abspath, final_env
+    # Plans written before foreign Python aliases were handled can still be
+    # valid. Apply the same execution rule as a cold provider resolution rather
+    # than discarding dependency caches or reintroducing the broken argv[0].
+    return resolve_env_projection(exec_abspath), final_env
 
 
 def _load_cached_request_projection(
