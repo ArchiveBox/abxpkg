@@ -800,10 +800,10 @@ def _validated_cached_plan(
         projected_ambient = is_script and resolved_ambient == os.path.realpath(abspath)
         if resolved_ambient != ambient_abspath and not projected_ambient:
             return None
-    # Plans written before foreign Python aliases were handled can still be
-    # valid. Apply the same execution rule as a cold provider resolution rather
-    # than discarding dependency caches or reintroducing the broken argv[0].
-    return resolve_env_projection(exec_abspath), final_env
+    # BinaryService also uses this validation for metadata: its public abspath
+    # must remain the stable projection, including on cache hits. Only an exec
+    # caller may peel aliases to preserve the launcher's argv[0] semantics.
+    return exec_abspath, final_env
 
 
 def _load_cached_request_projection(

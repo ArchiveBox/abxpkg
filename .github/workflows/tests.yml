@@ -43,7 +43,7 @@ jobs:
         && uv sync --all-extras --all-groups --no-cache
 
     - name: Run pre-commit checks
-      run: uv run prek run --all-files
+      run: uv run prek run --all-files --show-diff-on-failure
 
     - name: Run documentation code blocks
       run: uv run pytest -vv --tb=long -m "not live_required" README.md django_example_project/README.md AGENTS.md skills docs

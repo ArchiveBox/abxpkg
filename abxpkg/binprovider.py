@@ -4381,9 +4381,7 @@ class EnvProvider(BinProvider):
         ):
             linked_to = bin_abspath.readlink()
             bin_abspath = (
-                linked_to
-                if linked_to.is_absolute()
-                else bin_abspath.parent / linked_to
+                linked_to if linked_to.is_absolute() else bin_abspath.parent / linked_to
             )
         return Path(resolve_env_projection(bin_abspath))
 

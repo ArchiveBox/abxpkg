@@ -633,7 +633,7 @@ def _exec_cached_script_requests(
     if not os.access(exec_abspath, os.X_OK):
         return None
 
-    from .config import build_exec_env
+    from .config import build_exec_env, resolve_env_projection
 
     final_env = os.environ.copy()
     for record, _projection, env_key in resolved_dependencies:
@@ -689,6 +689,7 @@ def _exec_cached_script_requests(
     )
     final_env.update(user_env)
     final_env["PWD"] = os.getcwd()
+    exec_abspath = resolve_env_projection(exec_abspath)
     try:
         os.execvpe(exec_abspath, [exec_abspath, *script_args], final_env)
     except OSError as err:
@@ -711,10 +712,15 @@ def _exec_cached_plan(
     run_context: str,
     binary_args: list[str],
 ) -> int | None:
+    from .config import resolve_env_projection
+
     validated = _validated_cached_plan(raw_plan, run_context)
     if validated is None:
         return None
     exec_abspath, final_env = validated
+    # Old plans can still be valid while naming a foreign env/bin alias. Repair
+    # only execution, preserving stable metadata and all cache validation rules.
+    exec_abspath = resolve_env_projection(exec_abspath)
     try:
         os.execvpe(
             exec_abspath,
