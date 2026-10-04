@@ -4,13 +4,22 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
-from abxpkg import AptProvider, Binary, BrewProvider, EnvProvider, GemProvider, SemVer
+from abxpkg import (
+    DEFAULT_PROVIDER_NAMES,
+    PROVIDER_CLASS_BY_NAME,
+    AptProvider,
+    Binary,
+    BrewProvider,
+    GemProvider,
+    SemVer,
+)
 from abxpkg.exceptions import BinaryLoadError
 
 
@@ -94,7 +103,23 @@ class TestMachine:
             check=True,
         )
         os.environ.update(json.loads(result.stdout))
-        loaded = EnvProvider().load(tool_name)
+        # Keep the active interpreter ahead of newly activated tool directories.
+        os.environ["PATH"] = os.pathsep.join(
+            dict.fromkeys(
+                [
+                    str(Path(sys.executable).parent),
+                    *os.environ["PATH"].split(os.pathsep),
+                ],
+            ),
+        )
+        # Managed prerequisites belong to their installing provider (e.g. npm
+        # installed by NodeProvider), which EnvProvider deliberately excludes.
+        loaded = Binary(
+            name=tool_name,
+            binproviders=[
+                PROVIDER_CLASS_BY_NAME[name]() for name in DEFAULT_PROVIDER_NAMES
+            ],
+        ).load()
         self.assert_shallow_binary_loaded(loaded, assert_version_command=False)
         assert loaded.loaded_abspath is not None, (
             f"{tool_name} is required on this host for test-machine integration tests",
