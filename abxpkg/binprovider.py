@@ -905,7 +905,6 @@ class BinProvider(BaseModel):
         return fingerprints
 
     @log_method_call(include_result=True)
-    @mutation_locked
     def load_cached_binary(
         self,
         bin_name: BinName,
@@ -915,16 +914,22 @@ class BinProvider(BaseModel):
         cache_context_hash: str | None = None,
         setup_path: bool = True,
     ) -> ShallowBinary | None:
-        # A caller-supplied snapshot may be stale. Internal callers that load
-        # the file under the same mutation lock pass it to the private helper.
-        return self._load_cached_binary(
-            bin_name,
-            abspath,
-            cache=None,
-            cache_context=cache_context,
-            cache_context_hash=cache_context_hash,
-            setup_path=setup_path,
-        )
+        # Direct dependency reads need the same setup-before-lock ordering as
+        # load_cached_binary_by_name. Setup may resolve a provider's installer;
+        # holding this root's lock across those probes serialized parallel
+        # version checks and can form a cross-provider bootstrap lock cycle.
+        if setup_path:
+            self.setup_PATH()
+        with self.mutation_lock():
+            # Discard caller snapshots: invalidation/normalization below writes
+            # a merged record and must start from the current locked cache.
+            return self._load_cached_binary(
+                bin_name,
+                abspath,
+                cache=None,
+                cache_context=cache_context,
+                cache_context_hash=cache_context_hash,
+            )
 
     def _load_cached_binary(
         self,
@@ -933,16 +938,7 @@ class BinProvider(BaseModel):
         cache: dict[str, dict[str, object]] | None = None,
         cache_context: str | None = None,
         cache_context_hash: str | None = None,
-        setup_path: bool = True,
     ) -> ShallowBinary | None:
-        # Cache context includes lazily-derived provider fields like PATH.
-        # Direct cache readers (list/version/installer discovery) do not pass
-        # through load(), so normalize the provider before comparing context or
-        # every valid record looks stale in a fresh process. Installer discovery
-        # skips setup here because setup may itself need the installer binary;
-        # its cache context is derived from the current pre-setup provider state.
-        if setup_path:
-            self.setup_PATH()
         derived_env_path = self.derived_env_path
         if derived_env_path is None:
             return None
@@ -1168,7 +1164,6 @@ class BinProvider(BaseModel):
                 cache=cache,
                 cache_context=cache_context,
                 cache_context_hash=cache_context_hash,
-                setup_path=False,
             )
             if loaded and loaded.loaded_abspath:
                 return loaded
