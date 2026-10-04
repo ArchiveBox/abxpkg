@@ -574,8 +574,12 @@ def test_binary_service_request_projection_uses_effective_service_options(
     )
 
 
+@pytest.mark.parametrize("install_by_name", [False, True])
+@pytest.mark.parametrize("hydrate_binary_env", [False, True])
 def test_binary_service_reuses_absolute_path_request_projection(
     tmp_path: Path,
+    install_by_name: bool,
+    hydrate_binary_env: bool,
 ) -> None:
     from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
@@ -593,10 +597,14 @@ def test_binary_service_reuses_absolute_path_request_projection(
         run_id += 1
         bus = abxbus.EventBus(name=f"test_absolute_request_projection_{run_id}")
         BinaryService(bus, auto_install=False, lib_dir=lib_dir)
+        name = "python3" if install_by_name and run_id == 1 else str(projected_path)
         await bus.emit(
             BinaryRequestEvent(
-                name=str(projected_path),
+                name=name,
                 binproviders="env",
+                base_env={**os.environ, "PYTHON3_BINARY": name}
+                if hydrate_binary_env
+                else None,
             ),
         ).now()
         await bus.wait_until_idle()
