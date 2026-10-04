@@ -1,3 +1,5 @@
+# ci-runner: hosted
+# Requires a real Docker daemon; NAS runners do not expose the host socket.
 import tempfile
 from pathlib import Path
 import logging
