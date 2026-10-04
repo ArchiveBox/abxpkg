@@ -581,6 +581,9 @@ def test_binary_service_reuses_absolute_path_request_projection(
     install_by_name: bool,
     hydrate_binary_env: bool,
 ) -> None:
+    # Images install by name before runners hydrate absolute paths. Testing only
+    # absolute -> absolute missed that first runner request and its selector env
+    # change, allowing every crawl to repeat expensive version/hash probes.
     from abxpkg.binary_service import BinaryRequestEvent, BinaryService
 
     lib_dir = tmp_path / "lib"

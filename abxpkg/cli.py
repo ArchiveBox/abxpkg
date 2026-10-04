@@ -539,6 +539,9 @@ def _cached_script_request_projection(
     ):
         return resolved
 
+    # Schema aliases need not equal the executable basename. Preserve that
+    # declared identity after hydration, but prove it still names the requested
+    # file below; a same-named installation elsewhere must not satisfy the pin.
     declared_request = {**request, "name": declared_name}
     resolved = _cached_request_projection(
         lib_dir,

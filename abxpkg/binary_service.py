@@ -717,6 +717,8 @@ class BinaryService:
         if event.name.startswith(("/", "./", "../", "~/")):
             # Binary.name normalizes paths to basenames. Keep an explicitly
             # requested path pinned so a missing file cannot resolve via PATH.
+            # Warm-cache name equivalence must not relax this cold-load contract:
+            # it is evidence reuse for one exact file, not permission to replace it.
             abspath = str(Path(event.name).expanduser().absolute())
             for provider_name in self._provider_names(event.binproviders):
                 overrides[provider_name] = {

@@ -4456,6 +4456,10 @@ class EnvProvider(BinProvider):
 
         absolute_abspath = Path(abspath).expanduser().absolute()
         if self._projection_cache_record(absolute_abspath, cache=cache) is not None:
+            # env owns this alias and its runtime metadata, not the foreign
+            # installation it targets. Treating both as foreign used to destroy
+            # valid projections and select unrelated host runtimes on later loads.
+            # See docs/provider-caching.md for the ownership/launch-path contract.
             return False
 
         lib_dir = self.install_root.parent

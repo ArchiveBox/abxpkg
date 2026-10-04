@@ -14,6 +14,7 @@
 - Start behavior fixes with a red failing test when a test is requested or practical.
 - Trace root causes from observed behavior. Do not paper over failures with retries, wider timeouts, broad fallbacks, or looser assertions.
 - Read `README.md` for the full provider, CLI, Python API, config, and release surface.
+- Before changing `env`, path resolution or caching, read [the provider cache design](docs/provider-caching.md). It records the ownership, runtime and invalidation boundaries that previous fixes established.
 
 ## Development Setup
 

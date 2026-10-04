@@ -118,7 +118,13 @@ def binary_request_cache_key(
     default_provider_names: Iterable[str],
     env: Mapping[str, str] | None = None,
 ) -> str:
-    """Return the exact cache identity shared by event and script requests."""
+    """Return the exact cache identity shared by event and script requests.
+
+    Keep names distinct from paths: identical basenames can select different
+    installations. Only a validated record can prove name-to-path equivalence.
+    Python environment identity also matters even when the executable is shared.
+    See docs/provider-caching.md for the failures behind these boundaries.
+    """
 
     provider_names = request.get("binproviders") or default_provider_names
     if isinstance(provider_names, str):
@@ -712,6 +718,9 @@ def _validated_cached_plan(
     ignored_env_base_keys: Iterable[str] = (),
     require_executable: bool = True,
 ) -> tuple[str, dict[str, str]] | None:
+    # Warm plans must prove their inputs still match, not just that a binary
+    # exists. Ignoring PATH or venv changes previously reused the wrong runtime.
+    # Return stable metadata here; execution alone may peel env/bin aliases.
     if os.getuid() != os.geteuid() or not isinstance(raw_plan, dict):
         return None
     exec_plan = cast(dict[str, object], raw_plan)
@@ -814,6 +823,9 @@ def _load_cached_request_projection(
     base_env: Mapping[str, str] | None = None,
     ignored_env_base_keys: Iterable[str] = (),
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
+    # Shared by service preflight and script execution so hydration does not
+    # reintroduce separate cache rules. See docs/provider-caching.md before
+    # changing identity equivalence, environment validation or ownership.
     current_env = os.environ if base_env is None else base_env
     request_key = binary_request_cache_key(
         request,

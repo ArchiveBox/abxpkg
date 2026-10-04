@@ -367,6 +367,8 @@ curl = Binary(
 
 Pass `no_cache=True` to `load()` / `install()` / `update()` / `uninstall()` when you want to bypass cached/current-state checks. For `install()`, `no_cache=True` skips the initial `load()` check and forces a fresh install path. The equivalent CLI and env controls are `--no-cache` and `ABXPKG_NO_CACHE=1`.
 
+For maintainers: [provider caching design and history](docs/provider-caching.md) explains why ownership, absolute paths, runtime environments and cache validation must remain distinct.
+
 Provider installer binaries also resolve lazily through the active provider chain. If a provider needs `pip`, `npm`, `cargo`, or another installer tool and it is missing, abxpkg will auto-install that dependency using the currently selected providers and the same `ABXPKG_LIB_DIR` / `--lib` / `--global` settings.
 
 #### Advanced Usage
