@@ -47,6 +47,7 @@ class BunProvider(BinProvider):
     INSTALLER_BIN: BinName = "bun"
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
         "env",
+        "npm",
         "brew",
     )
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = True

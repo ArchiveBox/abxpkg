@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import subprocess
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -8,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import AptProvider, Binary, BrewProvider, GemProvider, SemVer
+from abxpkg import AptProvider, Binary, BrewProvider, EnvProvider, GemProvider, SemVer
 from abxpkg.exceptions import BinaryLoadError
 
 
@@ -56,7 +58,43 @@ class TestMachine:
         assert published[latest] > cutoff
 
     def require_tool(self, tool_name: str) -> str:
-        loaded = Binary(name=tool_name).install(no_cache=True)
+        # Resolve and activate prerequisites through the public CLI. Binary's
+        # env-only default cannot install missing tools, and finding a host
+        # binary outside PATH is not sufficient for shell-script dependencies.
+        options = []
+        if tool_name == "brew":
+            # Homebrew itself is a host prerequisite, unlike formulae managed
+            # by BrewProvider. Use its real, pinned installer through BashProvider.
+            from abxpkg.binprovider_brew import GUESSED_BREW_PREFIX
+
+            installer = "https://raw.githubusercontent.com/Homebrew/install/35da6871c4be7d7fdab2fd505fb7fa667926a2a5/install.sh"
+            command = (
+                f'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL {installer})"'
+                f' && ln -sf {shlex.quote(str(Path(GUESSED_BREW_PREFIX) / "bin/brew"))} "$BIN_DIR/brew"'
+            )
+            options = [
+                "--binproviders=env,bash",
+                "--overrides=" + json.dumps({"bash": {"install": command}}),
+            ]
+        result = subprocess.run(
+            [
+                "uv",
+                "run",
+                "--no-sync",
+                "abxpkg",
+                "env",
+                "--install",
+                "--json",
+                *options,
+                tool_name,
+            ],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        os.environ.update(json.loads(result.stdout))
+        loaded = EnvProvider().load(tool_name)
         self.assert_shallow_binary_loaded(loaded, assert_version_command=False)
         assert loaded.loaded_abspath is not None, (
             f"{tool_name} is required on this host for test-machine integration tests",

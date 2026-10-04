@@ -150,7 +150,11 @@ class TestSecurityControls:
                 min_release_age=3,
             ).install()
 
-    def test_nullable_provider_security_fields_resolve_before_handlers_run(self):
+    def test_nullable_provider_security_fields_resolve_before_handlers_run(
+        self,
+        test_machine,
+    ):
+        test_machine.require_tool("brew")
         with tempfile.TemporaryDirectory() as tmpdir:
             assert (
                 PipProvider(
