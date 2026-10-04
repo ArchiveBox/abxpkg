@@ -1,6 +1,8 @@
+from .conftest import (
+    _brew_formula_is_installed,
+)
 import logging
 import shutil
-import subprocess
 import tempfile
 
 from pathlib import Path
@@ -9,49 +11,6 @@ import pytest
 
 from abxpkg import Binary, BrewProvider, SemVer
 from abxpkg.exceptions import BinaryInstallError
-
-
-def _pick_formula_for_live_cycle() -> str:
-    probe = BrewProvider(postinstall_scripts=True, min_release_age=3)
-    assert probe.is_valid
-    brew_bin = probe.INSTALLER_BINARY().loaded_abspath
-    candidates = ("hello", "jq", "watch", "fzy")
-    for formula in candidates:
-        proc = subprocess.run(
-            [str(brew_bin), "list", "--formula", formula],
-            capture_output=True,
-            text=True,
-        )
-        if (
-            proc.returncode != 0
-            and probe.get_abspath(formula, quiet=True, no_cache=True) is None
-        ):
-            return formula
-    for formula in candidates:
-        probe.uninstall(formula, no_cache=True)
-        proc = subprocess.run(
-            [str(brew_bin), "list", "--formula", formula],
-            capture_output=True,
-            text=True,
-        )
-        if (
-            proc.returncode != 0
-            and probe.get_abspath(formula, quiet=True, no_cache=True) is None
-        ):
-            return formula
-    raise AssertionError(
-        "Unable to find a brew formula candidate that can be installed on the test machine",
-    )
-
-
-def _brew_formula_is_installed(provider: BrewProvider, formula: str) -> bool:
-    brew_bin = provider.INSTALLER_BINARY(no_cache=True).loaded_abspath
-    assert brew_bin
-    proc = provider.exec(
-        bin_name=brew_bin,
-        cmd=["list", "--formula", formula],
-    )
-    return proc.returncode == 0
 
 
 class TestBrewProvider:
@@ -93,7 +52,7 @@ class TestBrewProvider:
         test_machine,
     ):
         test_machine.require_tool("brew")
-        formula = _pick_formula_for_live_cycle()
+        formula = test_machine.pick_missing_brew_formula()
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "brew-root"
@@ -121,7 +80,7 @@ class TestBrewProvider:
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")
-        formula = _pick_formula_for_live_cycle()
+        formula = test_machine.pick_missing_brew_formula()
         provider = BrewProvider(postinstall_scripts=True, min_release_age=3)
 
         installed, _ = test_machine.exercise_provider_lifecycle(
@@ -139,7 +98,7 @@ class TestBrewProvider:
         caplog,
     ):
         test_machine.require_tool("brew")
-        formula = _pick_formula_for_live_cycle()
+        formula = test_machine.pick_missing_brew_formula()
 
         provider_for_cleanup = BrewProvider(
             postinstall_scripts=False,
@@ -173,7 +132,7 @@ class TestBrewProvider:
         test_machine,
     ):
         test_machine.require_tool("brew")
-        formula = _pick_formula_for_live_cycle()
+        formula = test_machine.pick_missing_brew_formula()
         provider = BrewProvider(postinstall_scripts=True, min_release_age=3)
 
         installed = provider.install(
@@ -250,7 +209,7 @@ class TestBrewProvider:
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
         test_machine.require_tool("brew")
-        formula = _pick_formula_for_live_cycle()
+        formula = test_machine.pick_missing_brew_formula()
         binary = Binary(
             name=formula,
             binproviders=[

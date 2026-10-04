@@ -17,42 +17,6 @@ from abxpkg.exceptions import BinaryInstallError
 from typing import cast
 
 
-def _pyinfra_provider_for_host(test_machine):
-    test_machine.require_tool("pyinfra")
-    apt = EnvProvider().load("apt-get", no_cache=True)
-    if apt is None:
-        test_machine.require_tool("brew")
-    provider = PyinfraProvider(
-        postinstall_scripts=True,
-        min_release_age=3,
-    )
-    return provider, test_machine.pick_missing_provider_binary(
-        provider,
-        (
-            "tree",
-            "rename",
-            "jq",
-            "screen",
-            "toilet",
-            "btop",
-            "ranger",
-            "mc",
-        )
-        if apt is not None
-        else (
-            "hello",
-            "jq",
-            "watch",
-            "fzy",
-            "tree",
-            "toilet",
-            "btop",
-            "ranger",
-            "nnn",
-        ),
-    )
-
-
 class TestPyinfraProvider:
     def test_brew_operations_put_resolved_launcher_before_env_projection(
         self,
@@ -119,7 +83,7 @@ class TestPyinfraProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _pyinfra_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(PyinfraProvider, "pyinfra")
 
         test_machine.exercise_provider_lifecycle(provider, bin_name=package)
 
@@ -130,7 +94,7 @@ class TestPyinfraProvider:
         caplog,
     ):
         del test_machine_dependencies
-        provider, package = _pyinfra_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(PyinfraProvider, "pyinfra")
 
         cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=3)
         try:
@@ -165,7 +129,7 @@ class TestPyinfraProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _pyinfra_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(PyinfraProvider, "pyinfra")
         cleanup_provider = PyinfraProvider(postinstall_scripts=True, min_release_age=3)
         try:
             installed = provider.install(
@@ -203,7 +167,7 @@ class TestPyinfraProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _pyinfra_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(PyinfraProvider, "pyinfra")
         binary = Binary(
             name=package,
             binproviders=cast(list[BinProvider], [provider]),
@@ -218,7 +182,7 @@ class TestPyinfraProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _pyinfra_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(PyinfraProvider, "pyinfra")
         test_machine.exercise_provider_dry_run(provider, bin_name=package)
 
     def test_search_returns_empty_for_pyinfra_provider(self):

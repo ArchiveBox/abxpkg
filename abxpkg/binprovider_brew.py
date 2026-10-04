@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import platform
+import shlex
 from pathlib import Path
 
 from pydantic import Field, TypeAdapter, computed_field, model_validator
@@ -21,7 +22,7 @@ from .base_types import (
     bin_abspath,
 )
 from .semver import SemVer
-from .binprovider import BinProvider, env_flag_is_true, remap_kwargs
+from .binprovider import BinProvider, BinaryOverrides, env_flag_is_true, remap_kwargs
 from .logging import format_subprocess_output
 
 OS = platform.system().lower()
@@ -42,7 +43,19 @@ class BrewProvider(BinProvider):
     name: BinProviderName = "brew"
     _log_emoji = "🍺"
     INSTALLER_BIN: BinName = "brew"
-    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
+    INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = (
+        "env",
+        "bash",
+    )
+    INSTALLER_OVERRIDES: ClassVar[BinaryOverrides] = {
+        "bash": {
+            "install": (
+                'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL '
+                'https://raw.githubusercontent.com/Homebrew/install/35da6871c4be7d7fdab2fd505fb7fa667926a2a5/install.sh)"'
+                f' && ln -sf {shlex.quote(str(GUESSED_BREW_PREFIX / "bin/brew"))} "$BIN_DIR/brew"'
+            ),
+        },
+    }
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = ()
     # These variables control Homebrew itself. They belong on subprocesses
     # executed by this provider, but must not leak into a combined dependency

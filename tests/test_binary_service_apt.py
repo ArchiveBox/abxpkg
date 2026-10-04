@@ -24,7 +24,11 @@ def test_binary_service_reloads_managed_install_through_env(
         bus = abxbus.EventBus(
             name="test_binary_service_reloads_managed_install_through_env",
         )
-        BinaryService(bus, lib_dir=lib_dir)
+        BinaryService(
+            bus,
+            lib_dir=lib_dir,
+            base_env={**os.environ, "PATH": str(Path(sys.executable).parent)},
+        )
 
         request = await bus.emit(
             BinaryRequestEvent(

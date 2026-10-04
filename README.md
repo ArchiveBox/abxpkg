@@ -906,7 +906,7 @@ brew_prefix = "/opt/homebrew"        # guessed host prefix: /opt/homebrew, /usr/
 ```
 
 - Install root: `brew_prefix` is the Homebrew prefix used for discovery and shelling out to `brew`. By default it resolves from `ABXPKG_BREW_ROOT`, or `ABXPKG_LIB_DIR/brew`, or a guessed host prefix (`/opt/homebrew`, `/usr/local`, or linuxbrew). `bin_dir` is used for linked formula binaries when abxpkg manages them separately.
-- Auto-switching: none. Shells out to `brew` directly.
+- Installer: reuses host Homebrew when available. Otherwise the provider bootstraps it through BashProvider using the pinned official noninteractive installer, with normal abxpkg installation locks and caches. Formula operations then use that Homebrew installation.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported on `brew install` via `--skip-post-install`, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here. Homebrew has no equivalent flag for `brew upgrade`, so updates run without it.
 - Overrides: `install_args` maps to formula / cask args passed to `brew install`, `brew upgrade`, and `brew uninstall`.

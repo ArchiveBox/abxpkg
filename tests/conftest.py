@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
-import os
-import shlex
-import subprocess
+import logging
+import re
+import shutil
 import sys
+import tempfile
+import traceback
+import threading
+from contextlib import contextmanager
+import os
+import subprocess
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,12 +18,15 @@ from pathlib import Path
 import pytest
 
 from abxpkg import (
-    DEFAULT_PROVIDER_NAMES,
-    PROVIDER_CLASS_BY_NAME,
     AptProvider,
     Binary,
     BrewProvider,
+    EnvProvider,
     GemProvider,
+    NpmProvider,
+    PnpmProvider,
+    PlaywrightProvider,
+    YarnProvider,
     SemVer,
 )
 from abxpkg.exceptions import BinaryLoadError
@@ -67,59 +76,35 @@ class TestMachine:
         assert published[latest] > cutoff
 
     def require_tool(self, tool_name: str) -> str:
-        # Resolve and activate prerequisites through the public CLI. Binary's
-        # env-only default cannot install missing tools, and finding a host
-        # binary outside PATH is not sufficient for shell-script dependencies.
-        options = []
-        if tool_name == "brew":
-            # Homebrew itself is a host prerequisite, unlike formulae managed
-            # by BrewProvider. Use its real, pinned installer through BashProvider.
-            from abxpkg.binprovider_brew import GUESSED_BREW_PREFIX
-
-            installer = "https://raw.githubusercontent.com/Homebrew/install/35da6871c4be7d7fdab2fd505fb7fa667926a2a5/install.sh"
-            command = (
-                f'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL {installer})"'
-                f' && ln -sf {shlex.quote(str(Path(GUESSED_BREW_PREFIX) / "bin/brew"))} "$BIN_DIR/brew"'
-            )
-            options = [
-                "--binproviders=env,bash",
-                "--overrides=" + json.dumps({"bash": {"install": command}}),
-            ]
-        result = subprocess.run(
-            [
-                "uv",
-                "run",
-                "--no-sync",
-                "abxpkg",
-                "env",
-                "--install",
-                "--json",
-                *options,
-                tool_name,
-            ],
-            cwd=Path(__file__).resolve().parents[1],
-            capture_output=True,
-            text=True,
-            check=True,
+        # Use the CLI's normal resolver and activation policy, including its
+        # provider-owned installer dependencies and validated caches.
+        from abxpkg.click_cli import (
+            CliOptions,
+            build_command_exec_env,
+            parse_provider_names,
+            resolve_lib_dir,
+            resolve_runtime_binary,
         )
-        os.environ.update(json.loads(result.stdout))
-        # Keep the active interpreter ahead of newly activated tool directories.
-        os.environ["PATH"] = os.pathsep.join(
-            dict.fromkeys(
-                [
-                    str(Path(sys.executable).parent),
-                    *os.environ["PATH"].split(os.pathsep),
-                ],
+
+        options = CliOptions(
+            lib_dir=resolve_lib_dir(None),
+            provider_names=parse_provider_names(None),
+            dry_run=False,
+            debug=False,
+            no_cache=False,
+        )
+        loaded, _ = resolve_runtime_binary(
+            tool_name,
+            options=options,
+            install_before_run=True,
+        )
+        os.environ.update(
+            build_command_exec_env(
+                [tool_name, "python"],
+                options=options,
+                install_before_run=True,
             ),
         )
-        # Managed prerequisites belong to their installing provider (e.g. npm
-        # installed by NodeProvider), which EnvProvider deliberately excludes.
-        loaded = Binary(
-            name=tool_name,
-            binproviders=[
-                PROVIDER_CLASS_BY_NAME[name]() for name in DEFAULT_PROVIDER_NAMES
-            ],
-        ).load()
         self.assert_shallow_binary_loaded(loaded, assert_version_command=False)
         assert loaded.loaded_abspath is not None, (
             f"{tool_name} is required on this host for test-machine integration tests",
@@ -423,13 +408,73 @@ class TestMachine:
             assert after is None
 
     def pick_missing_brew_formula(self) -> str:
-        provider = BrewProvider(min_release_age=3)
-        for formula in ("hello", "tree", "rename", "jq", "watch", "fzy"):
-            if provider.load(formula, quiet=True, no_cache=True) is not None:
-                continue
-            return formula
+        probe = BrewProvider(postinstall_scripts=True, min_release_age=3)
+        assert probe.is_valid
+        brew_bin = probe.INSTALLER_BINARY().loaded_abspath
+        candidates = ("hello", "tree", "rename", "jq", "watch", "fzy")
+        for formula in candidates:
+            proc = subprocess.run(
+                [str(brew_bin), "list", "--formula", formula],
+                capture_output=True,
+                text=True,
+            )
+            if (
+                proc.returncode != 0
+                and probe.get_abspath(formula, quiet=True, no_cache=True) is None
+            ):
+                return formula
+        for formula in candidates:
+            probe.uninstall(formula, no_cache=True)
+            proc = subprocess.run(
+                [str(brew_bin), "list", "--formula", formula],
+                capture_output=True,
+                text=True,
+            )
+            if (
+                proc.returncode != 0
+                and probe.get_abspath(formula, quiet=True, no_cache=True) is None
+            ):
+                return formula
         raise AssertionError(
-            "No safe missing brew formula candidates were available for a test-machine lifecycle test",
+            "Unable to find a brew formula candidate that can be installed on the test machine",
+        )
+
+    def provider_for_host(self, provider_class, installer_name):
+        self.require_tool(installer_name)
+        apt_get = EnvProvider(install_root=None, bin_dir=None).load(
+            "apt-get",
+            no_cache=True,
+        )
+        if apt_get is None:
+            self.require_tool("brew")
+        provider = provider_class(
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+        return provider, self.pick_missing_provider_binary(
+            provider,
+            (
+                "tree",
+                "rename",
+                "jq",
+                "screen",
+                "toilet",
+                "btop",
+                "ranger",
+                "mc",
+            )
+            if apt_get is not None
+            else (
+                "hello",
+                "jq",
+                "watch",
+                "fzy",
+                "tree",
+                "toilet",
+                "btop",
+                "ranger",
+                "nnn",
+            ),
         )
 
     def pick_missing_provider_binary(
@@ -490,3 +535,450 @@ def test_machine_dependencies():
 @pytest.fixture
 def test_machine() -> TestMachine:
     return TestMachine()
+
+
+def _real_python_binary(lib_dir: Path) -> Binary:
+    provider = EnvProvider(install_root=lib_dir / "env")
+    binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
+    assert binary.loaded_abspath is not None
+    return binary
+
+
+def _brew_formula_is_installed(provider: BrewProvider, formula: str) -> bool:
+    brew_bin = provider.INSTALLER_BINARY(no_cache=True).loaded_abspath
+    assert brew_bin
+    proc = provider.exec(
+        bin_name=brew_bin,
+        cmd=["list", "--formula", formula],
+    )
+    return proc.returncode == 0
+
+
+def _run_with_lib_dir(
+    lib_dir_value: str,
+    script: str,
+    *,
+    extra_env: dict[str, str] | None = None,
+    cwd: Path | str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["ABXPKG_LIB_DIR"] = lib_dir_value
+    if extra_env:
+        env.update(extra_env)
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(cwd) if cwd is not None else None,
+    )
+
+
+def assert_extension_binary_loaded(loaded) -> None:
+    assert loaded is not None
+    assert loaded.is_valid
+    assert loaded.loaded_binprovider is not None
+    assert loaded.loaded_binprovider.name == "chromewebstore"
+    assert loaded.loaded_abspath is not None
+    assert loaded.loaded_abspath.name.endswith(".extension.json")
+    assert loaded.loaded_abspath.exists()
+    assert loaded.loaded_version is not None
+    assert loaded.loaded_sha256 is not None
+
+    metadata = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
+    assert metadata["webstore_url"] == loaded.docs_url()
+    unpacked_path = Path(metadata["unpacked_path"])
+    assert unpacked_path.exists()
+    assert not (unpacked_path / "_metadata").exists()
+    manifest = json.loads((unpacked_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["version"] == str(loaded.loaded_version)
+
+
+def restore_signed_store_metadata_from_real_crx(
+    unzip: str,
+    crx_path: Path,
+    unpacked_path: Path,
+) -> None:
+    assert crx_path.exists(), crx_path
+    proc = subprocess.run(
+        [unzip, "-q", "-o", str(crx_path), "-d", str(unpacked_path)],
+        capture_output=True,
+        text=True,
+    )
+    assert (unpacked_path / "manifest.json").exists(), proc.stderr or proc.stdout
+    assert (unpacked_path / "_metadata").exists(), (
+        "The real Chrome Web Store CRX did not restore signed-store metadata; "
+        f"stdout={proc.stdout} stderr={proc.stderr}"
+    )
+
+
+def _abxpkg_executable() -> Path:
+    """Locate the installed abxpkg console script for subprocess-based tests."""
+
+    candidate = Path(sys.executable).parent / "abxpkg"
+    assert candidate.exists(), (
+        "abxpkg console script must be installed in the active venv"
+    )
+    return candidate
+
+
+def _abx_executable() -> Path:
+    """Locate the installed `abx` console script for subprocess-based tests."""
+
+    candidate = Path(sys.executable).parent / "abx"
+    assert candidate.exists(), "abx console script must be installed in the active venv"
+    return candidate
+
+
+def _run_cli(
+    script: Path,
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    timeout: float = 600,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke a console script with a clean ABXPKG_* environment."""
+
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    if env_overrides:
+        env.update(env_overrides)
+
+    return subprocess.run(
+        [str(script), *args],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=env,
+        timeout=timeout,
+        cwd=cwd,
+    )
+
+
+def _run_abxpkg_cli(
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    timeout: float = 600,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the real `abxpkg` console script with a clean env."""
+
+    return _run_cli(
+        _abxpkg_executable(),
+        *args,
+        env_overrides=env_overrides,
+        timeout=timeout,
+        cwd=cwd,
+    )
+
+
+def _run_abx_cli(
+    *args: str,
+    env_overrides: dict[str, str] | None = None,
+    timeout: float = 600,
+) -> subprocess.CompletedProcess[str]:
+    """Invoke the real `abx` console script with a clean env."""
+
+    return _run_cli(
+        _abx_executable(),
+        *args,
+        env_overrides=env_overrides,
+        timeout=timeout,
+    )
+
+
+@pytest.fixture
+def restore_abxpkg_logger():
+    package_logger = logging.getLogger("abxpkg")
+    original_level = package_logger.level
+    original_handlers = list(package_logger.handlers)
+    original_propagate = package_logger.propagate
+
+    try:
+        yield
+    finally:
+        package_logger.handlers.clear()
+        for handler in original_handlers:
+            package_logger.addHandler(handler)
+        package_logger.setLevel(original_level)
+        package_logger.propagate = original_propagate
+
+
+@pytest.fixture()
+def abx_e2e_lib():
+    """Provide a lib dir with playwright + chromium pre-installed.
+
+    Uses a shared cache at ``/tmp/abx-e2e-lib`` so the ~370 MB browser
+    download only happens once.
+
+    Install order matters: npm playwright first (provides the CLI),
+    then playwright provider installs the chromium browser.
+    """
+
+    lib = Path("/tmp/abx-e2e-lib")
+    playwright_root = lib / "playwright"
+
+    # Always let abxpkg validate and reuse its cache; existence alone is not validity.
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=npm",
+        "--postinstall-scripts=True",
+        "--min-release-age=3",
+        "install",
+        "playwright",
+        timeout=900,
+    )
+    assert proc.returncode == 0, (
+        f"failed to install playwright:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
+    )
+
+    # 2. install chromium via the playwright binprovider
+    proc = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "--binproviders=playwright",
+        "--postinstall-scripts=True",
+        "--min-release-age=3",
+        "--install-timeout=600",
+        "install",
+        "chromium",
+        timeout=900,
+    )
+    assert proc.returncode == 0, (
+        f"failed to install chromium:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
+    )
+    assert (playwright_root / "bin" / "chromium").exists(), (
+        "chromium symlink not found after install"
+    )
+
+    return lib
+
+
+def _resolve_shim_target(shim: Path) -> Path:
+    """Resolve a managed bin_dir shim to its real browser target.
+
+    On Linux the shim is a symlink, so ``.resolve()`` naturally follows
+    it. On macOS the shim is a shell script that ``exec``s the binary
+    inside a ``.app`` bundle (a direct symlink breaks dyld's
+    ``@executable_path``-relative Framework loading), so ``.resolve()``
+    just returns the script path itself. Parse the ``exec <path>`` line
+    to recover the target in that case. We key off ``is_symlink()``
+    rather than comparing ``shim == shim.resolve()`` because macOS
+    ``$TMPDIR`` lives under ``/var/folders/...`` → ``/private/var/...``,
+    so ``resolve()`` always differs from the input even for plain files.
+    """
+    if shim.is_symlink():
+        return shim.resolve()
+    try:
+        script = shim.read_text(encoding="utf-8")
+    except OSError:
+        return shim.resolve()
+    match = re.search(r"exec '([^']+)'", script)
+    if not match:
+        return shim.resolve()
+    return Path(match.group(1)).resolve()
+
+
+@pytest.fixture(scope="module")
+def seeded_playwright_root():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        install_root = Path(temp_dir) / "seeded-playwright-root"
+        provider = PlaywrightProvider(install_root=install_root)
+        installed = provider.install("chromium", no_cache=True)
+        assert installed is not None
+        assert installed.loaded_abspath is not None
+        assert installed.loaded_abspath.exists()
+        yield install_root
+
+
+def copy_seeded_playwright_root(
+    seeded_playwright_root: Path,
+    install_root: Path,
+) -> None:
+    shutil.copytree(
+        seeded_playwright_root,
+        install_root,
+        symlinks=True,
+        copy_function=os.link,
+    )
+    copied_bin_dir = install_root / "bin"
+    if not copied_bin_dir.is_dir():
+        return
+    seeded_resolved = seeded_playwright_root.resolve()
+    for link_path in copied_bin_dir.iterdir():
+        if link_path.is_symlink():
+            link_target = link_path.resolve(strict=False)
+            if seeded_resolved not in link_target.parents:
+                continue
+            relative_target = link_target.relative_to(seeded_resolved)
+            link_path.unlink()
+            link_path.symlink_to(install_root / relative_target)
+            continue
+        # macOS chrome/chromium shims are shell scripts that hardcode
+        # the seeded install_root path; rewrite them so they exec the
+        # copy under this test's install_root instead.
+        if not link_path.is_file():
+            continue
+        try:
+            script = link_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        match = re.search(r"exec '([^']+)'", script)
+        if not match:
+            continue
+        target_path = Path(match.group(1))
+        if seeded_resolved not in target_path.resolve().parents:
+            continue
+        relative_target = target_path.resolve().relative_to(seeded_resolved)
+        new_target = install_root / relative_target
+        link_path.write_text(
+            script.replace(str(target_path), str(new_target)),
+            encoding="utf-8",
+        )
+
+
+def _concurrent_pnpm_bootstrap_worker(
+    lib_dir: str,
+    host_bin: str,
+    worker_index: int,
+    barrier,
+    results,
+) -> None:
+    os.environ["ABXPKG_LIB_DIR"] = lib_dir
+    os.environ["PATH"] = os.pathsep.join([host_bin, "/usr/bin", "/bin"])
+    os.environ["NPM_BINARY"] = str(Path(host_bin) / "npm")
+    os.environ.pop("PNPM_BINARY", None)
+    os.environ.pop("ABXPKG_NPM_CACHE_DIR", None)
+    os.environ["ABXPKG_TMP_CACHE_DIR"] = str(
+        Path(lib_dir) / "worker-caches" / str(worker_index),
+    )
+    provider = PnpmProvider(
+        install_root=Path(lib_dir) / "pnpm" / "packages" / f"worker-{worker_index}",
+        postinstall_scripts=True,
+        min_release_age=0,
+    )
+    try:
+        barrier.wait()
+        installer = provider.INSTALLER_BINARY(no_cache=True)
+        version = installer.exec(cmd=("--version",), quiet=True)
+        results.put(
+            (
+                version.returncode == 0,
+                str(installer.loaded_abspath),
+                version.stderr,
+            ),
+        )
+    except (
+        AssertionError,
+        RuntimeError,
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+    ):
+        results.put((False, "", traceback.format_exc()))
+
+
+def _yarn_provider_for_kind(kind: str, **kwargs) -> YarnProvider:
+    assert kind in {"classic", "berry"}
+    version_threshold = SemVer.parse("2.0.0")
+    current_path = str(YarnProvider(**kwargs).PATH)
+    if kind == "berry":
+        yarn_install_root = kwargs.get("install_root")
+        assert isinstance(yarn_install_root, Path)
+        npm_root = yarn_install_root.parent / "npm-yarn-berry"
+        npm_provider = NpmProvider(
+            install_root=npm_root / "package",
+            alias_bin_dir=npm_root / "alias" / "bin",
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={
+                "yarn-berry": {
+                    "install_args": ["@yarnpkg/cli-dist@4.13.0"],
+                },
+            },
+        )
+        berry = Binary(
+            name="yarn-berry",
+            binproviders=[EnvProvider(), npm_provider],
+            min_version=SemVer("4.13.0"),
+            min_release_age=0,
+        ).install(no_cache=True)
+        berry_alias = berry.loaded_abspath
+        assert berry_alias is not None, (
+            "abxpkg did not resolve or install the Yarn Berry runtime"
+        )
+        # Peel the managed EnvProvider projection before inspecting npm's
+        # logical yarn-berry alias; the alias itself points at the real
+        # `yarn` launcher directory YarnProvider needs.
+        if (
+            berry_alias.is_symlink()
+            and berry_alias.parent.name == "bin"
+            and berry_alias.parent.parent.name == "env"
+        ):
+            projection_target = berry_alias.readlink()
+            berry_alias = (
+                projection_target
+                if projection_target.is_absolute()
+                else berry_alias.parent / projection_target
+            ).absolute()
+        berry_link = berry_alias.readlink() if berry_alias.is_symlink() else None
+        berry_bin_dir = (
+            (berry_alias.parent / berry_link).parent
+            if berry_link and not berry_link.is_absolute()
+            else (berry_link or berry_alias).parent
+        )
+        candidate_path = ":".join(
+            dict.fromkeys(
+                [
+                    str(berry_bin_dir),
+                    *[entry for entry in current_path.split(":") if entry],
+                ],
+            ),
+        )
+        provider = YarnProvider(PATH=candidate_path, **kwargs)
+        installer = provider.INSTALLER_BINARY()
+        version = installer.loaded_version
+        assert (
+            version is not None
+            and version_threshold is not None
+            and (version >= version_threshold)
+        ), "yarn-berry must resolve to a Yarn 2+ installer"
+        return provider
+
+    provider = YarnProvider(PATH=current_path, **kwargs)
+    installer = provider.INSTALLER_BINARY()
+    version = installer.loaded_version
+    assert (
+        version is not None
+        and version_threshold is not None
+        and (version < version_threshold)
+    ), "ambient yarn on PATH must resolve to Yarn 1.x for classic coverage"
+    return provider
+
+
+def _berry_provider(**kwargs) -> YarnProvider:
+    return _yarn_provider_for_kind("berry", **kwargs)
+
+
+def _classic_provider(**kwargs) -> YarnProvider:
+    return _yarn_provider_for_kind("classic", **kwargs)
+
+
+@contextmanager
+def count_calls(function):
+    """Count real function entries without replacing or intercepting execution."""
+    calls = [0]
+
+    def record_call(frame, event, _arg):
+        if event == "call" and frame.f_code is function.__code__:
+            calls[0] += 1
+
+    previous = sys.getprofile()
+    previous_threads = threading.getprofile()
+    sys.setprofile(record_call)
+    threading.setprofile(record_call)
+    try:
+        yield calls
+    finally:
+        sys.setprofile(previous)
+        threading.setprofile(previous_threads)

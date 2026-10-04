@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from .conftest import (
+    _abxpkg_executable,
+    _run_cli,
+    _run_abxpkg_cli,
+    _run_abx_cli,
+)
+
 import json
-import logging
 import os
 import shlex
 import shutil
@@ -21,82 +27,6 @@ from click.testing import CliRunner
 import abxpkg.cli as cli_module
 from abxpkg import PROVIDER_CLASS_BY_INSTALLER_BIN, EnvProvider, PnpmProvider
 from abxpkg.config import load_derived_cache, save_derived_cache
-
-
-def _abxpkg_executable() -> Path:
-    """Locate the installed abxpkg console script for subprocess-based tests."""
-
-    candidate = Path(sys.executable).parent / "abxpkg"
-    assert candidate.exists(), (
-        "abxpkg console script must be installed in the active venv"
-    )
-    return candidate
-
-
-def _abx_executable() -> Path:
-    """Locate the installed `abx` console script for subprocess-based tests."""
-
-    candidate = Path(sys.executable).parent / "abx"
-    assert candidate.exists(), "abx console script must be installed in the active venv"
-    return candidate
-
-
-def _run_cli(
-    script: Path,
-    *args: str,
-    env_overrides: dict[str, str] | None = None,
-    timeout: float = 600,
-    cwd: Path | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Invoke a console script with a clean ABXPKG_* environment."""
-
-    env = {
-        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
-    }
-    if env_overrides:
-        env.update(env_overrides)
-
-    return subprocess.run(
-        [str(script), *args],
-        capture_output=True,
-        check=False,
-        text=True,
-        env=env,
-        timeout=timeout,
-        cwd=cwd,
-    )
-
-
-def _run_abxpkg_cli(
-    *args: str,
-    env_overrides: dict[str, str] | None = None,
-    timeout: float = 600,
-    cwd: Path | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Invoke the real `abxpkg` console script with a clean env."""
-
-    return _run_cli(
-        _abxpkg_executable(),
-        *args,
-        env_overrides=env_overrides,
-        timeout=timeout,
-        cwd=cwd,
-    )
-
-
-def _run_abx_cli(
-    *args: str,
-    env_overrides: dict[str, str] | None = None,
-    timeout: float = 600,
-) -> subprocess.CompletedProcess[str]:
-    """Invoke the real `abx` console script with a clean env."""
-
-    return _run_cli(
-        _abx_executable(),
-        *args,
-        env_overrides=env_overrides,
-        timeout=timeout,
-    )
 
 
 def test_shebang_script_exec_replaces_launcher_so_sigterm_reaches_child(tmp_path):
@@ -437,23 +367,6 @@ print("cached dependency loaded")
 
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip() == "cached dependency loaded"
-
-
-@pytest.fixture(autouse=True)
-def restore_abxpkg_logger():
-    package_logger = logging.getLogger("abxpkg")
-    original_level = package_logger.level
-    original_handlers = list(package_logger.handlers)
-    original_propagate = package_logger.propagate
-
-    try:
-        yield
-    finally:
-        package_logger.handlers.clear()
-        for handler in original_handlers:
-            package_logger.addHandler(handler)
-        package_logger.setLevel(original_level)
-        package_logger.propagate = original_propagate
 
 
 def test_build_providers_uses_managed_lib_layout(tmp_path):
@@ -5275,59 +5188,6 @@ def test_run_script_deps_from_uses_real_node_python_and_puppeteer(tmp_path):
     assert "rich_click" in changed_provider_env.stderr
 
 
-@pytest.fixture()
-def abx_e2e_lib():
-    """Provide a lib dir with playwright + chromium pre-installed.
-
-    Uses a shared cache at ``/tmp/abx-e2e-lib`` so the ~370 MB browser
-    download only happens once.
-
-    Install order matters: npm playwright first (provides the CLI),
-    then playwright provider installs the chromium browser.
-    """
-
-    lib = Path("/tmp/abx-e2e-lib")
-    npm_prefix = lib / "npm"
-    playwright_root = lib / "playwright"
-
-    # 1. install playwright npm package (provides the CLI + require('playwright'))
-    if not (npm_prefix / "node_modules" / "playwright").is_dir():
-        proc = _run_abxpkg_cli(
-            f"--lib={lib}",
-            "--binproviders=npm",
-            "--postinstall-scripts=True",
-            "--min-release-age=3",
-            "install",
-            "playwright",
-            timeout=900,
-        )
-        assert proc.returncode == 0, (
-            f"failed to install playwright:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
-        )
-
-    # 2. install chromium via the playwright binprovider
-    chromium_installed = (playwright_root / "bin" / "chromium").exists()
-    if not chromium_installed:
-        proc = _run_abxpkg_cli(
-            f"--lib={lib}",
-            "--binproviders=playwright",
-            "--postinstall-scripts=True",
-            "--min-release-age=3",
-            "--install-timeout=600",
-            "install",
-            "chromium",
-            timeout=900,
-        )
-        assert proc.returncode == 0, (
-            f"failed to install chromium:\nSTDOUT: {proc.stdout}\nSTDERR: {proc.stderr}"
-        )
-        assert (playwright_root / "bin" / "chromium").exists(), (
-            "chromium symlink not found after install"
-        )
-
-    return lib
-
-
 def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
     """Full end-to-end: resolve node, playwright (npm), chromium (playwright),
     launch a browser with explicit executablePath, and verify everything came
@@ -5417,3 +5277,27 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
     assert proc.stdout.strip().endswith("e2e-ok"), (
         f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     )
+
+
+def test_host_python_activation_does_not_activate_unselected_provider_runtimes(
+    tmp_path,
+):
+    lib = tmp_path / "lib"
+    for _ in range(2):
+        result = _run_abxpkg_cli(
+            f"--lib={lib}",
+            "env",
+            "--install",
+            "--json",
+            "python",
+        )
+        assert result.returncode == 0, result.stderr
+        env_delta = json.loads(result.stdout)
+        assert set(env_delta) == {"PATH"}
+        assert env_delta["PATH"].split(os.pathsep)[0] == str(lib / "env" / "bin")
+    assert not (lib / "node").exists()
+    assert not (lib / "npm").exists()
+    assert not (lib / "pip").exists()
+
+
+pytestmark = pytest.mark.usefixtures("restore_abxpkg_logger")

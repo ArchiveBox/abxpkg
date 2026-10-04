@@ -1,3 +1,7 @@
+from .conftest import (
+    assert_extension_binary_loaded,
+    restore_signed_store_metadata_from_real_crx,
+)
 import asyncio
 import hashlib
 import json
@@ -21,44 +25,6 @@ PACKAGED_CHROMEWEBSTORE_UTILS_PATH = (
     Path(__file__).resolve().parent.parent / "abxpkg" / "chromewebstore_utils.js"
 )
 UBLOCK_WEBSTORE_ID = "ddkjiahejlhfcafbddmgiahcphecmpfh"
-
-
-def assert_extension_binary_loaded(loaded) -> None:
-    assert loaded is not None
-    assert loaded.is_valid
-    assert loaded.loaded_binprovider is not None
-    assert loaded.loaded_binprovider.name == "chromewebstore"
-    assert loaded.loaded_abspath is not None
-    assert loaded.loaded_abspath.name.endswith(".extension.json")
-    assert loaded.loaded_abspath.exists()
-    assert loaded.loaded_version is not None
-    assert loaded.loaded_sha256 is not None
-
-    metadata = json.loads(loaded.loaded_abspath.read_text(encoding="utf-8"))
-    assert metadata["webstore_url"] == loaded.docs_url()
-    unpacked_path = Path(metadata["unpacked_path"])
-    assert unpacked_path.exists()
-    assert not (unpacked_path / "_metadata").exists()
-    manifest = json.loads((unpacked_path / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["version"] == str(loaded.loaded_version)
-
-
-def restore_signed_store_metadata_from_real_crx(
-    unzip: str,
-    crx_path: Path,
-    unpacked_path: Path,
-) -> None:
-    assert crx_path.exists(), crx_path
-    proc = subprocess.run(
-        [unzip, "-q", "-o", str(crx_path), "-d", str(unpacked_path)],
-        capture_output=True,
-        text=True,
-    )
-    assert (unpacked_path / "manifest.json").exists(), proc.stderr or proc.stdout
-    assert (unpacked_path / "_metadata").exists(), (
-        "The real Chrome Web Store CRX did not restore signed-store metadata; "
-        f"stdout={proc.stdout} stderr={proc.stderr}"
-    )
 
 
 class TestChromeWebstoreProvider:

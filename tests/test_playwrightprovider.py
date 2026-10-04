@@ -1,7 +1,8 @@
+from .conftest import (
+    _resolve_shim_target,
+    copy_seeded_playwright_root,
+)
 import asyncio
-import os
-import re
-import shutil
 import sys
 import tempfile
 import threading
@@ -9,47 +10,9 @@ from pathlib import Path
 from typing import Any
 
 import abxbus
-import pytest
 
 from abxpkg import Binary, PlaywrightProvider
 from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
-
-
-def _resolve_shim_target(shim: Path) -> Path:
-    """Resolve a managed bin_dir shim to its real browser target.
-
-    On Linux the shim is a symlink, so ``.resolve()`` naturally follows
-    it. On macOS the shim is a shell script that ``exec``s the binary
-    inside a ``.app`` bundle (a direct symlink breaks dyld's
-    ``@executable_path``-relative Framework loading), so ``.resolve()``
-    just returns the script path itself. Parse the ``exec <path>`` line
-    to recover the target in that case. We key off ``is_symlink()``
-    rather than comparing ``shim == shim.resolve()`` because macOS
-    ``$TMPDIR`` lives under ``/var/folders/...`` → ``/private/var/...``,
-    so ``resolve()`` always differs from the input even for plain files.
-    """
-    if shim.is_symlink():
-        return shim.resolve()
-    try:
-        script = shim.read_text(encoding="utf-8")
-    except OSError:
-        return shim.resolve()
-    match = re.search(r"exec '([^']+)'", script)
-    if not match:
-        return shim.resolve()
-    return Path(match.group(1)).resolve()
-
-
-@pytest.fixture(scope="module")
-def seeded_playwright_root():
-    with tempfile.TemporaryDirectory() as temp_dir:
-        install_root = Path(temp_dir) / "seeded-playwright-root"
-        provider = PlaywrightProvider(install_root=install_root)
-        installed = provider.install("chromium", no_cache=True)
-        assert installed is not None
-        assert installed.loaded_abspath is not None
-        assert installed.loaded_abspath.exists()
-        yield install_root
 
 
 class TestPlaywrightProvider:
@@ -74,52 +37,6 @@ class TestPlaywrightProvider:
             == "DRY_RUN would run: playwright install chromium --no-shell"
         )
 
-    @staticmethod
-    def copy_seeded_playwright_root(
-        seeded_playwright_root: Path,
-        install_root: Path,
-    ) -> None:
-        shutil.copytree(
-            seeded_playwright_root,
-            install_root,
-            symlinks=True,
-            copy_function=os.link,
-        )
-        copied_bin_dir = install_root / "bin"
-        if not copied_bin_dir.is_dir():
-            return
-        seeded_resolved = seeded_playwright_root.resolve()
-        for link_path in copied_bin_dir.iterdir():
-            if link_path.is_symlink():
-                link_target = link_path.resolve(strict=False)
-                if seeded_resolved not in link_target.parents:
-                    continue
-                relative_target = link_target.relative_to(seeded_resolved)
-                link_path.unlink()
-                link_path.symlink_to(install_root / relative_target)
-                continue
-            # macOS chrome/chromium shims are shell scripts that hardcode
-            # the seeded install_root path; rewrite them so they exec the
-            # copy under this test's install_root instead.
-            if not link_path.is_file():
-                continue
-            try:
-                script = link_path.read_text(encoding="utf-8")
-            except OSError:
-                continue
-            match = re.search(r"exec '([^']+)'", script)
-            if not match:
-                continue
-            target_path = Path(match.group(1))
-            if seeded_resolved not in target_path.resolve().parents:
-                continue
-            relative_target = target_path.resolve().relative_to(seeded_resolved)
-            new_target = install_root / relative_target
-            link_path.write_text(
-                script.replace(str(target_path), str(new_target)),
-                encoding="utf-8",
-            )
-
     def test_chromium_install_puts_real_browser_into_managed_bin_dir(
         self,
         test_machine,
@@ -130,7 +47,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
+            copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
             provider = PlaywrightProvider(install_root=playwright_root)
 
             installed = provider.load("chromium", no_cache=True)
@@ -183,7 +100,7 @@ class TestPlaywrightProvider:
         seeded_playwright_root,
     ):
         install_root = tmp_path / "playwright"
-        self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+        copy_seeded_playwright_root(seeded_playwright_root, install_root)
 
         async def run(run_id: int) -> BinaryEvent:
             bus = abxbus.EventBus(name=f"test_playwright_projection_{run_id}")
@@ -241,7 +158,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pw-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider.model_validate(
                 {
                     "install_root": install_root,
@@ -278,7 +195,7 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "pw-root"
             bin_dir = Path(temp_dir) / "custom-bin"
-            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider.model_validate(
                 {
                     "install_root": install_root,
@@ -315,7 +232,7 @@ class TestPlaywrightProvider:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             ambient_root = temp_dir_path / "ambient-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, ambient_root)
+            copy_seeded_playwright_root(seeded_playwright_root, ambient_root)
             ambient_provider = PlaywrightProvider(
                 install_root=ambient_root,
                 bin_dir=ambient_root / "bin",
@@ -326,7 +243,7 @@ class TestPlaywrightProvider:
             assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
             install_root = temp_dir_path / "playwright-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider(
                 PATH=str(ambient_provider.bin_dir),
                 install_root=install_root,
@@ -403,7 +320,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "playwright-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            copy_seeded_playwright_root(seeded_playwright_root, install_root)
             provider = PlaywrightProvider(install_root=install_root)
 
             loaded = provider.load("chromium", no_cache=True)
@@ -437,7 +354,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "playwright-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, install_root)
+            copy_seeded_playwright_root(seeded_playwright_root, install_root)
             binary = Binary(
                 name="chromium",
                 binproviders=[
@@ -483,7 +400,7 @@ class TestPlaywrightProvider:
 
         with tempfile.TemporaryDirectory() as temp_dir:
             playwright_root = Path(temp_dir) / "playwright-root"
-            self.copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
+            copy_seeded_playwright_root(seeded_playwright_root, playwright_root)
             provider = PlaywrightProvider(install_root=playwright_root)
 
             installed = provider.load("chromium", no_cache=True)

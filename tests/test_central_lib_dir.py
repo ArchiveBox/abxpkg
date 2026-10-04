@@ -8,6 +8,10 @@ actually invoke abxpkg from their own process.
 
 from __future__ import annotations
 
+from .conftest import (
+    _run_with_lib_dir,
+)
+
 import json
 import os
 import subprocess
@@ -17,26 +21,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
-
-def _run_with_lib_dir(
-    lib_dir_value: str,
-    script: str,
-    *,
-    extra_env: dict[str, str] | None = None,
-    cwd: Path | str | None = None,
-) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["ABXPKG_LIB_DIR"] = lib_dir_value
-    if extra_env:
-        env.update(extra_env)
-    return subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        env=env,
-        cwd=str(cwd) if cwd is not None else None,
-    )
 
 
 class TestAbxPkgLibDir:

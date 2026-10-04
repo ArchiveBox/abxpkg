@@ -199,3 +199,29 @@ class TestInstallerBinaryContracts:
         assert exc_info.value.provider_name == provider_cls.__name__
         assert exc_info.value.installer_bin == provider.INSTALLER_BIN
         assert provider._INSTALLER_BINARY is None
+
+
+def test_uncached_installer_resolution_revalidates_without_reinstalling_runtime(
+    tmp_path,
+):
+    from .conftest import _run_with_lib_dir
+
+    result = _run_with_lib_dir(
+        str(tmp_path / "lib"),
+        """
+from pathlib import Path
+from abxpkg import NpmProvider
+provider = NpmProvider()
+first = provider.INSTALLER_BINARY()
+runtime = first.loaded_abspath.resolve()
+print('installer owner:', first.loaded_binprovider.name)
+before = runtime.stat()
+second = provider.INSTALLER_BINARY(no_cache=True)
+assert second.loaded_abspath == first.loaded_abspath
+assert second.loaded_version == first.loaded_version
+assert second.loaded_sha256 == first.loaded_sha256
+assert (runtime.stat().st_ino, runtime.stat().st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+assert second.exec(cmd=['--version']).returncode == 0
+""",
+    )
+    assert result.returncode == 0, result.stderr

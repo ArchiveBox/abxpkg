@@ -1,8 +1,11 @@
+from .conftest import (
+    count_calls,
+    _real_python_binary,
+)
 import asyncio
 import os
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -355,13 +358,6 @@ asyncio.run(main())
     assert result.returncode == 0, result.stderr
 
 
-def _real_python_binary(lib_dir: Path) -> Binary:
-    provider = EnvProvider(install_root=lib_dir / "env")
-    binary = Binary(name="python", binproviders=[provider]).load(no_cache=True)
-    assert binary.loaded_abspath is not None
-    return binary
-
-
 def test_binary_request_cache_key_normalizes_inputs(tmp_path: Path) -> None:
     from abxpkg.config import binary_request_cache_key
 
@@ -522,22 +518,9 @@ def test_binary_service_request_projection_uses_effective_service_options(
     assert effective_key in projection_keys
     assert raw_key not in projection_keys
 
-    binary_load_calls = 0
-
-    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
-        del arg
-        nonlocal binary_load_calls
-        if event == "call" and frame.f_code is BinaryService._load.__code__:
-            binary_load_calls += 1
-
-    sys.setprofile(count_binary_loads)
-    threading.setprofile(count_binary_loads)
-    try:
+    with count_calls(BinaryService._load) as binary_load_calls:
         asyncio.run(run())
-    finally:
-        sys.setprofile(None)
-        threading.setprofile(None)
-    assert binary_load_calls == 0
+    assert binary_load_calls[0] == 0
 
     cache_before_dry_run = load_derived_cache(lib_dir / "env" / "derived.env")
     asyncio.run(run(dry_run=True))
@@ -615,23 +598,10 @@ def test_binary_service_reuses_absolute_path_request_projection(
 
     asyncio.run(run())
 
-    binary_load_calls = 0
-
-    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
-        del arg
-        nonlocal binary_load_calls
-        if event == "call" and frame.f_code is BinaryService._load.__code__:
-            binary_load_calls += 1
-
-    sys.setprofile(count_binary_loads)
-    threading.setprofile(count_binary_loads)
-    try:
+    with count_calls(BinaryService._load) as binary_load_calls:
         asyncio.run(run())
-    finally:
-        sys.setprofile(None)
-        threading.setprofile(None)
 
-    assert binary_load_calls == 0
+    assert binary_load_calls[0] == 0
 
 
 def test_binary_service_reuses_normalized_absolute_path_request_projection(
@@ -667,23 +637,10 @@ def test_binary_service_reuses_normalized_absolute_path_request_projection(
 
     asyncio.run(run())
 
-    binary_load_calls = 0
-
-    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
-        del arg
-        nonlocal binary_load_calls
-        if event == "call" and frame.f_code is BinaryService._load.__code__:
-            binary_load_calls += 1
-
-    sys.setprofile(count_binary_loads)
-    threading.setprofile(count_binary_loads)
-    try:
+    with count_calls(BinaryService._load) as binary_load_calls:
         asyncio.run(run())
-    finally:
-        sys.setprofile(None)
-        threading.setprofile(None)
 
-    assert binary_load_calls == 0
+    assert binary_load_calls[0] == 0
 
 
 def test_binary_event_env_does_not_prepend_shared_host_projections(
@@ -897,28 +854,17 @@ def test_binary_service_projects_managed_uv_install_through_env_bin(
 
     asyncio.run(run("test_binary_service_projects_uv_via_env_prime_cache"))
 
-    binary_load_calls = 0
-
-    def count_binary_loads(frame: Any, event: str, arg: Any) -> None:
-        del arg
-        nonlocal binary_load_calls
-        if event == "call" and frame.f_code is BinaryService._load.__code__:
-            binary_load_calls += 1
-
-    sys.setprofile(count_binary_loads)
-    threading.setprofile(count_binary_loads)
-    started_at = time.perf_counter()
-    try:
-        _, cached_event = asyncio.run(
-            run("test_binary_service_projects_uv_via_env_cached"),
-        )
-    finally:
-        elapsed = time.perf_counter() - started_at
-        sys.setprofile(None)
-        threading.setprofile(None)
+    with count_calls(BinaryService._load) as binary_load_calls:
+        started_at = time.perf_counter()
+        try:
+            _, cached_event = asyncio.run(
+                run("test_binary_service_projects_uv_via_env_cached"),
+            )
+        finally:
+            elapsed = time.perf_counter() - started_at
 
     assert cached_event.abspath == event.abspath
-    assert binary_load_calls == 0
+    assert binary_load_calls[0] == 0
     assert elapsed < 0.1
 
 

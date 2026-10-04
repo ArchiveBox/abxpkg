@@ -90,6 +90,7 @@ from .logging import (
     summarize_value,
 )
 from .exceptions import (
+    BinaryLoadError,
     BinProviderInstallError,
     BinProviderUnavailableError,
     BinProviderUninstallError,
@@ -488,6 +489,7 @@ class BinProvider(BaseModel):
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = None
     INSTALLER_VERSION_ARGS: ClassVar[tuple[str, ...] | None] = None
     INSTALLER_POSTINSTALL_SCRIPTS: ClassVar[bool | None] = None
+    INSTALLER_OVERRIDES: ClassVar["BinaryOverrides"] = {}
     INVALIDATE_ONLY_ON_UNINSTALL: ClassVar[bool] = False
     EXEC_ONLY_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
     FIRST_WRITER_ENV_KEYS: ClassVar[frozenset[str]] = frozenset()
@@ -1881,42 +1883,22 @@ class BinProvider(BaseModel):
         env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
         manual = os.environ.get(env_var)
         if manual and os.path.isabs(manual) and Path(manual).is_file():
-            try:
-                for provider in installer_providers:
-                    provider.add_host_bin_dir(Path(manual).parent)
-                loaded = Binary(
-                    name=self.INSTALLER_BIN,
-                    binproviders=installer_providers,
-                    postinstall_scripts=self.INSTALLER_POSTINSTALL_SCRIPTS,
-                ).install(
-                    no_cache=no_cache,
-                )
-                if loaded and loaded.loaded_abspath:
-                    if loaded.loaded_version and loaded.loaded_sha256:
-                        self.write_cached_binary(
-                            self.INSTALLER_BIN,
-                            loaded.loaded_abspath,
-                            loaded.loaded_version,
-                            loaded.loaded_sha256,
-                            resolved_provider_name=(
-                                loaded.loaded_binprovider.name
-                                if loaded.loaded_binprovider is not None
-                                else self.name
-                            ),
-                            resolved_provider=loaded.loaded_binprovider,
-                            cache_kind="dependency",
-                        )
-                    self._INSTALLER_BINARY = loaded
-                    return loaded
-            except Exception:
-                pass
+            for provider in installer_providers:
+                provider.add_host_bin_dir(Path(manual).parent)
 
         try:
-            loaded = Binary(
+            installer = Binary(
                 name=self.INSTALLER_BIN,
                 binproviders=installer_providers,
+                overrides=self.INSTALLER_OVERRIDES,
                 postinstall_scripts=self.INSTALLER_POSTINSTALL_SCRIPTS,
-            ).install(no_cache=no_cache)
+            )
+            # no_cache requests fresh installer provenance, not reinstallation
+            # of its entire runtime for each package lifecycle operation.
+            try:
+                loaded = installer.load(no_cache=no_cache)
+            except BinaryLoadError:
+                loaded = installer.install()
             if loaded and loaded.loaded_abspath:
                 if loaded.loaded_version and loaded.loaded_sha256:
                     self.write_cached_binary(
@@ -4167,7 +4149,7 @@ class EnvProvider(BinProvider):
 
     def _cache_context(self, bin_name: BinName) -> str:
         provider_config = json.loads(super()._cache_context(bin_name))
-        provider_config["env_projection_version"] = 5
+        provider_config["env_projection_version"] = 6
         if str(bin_name) in {"python", "python3"}:
             provider_config["runtime_python"] = str(Path(sys.executable).absolute())
         return json.dumps(
@@ -4582,6 +4564,10 @@ class EnvProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath:
+        # This special resolver bypasses default_abspath_handler's owner
+        # selection. Host/venv Python owns its runtime; discovery candidates
+        # must not become execution dependencies or contaminate site-packages.
+        self.set_projection_providers([])
         self.setup_PATH(no_cache=no_cache)
         manual = os.environ.get(f"{str(bin_name).upper()}_BINARY") or os.environ.get(
             "PYTHON_BINARY",

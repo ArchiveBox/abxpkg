@@ -329,12 +329,14 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
     )
 
     provider_names = options.provider_names
+    inferred_overrides: dict[str, Any] | None = None
     if provider_names == list(DEFAULT_PROVIDER_NAMES):
         owner_class = PROVIDER_CLASS_BY_INSTALLER_BIN.get(binary_name)
         preferred_provider_names = (
             owner_class.INSTALLER_BINPROVIDERS if owner_class is not None else None
         )
-        if preferred_provider_names:
+        if owner_class is not None and preferred_provider_names:
+            inferred_overrides = dict(owner_class.INSTALLER_OVERRIDES)
             provider_names = [
                 provider_name
                 for provider_name in preferred_provider_names
@@ -351,7 +353,6 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
         version_timeout=options.version_timeout,
     )
     explicit_abspath = Path(binary_name).expanduser()
-    inferred_overrides: dict[str, Any] | None = None
     if explicit_abspath.is_absolute():
         for provider in providers:
             inferred_overrides = merge_binary_overrides(

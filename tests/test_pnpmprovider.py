@@ -1,3 +1,7 @@
+from .conftest import (
+    _concurrent_pnpm_bootstrap_worker,
+)
+
 # ci-runner: hosted
 # Requires a real Docker daemon; NAS runners do not expose the host socket.
 import logging
@@ -6,7 +10,6 @@ import os
 import pwd
 import subprocess
 import tempfile
-import traceback
 from pathlib import Path
 
 import pytest
@@ -19,47 +22,6 @@ from abxpkg.exceptions import (
     BinProviderInstallError,
     BinProviderUpdateError,
 )
-
-
-def _concurrent_pnpm_bootstrap_worker(
-    lib_dir: str,
-    host_bin: str,
-    worker_index: int,
-    barrier,
-    results,
-) -> None:
-    os.environ["ABXPKG_LIB_DIR"] = lib_dir
-    os.environ["PATH"] = os.pathsep.join([host_bin, "/usr/bin", "/bin"])
-    os.environ["NPM_BINARY"] = str(Path(host_bin) / "npm")
-    os.environ.pop("PNPM_BINARY", None)
-    os.environ.pop("ABXPKG_NPM_CACHE_DIR", None)
-    os.environ["ABXPKG_TMP_CACHE_DIR"] = str(
-        Path(lib_dir) / "worker-caches" / str(worker_index),
-    )
-    provider = PnpmProvider(
-        install_root=Path(lib_dir) / "pnpm" / "packages" / f"worker-{worker_index}",
-        postinstall_scripts=True,
-        min_release_age=0,
-    )
-    try:
-        barrier.wait()
-        installer = provider.INSTALLER_BINARY(no_cache=True)
-        version = installer.exec(cmd=("--version",), quiet=True)
-        results.put(
-            (
-                version.returncode == 0,
-                str(installer.loaded_abspath),
-                version.stderr,
-            ),
-        )
-    except (
-        AssertionError,
-        RuntimeError,
-        OSError,
-        subprocess.SubprocessError,
-        ValueError,
-    ):
-        results.put((False, "", traceback.format_exc()))
 
 
 class TestPnpmProvider:

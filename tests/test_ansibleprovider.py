@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-from abxpkg import Binary, EnvProvider, SemVer
+from abxpkg import Binary, SemVer
 from abxpkg.binprovider import BinProvider
 from abxpkg.binprovider_ansible import (
     AnsibleProvider,
@@ -11,45 +11,6 @@ from abxpkg.binprovider_ansible import (
 )
 from abxpkg.exceptions import BinaryInstallError
 from typing import cast
-
-
-def _ansible_provider_for_host(test_machine):
-    test_machine.require_tool("ansible")
-    apt_get = EnvProvider(install_root=None, bin_dir=None).load(
-        "apt-get",
-        no_cache=True,
-    )
-    if apt_get is None:
-        test_machine.require_tool("brew")
-    provider = AnsibleProvider(
-        postinstall_scripts=True,
-        min_release_age=3,
-    )
-    return provider, test_machine.pick_missing_provider_binary(
-        provider,
-        (
-            "tree",
-            "rename",
-            "jq",
-            "screen",
-            "toilet",
-            "btop",
-            "ranger",
-            "mc",
-        )
-        if apt_get is not None
-        else (
-            "hello",
-            "jq",
-            "watch",
-            "fzy",
-            "tree",
-            "toilet",
-            "btop",
-            "ranger",
-            "nnn",
-        ),
-    )
 
 
 class TestAnsibleProvider:
@@ -104,7 +65,7 @@ class TestAnsibleProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _ansible_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(AnsibleProvider, "ansible")
 
         test_machine.exercise_provider_lifecycle(provider, bin_name=package)
 
@@ -115,7 +76,7 @@ class TestAnsibleProvider:
         caplog,
     ):
         del test_machine_dependencies
-        provider, package = _ansible_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(AnsibleProvider, "ansible")
 
         cleanup_provider = AnsibleProvider(postinstall_scripts=True, min_release_age=3)
         try:
@@ -151,7 +112,7 @@ class TestAnsibleProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _ansible_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(AnsibleProvider, "ansible")
         cleanup_provider = AnsibleProvider(postinstall_scripts=True, min_release_age=3)
         try:
             installed = provider.install(
@@ -189,7 +150,7 @@ class TestAnsibleProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _ansible_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(AnsibleProvider, "ansible")
         binary = Binary(
             name=package,
             binproviders=cast(list[BinProvider], [provider]),
@@ -204,7 +165,7 @@ class TestAnsibleProvider:
         test_machine_dependencies,
     ):
         del test_machine_dependencies
-        provider, package = _ansible_provider_for_host(test_machine)
+        provider, package = test_machine.provider_for_host(AnsibleProvider, "ansible")
         test_machine.exercise_provider_dry_run(provider, bin_name=package)
 
     def test_search_returns_empty_for_ansible_provider(self):
