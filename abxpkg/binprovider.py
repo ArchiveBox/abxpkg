@@ -4479,6 +4479,17 @@ class EnvProvider(BinProvider):
                 return record
         return None
 
+    def _resolved_provider_from_cache_record(
+        self,
+        cached_record: Mapping[str, object],
+    ) -> BinProvider:
+        provider = super()._resolved_provider_from_cache_record(cached_record)
+        if isinstance(provider, EnvProvider):
+            # Cached host tools have no managed runtime dependencies. This owner
+            # selection also covers the install/load cache lookup by name.
+            provider.set_projection_providers([])
+        return provider
+
     def _try_load_at_abspath(
         self,
         bin_name: BinName,

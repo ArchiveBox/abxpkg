@@ -5279,8 +5279,10 @@ def test_run_script_node_playwright_chromium_end_to_end(abx_e2e_lib, tmp_path):
     )
 
 
-def test_host_python_activation_does_not_activate_unselected_provider_runtimes(
+@pytest.mark.parametrize("binary_name", ["python", "curl"])
+def test_host_binary_activation_does_not_activate_unselected_provider_runtimes(
     tmp_path,
+    binary_name,
 ):
     lib = tmp_path / "lib"
     for _ in range(2):
@@ -5289,7 +5291,7 @@ def test_host_python_activation_does_not_activate_unselected_provider_runtimes(
             "env",
             "--install",
             "--json",
-            "python",
+            binary_name,
         )
         assert result.returncode == 0, result.stderr
         env_delta = json.loads(result.stdout)
