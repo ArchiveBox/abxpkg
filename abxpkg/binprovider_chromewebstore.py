@@ -286,9 +286,10 @@ class ChromeWebstoreProvider(BinProvider):
 
     def _sanitize_unpacked_extension(self, unpacked_path: Path) -> None:
         # Chrome Web Store CRX payloads include `_metadata` for signed store installs,
-        # but CDP Extensions.loadUnpacked rejects it. Keep this in the provider so
-        # every consumer gets one stable, loadable unpacked artifact instead of
-        # copying extensions into runtime-specific temp dirs.
+        # but unpacked installs must not inherit that signed-store metadata.
+        # This normalizes the package artifact only. Browser runtime isolation
+        # belongs to the Chrome plugin: Chromium writes fresh rules indexes into
+        # unpacked extensions, so each browser must load its own private copy.
         signed_store_metadata = unpacked_path / "_metadata"
         if signed_store_metadata.exists():
             shutil.rmtree(signed_store_metadata, ignore_errors=True)
