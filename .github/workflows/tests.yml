@@ -150,7 +150,10 @@ jobs:
         uv sync --all-extras --no-cache
 
     - name: Run discovered test file
-      run: uv run pytest -vv --tb=long "${{ matrix.test.path }}"
+      env:
+        TEST_PATH: ${{ matrix.test.path }}
+        TEST_WORKERS: ${{ matrix.test.name == 'cli' && !matrix.test.ugnas && matrix.test.os_name == 'linux' && 4 || 0 }}
+      run: uv run pytest -vv --tb=long -n "$TEST_WORKERS" "$TEST_PATH"
 
   package:
     # Build concurrently; release.yml still requires this entire workflow green.

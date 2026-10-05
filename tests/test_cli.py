@@ -581,7 +581,9 @@ def test_install_command_uses_no_cache_env_default(tmp_path):
     assert result.exit_code == 0
     projected = tmp_path / "env" / "bin" / "python"
     assert not projected.exists()
-    assert Path(result.output.split()[1].strip('"')).samefile(sys.executable)
+    assert (
+        Path(result.output.split()[1].strip('"')).expanduser().samefile(sys.executable)
+    )
 
 
 def test_clear_command_removes_explicit_lib_dir(tmp_path):
