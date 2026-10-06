@@ -6,6 +6,7 @@ import asyncio
 import sys
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,37 @@ from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
 
 
 class TestPlaywrightProvider:
+    def test_concurrent_browser_installs_coordinate_system_dependencies(
+        self,
+        tmp_path,
+        seeded_playwright_root,
+    ):
+        # Separate browser roots still mutate the same host APT database when
+        # Playwright installs Linux libraries. Exercise real installers together,
+        # reusing downloaded browser bytes so this tests coordination, not CDN speed.
+        providers = []
+        for index in range(3):
+            root = tmp_path / str(index)
+            copy_seeded_playwright_root(seeded_playwright_root, root)
+            provider = PlaywrightProvider(install_root=root)
+            provider.INSTALLER_BINARY()
+            providers.append(provider)
+        ready = threading.Barrier(len(providers))
+
+        def install(provider):
+            ready.wait()
+            provider.default_install_handler(
+                "chromium",
+                install_args=("--with-deps", "chromium", "--no-shell"),
+            )
+            loaded = provider.load("chromium", no_cache=True)
+            assert loaded is not None
+            assert loaded.loaded_abspath.is_file()
+            assert loaded.loaded_version
+
+        with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+            list(pool.map(install, providers))
+
     def test_chrome_aliases_install_chromium(self):
         provider = PlaywrightProvider()
 

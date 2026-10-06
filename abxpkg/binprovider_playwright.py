@@ -7,6 +7,7 @@ import shlex
 import shutil
 import sys
 import platform
+from contextlib import nullcontext
 from pathlib import Path
 from typing import ClassVar
 from collections.abc import Iterable
@@ -786,11 +787,25 @@ class PlaywrightProvider(BinProvider):
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
         assert installer_bin
         install_cmd = ["install", *merged_args]
-        proc = self.exec(
-            bin_name=installer_bin,
-            cmd=install_cmd,
-            timeout=effective_timeout,
+        from .binprovider_apt import AptProvider
+
+        # Independent browser roots still share the host's APT database.
+        # Playwright's --with-deps runs apt-get itself, bypassing AptProvider's
+        # normal serialization. Cold parallel installs otherwise race on APT's
+        # locks and fail (or fall through to another slow browser installer).
+        # Resolve the installer first so its own dependencies cannot reenter
+        # the APT lock while we hold it.
+        apt_lock = (
+            AptProvider().apt_lock()
+            if sys.platform == "linux" and "--with-deps" in merged_args
+            else nullcontext()
         )
+        with apt_lock:
+            proc = self.exec(
+                bin_name=installer_bin,
+                cmd=install_cmd,
+                timeout=effective_timeout,
+            )
         if proc.returncode != 0:
             self._raise_proc_error("install", bin_name, proc)
 
