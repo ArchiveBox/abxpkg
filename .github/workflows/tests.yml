@@ -153,7 +153,17 @@ jobs:
       env:
         TEST_PATH: ${{ matrix.test.path }}
         TEST_WORKERS: ${{ matrix.test.name == 'cli' && !matrix.test.ugnas && matrix.test.os_name == 'linux' && 4 || 0 }}
-      run: uv run pytest -vv --tb=long -n "$TEST_WORKERS" "$TEST_PATH"
+      run: |
+        if [[ "$TEST_WORKERS" != 0 ]]; then
+          # This CLI test measures sub-100ms wall-clock startup. Concurrent
+          # package installs from other xdist workers measure CPU contention
+          # instead, so run it alone, then run every remaining case in parallel.
+          startup_test=test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks
+          uv run pytest -vv --tb=long "$TEST_PATH::$startup_test"
+          uv run pytest -vv --tb=long -n "$TEST_WORKERS" "$TEST_PATH" -k "not $startup_test"
+        else
+          uv run pytest -vv --tb=long "$TEST_PATH"
+        fi
 
   package:
     # Build concurrently; release.yml still requires this entire workflow green.
