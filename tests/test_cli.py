@@ -4400,6 +4400,34 @@ def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallback
     assert not {"bash", "brew", "docker", "pip"}.intersection(provider_dirs)
 
 
+def test_env_dependency_pins_explicit_path_with_managed_provider(
+    tmp_path,
+    test_machine,
+):
+    """A dependency path must survive provider resolution without env in its chain."""
+    node = Path(test_machine.require_tool("node"))
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {"name": str(node), "binproviders": "node"},
+                ],
+            },
+        ),
+    )
+    lib = tmp_path / "lib"
+    result = _run_abxpkg_cli(
+        f"--lib={lib}",
+        "env",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (lib / "env" / "bin" / node.name).samefile(node)
+
+
 def test_run_script_dependency_uses_explicit_host_abspath(tmp_path):
     """Absolute dependency names must resolve through env before any fallback."""
     lib = tmp_path / "lib"
