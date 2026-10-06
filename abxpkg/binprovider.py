@@ -699,7 +699,9 @@ class BinProvider(BaseModel):
         return None
 
     def explicit_abspath_overrides(self, abspath: Path) -> "BinaryOverrides":
-        return {}
+        # Binary.name becomes a basename; retain the caller's exact file when
+        # resolving through a managed provider as well as through env.
+        return {self.name: {"abspath": str(abspath)}}
 
     def execution_PATH(self) -> PATHStr:
         return self.PATH
