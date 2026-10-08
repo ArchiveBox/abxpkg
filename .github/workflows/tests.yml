@@ -155,12 +155,12 @@ jobs:
         TEST_WORKERS: ${{ matrix.test.name == 'cli' && !matrix.test.ugnas && matrix.test.os_name == 'linux' && 4 || 0 }}
       run: |
         if [[ "$TEST_WORKERS" != 0 ]]; then
-          # This CLI test measures sub-100ms wall-clock startup. Concurrent
+          # These CLI tests measure sub-100ms wall-clock startup. Concurrent
           # package installs from other xdist workers measure CPU contention
-          # instead, so run it alone, then run every remaining case in parallel.
-          startup_test=test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks
-          uv run pytest -vv --tb=long "$TEST_PATH::$startup_test"
-          uv run pytest -vv --tb=long -n "$TEST_WORKERS" "$TEST_PATH" -k "not $startup_test"
+          # instead, so run them alone, then every remaining case in parallel.
+          startup_tests='test_warm_run_uses_cached_exec_plan_without_loading_cli_frameworks or test_dependency_scripts_with_distinct_paths_keep_warm_exec_plans'
+          uv run pytest -vv --tb=long "$TEST_PATH" -k "$startup_tests"
+          uv run pytest -vv --tb=long -n "$TEST_WORKERS" "$TEST_PATH" -k "not ($startup_tests)"
         else
           uv run pytest -vv --tb=long "$TEST_PATH"
         fi

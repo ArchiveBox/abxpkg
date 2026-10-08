@@ -65,6 +65,21 @@ environment would leak unrelated caller state into subsequent invocations.
 external work happen outside cache mutation locks: bootstrap can enter another
 provider, and holding a lock across it previously risked deadlocks.
 
+## Installation and cache locks have separate lifetimes
+
+Complete install, update and uninstall operations serialize on the root's
+`.install.lock`, including bootstrap and external commands. Cache mutations
+serialize on the existing `.lock` and retain their validation and ownership
+checks. Holding a cache lock for the complete installation caused Env to wait
+for Apt while Apt waited for Env during parallel real dependency requests.
+The separate lifecycle lock preserves installer serialization without blocking
+cross-provider metadata reads behind an external install.
+
+When upgrading from versions that used `.lock` for the complete lifecycle,
+stop and restart all processes sharing the provider library. Old and new
+processes use different installation lock namespaces and cannot guarantee
+mutual exclusion between their complete installations.
+
 ## History and the failures the current design avoids
 
 These commits explain why apparently simpler approaches were changed. The rules
