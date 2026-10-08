@@ -4428,6 +4428,34 @@ def test_env_dependency_pins_explicit_path_with_managed_provider(
     assert (lib / "env" / "bin" / node.name).samefile(node)
 
 
+def test_env_playwright_dependency_probes_explicit_path_before_root_exists(tmp_path):
+    """A real version probe must not need a browser installation directory."""
+    executable = Path(sys.executable)
+    lib = tmp_path / "lib"
+    config = tmp_path / "config.json"
+    config.write_text(
+        json.dumps(
+            {
+                "required_binaries": [
+                    {"name": str(executable), "binproviders": "playwright"},
+                ],
+            },
+        ),
+    )
+    result = _run_abxpkg_cli(
+        f"--lib={lib}",
+        f"--euid={os.geteuid()}",
+        "env",
+        "--json",
+        f"--deps-from={config}:required_binaries",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert (lib / "env" / "bin" / executable.name).samefile(executable)
+    assert not (lib / "playwright" / "cache").exists()
+    assert not (lib / "pnpm").exists()
+
+
 def test_run_script_dependency_uses_explicit_host_abspath(tmp_path):
     """Absolute dependency names must resolve through env before any fallback."""
     lib = tmp_path / "lib"

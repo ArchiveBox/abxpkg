@@ -370,15 +370,16 @@ class PlaywrightProvider(BinProvider):
             if not env_binary or not env_binary.loaded_abspath:
                 raise RuntimeError("abxpkg could not resolve env")
             bin_name = env_binary.loaded_abspath
-        cwd_candidates: list[Path | str | None] = [
-            cwd,
-            self.install_root,
-            Path.cwd(),
-        ]
-        resolved_cwd = next(
-            (str(candidate) for candidate in cwd_candidates if candidate is not None),
-            ".",
-        )
+        # Explicit host binaries can be probed before this provider has ever
+        # installed anything. Preserve a caller-supplied cwd, but only use the
+        # default installation directory once it actually exists.
+        resolved_cwd = cwd
+        if resolved_cwd is None:
+            resolved_cwd = (
+                self.install_root
+                if self.install_root is not None and self.install_root.is_dir()
+                else Path.cwd()
+            )
         return super().exec(
             bin_name=bin_name,
             cmd=cmd,
