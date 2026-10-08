@@ -98,29 +98,39 @@ class TestBinProvider:
             for cache_key in method_cache
         )
 
-    def test_mutation_lock_is_root_keyed_reentrant_and_setup_neutral(self, tmp_path):
+    @pytest.mark.parametrize("installation", [False, True])
+    def test_mutation_lock_is_root_keyed_reentrant_and_setup_neutral(
+        self,
+        tmp_path,
+        installation,
+    ):
         install_root = tmp_path / "not-created"
         first = NpmProvider(install_root=install_root)
         second = PnpmProvider(install_root=install_root)
         disjoint = NpmProvider(install_root=tmp_path / "other-root")
 
-        first_lock_path = first.mutation_lock_path()
+        first_lock_path = first.mutation_lock_path(installation=installation)
         assert first_lock_path is not None
-        assert first_lock_path == second.mutation_lock_path()
-        assert first_lock_path != disjoint.mutation_lock_path()
+        assert first_lock_path == second.mutation_lock_path(installation=installation)
+        assert first_lock_path != disjoint.mutation_lock_path(installation=installation)
         assert first_lock_path.parent == Path("/tmp/abxpkg-mutation-locks")
+        assert first_lock_path != first.mutation_lock_path(
+            installation=not installation,
+        )
         assert not install_root.exists()
 
-        with first.mutation_lock() as outer_contended:
-            with second.mutation_lock() as inner_contended:
+        with first.mutation_lock(installation=installation) as outer_contended:
+            with second.mutation_lock(installation=installation) as inner_contended:
                 assert outer_contended is False
                 assert inner_contended is False
 
         assert not install_root.exists()
 
+    @pytest.mark.parametrize("installation", [False, True])
     def test_mutation_lock_serializes_same_root_across_instances_and_threads(
         self,
         tmp_path,
+        installation,
     ):
         install_root = tmp_path / "shared-root"
         first = NpmProvider(install_root=install_root)
@@ -131,13 +141,13 @@ class TestBinProvider:
         contention: list[bool] = []
 
         def hold_first_lock() -> None:
-            with first.mutation_lock():
+            with first.mutation_lock(installation=installation):
                 first_acquired.set()
                 release_first.wait()
 
         def wait_for_same_lock() -> None:
             first_acquired.wait()
-            with second.mutation_lock() as contended:
+            with second.mutation_lock(installation=installation) as contended:
                 contention.append(contended)
                 second_acquired.set()
 

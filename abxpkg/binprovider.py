@@ -140,12 +140,14 @@ ENV_PROJECTED_VERSION_PATH: ContextVar[Path | None] = ContextVar(
 _MUTATION_LOCK_STATE = threading.local()
 
 
-def mutation_locked(method):
-    """Serialize one provider root's complete mutation lifecycle."""
+def mutation_locked(method=None, *, installation=False):
+    """Serialize cache writes or a provider's complete installation lifecycle."""
+    if method is None:
+        return functools.partial(mutation_locked, installation=installation)
 
     @functools.wraps(method)
     def locked(self, *args, **kwargs):
-        with self.mutation_lock() as contended:
+        with self.mutation_lock(installation=installation) as contended:
             contention_token = MUTATION_LOCK_CONTENDED.set(contended)
             try:
                 return method(self, *args, **kwargs)
@@ -590,18 +592,19 @@ class BinProvider(BaseModel):
             include_exec_only_env=include_exec_only_env,
         )
 
-    def mutation_lock_path(self) -> Path | None:
-        """Return the process-shared lock protecting this managed install root."""
+    def mutation_lock_path(self, *, installation: bool = False) -> Path | None:
+        """Keep installation serialization separate from short cache mutations."""
         if self.install_root is None:
             return None
         resource = str(self.install_root.expanduser().resolve(strict=False))
         lock_name = hashlib.sha256(resource.encode()).hexdigest()
-        return Path("/tmp/abxpkg-mutation-locks") / f"{lock_name}.lock"
+        suffix = ".install.lock" if installation else ".lock"
+        return Path("/tmp/abxpkg-mutation-locks") / f"{lock_name}{suffix}"
 
     @contextmanager
-    def mutation_lock(self):
-        """Lock install/update/uninstall across instances, threads, and processes."""
-        lock_path = self.mutation_lock_path()
+    def mutation_lock(self, *, installation: bool = False):
+        """Lock one root across instances, threads, and processes."""
+        lock_path = self.mutation_lock_path(installation=installation)
         if lock_path is None or self.dry_run:
             yield False
             return
@@ -3210,7 +3213,7 @@ class BinProvider(BaseModel):
             )
 
     @final
-    @mutation_locked
+    @mutation_locked(installation=True)
     @log_method_call(include_result=True)
     @validate_call
     def install(
@@ -3478,7 +3481,7 @@ class BinProvider(BaseModel):
         return result
 
     @final
-    @mutation_locked
+    @mutation_locked(installation=True)
     @log_method_call(include_result=True)
     @validate_call
     def update(
@@ -3619,7 +3622,7 @@ class BinProvider(BaseModel):
         return result
 
     @final
-    @mutation_locked
+    @mutation_locked(installation=True)
     @log_method_call(include_result=True)
     @validate_call
     def uninstall(
