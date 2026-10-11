@@ -1,0 +1,20 @@
+.github/workflows/tests.yml
+  h_923c208e183a7b 153-156
+pyproject.toml
+  h_923c208e183a7b 105
+tests/test_cli.py
+  h_923c208e183a7b 584-586
+uv.lock
+  h_923c208e183a7b 70,108,514-522,1213-1225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0948d8ba92b7fafda56a4e269bfaa4fe0518e7cc",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
