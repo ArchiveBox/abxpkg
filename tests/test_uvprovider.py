@@ -411,6 +411,113 @@ class TestUvProvider:
                 == metadata_version
             )
 
+    @pytest.mark.parametrize(
+        "package_name",
+        ["saws", "opendataloader-pdf", "imagesize"],
+    )
+    def test_installed_tool_load_does_not_require_writable_interpreter_cache(
+        self,
+        tmp_path,
+        package_name,
+    ):
+        previous_cache_dir = os.environ.get("ABXPKG_UV_CACHE_DIR")
+        cache_dir = tmp_path / "cache"
+        os.environ["ABXPKG_UV_CACHE_DIR"] = str(cache_dir)
+        blocked_cache = cache_dir / "interpreter-v4"
+        try:
+            provider = UvProvider(
+                install_root=tmp_path / "uv",
+                postinstall_scripts=True,
+                min_release_age=3,
+            )
+            installed = provider.install(package_name)
+            assert installed is not None
+            assert installed.loaded_abspath is not None
+            assert installed.loaded_version is not None
+            assert installed.loaded_sha256 is not None
+            if package_name == "imagesize":
+                assert not os.access(installed.loaded_abspath, os.X_OK)
+            else:
+                version_proc = provider.exec(
+                    bin_name=installed.loaded_abspath,
+                    cmd=["--version"],
+                    quiet=True,
+                )
+                assert version_proc.returncode != 0
+
+            # Model the actual inaccessible interpreter-cache subtree while
+            # keeping the installed package and cache root readable/writable.
+            blocked_cache.mkdir(exist_ok=True)
+            blocked_cache.chmod(0o000)
+            assert not os.access(blocked_cache, os.R_OK | os.W_OK | os.X_OK)
+            installer = provider.INSTALLER_BINARY()
+            assert installer.loaded_abspath is not None
+            metadata_proc = provider.exec(
+                bin_name=installer.loaded_abspath,
+                cmd=[
+                    "pip",
+                    "show",
+                    "--python",
+                    str(
+                        tmp_path
+                        / "uv"
+                        / "packages"
+                        / package_name
+                        / "venv"
+                        / "bin"
+                        / "python",
+                    ),
+                    package_name,
+                ],
+                quiet=True,
+            )
+            assert metadata_proc.returncode != 0
+            assert "Permission denied" in metadata_proc.stderr
+
+            provider.invalidate_cache(package_name)
+            reloaded = provider.load(package_name, quiet=True)
+            assert reloaded is not None
+            assert reloaded.loaded_abspath == installed.loaded_abspath
+            assert reloaded.loaded_version == installed.loaded_version
+            assert reloaded.loaded_sha256 == installed.loaded_sha256
+            assert stat.S_IMODE(blocked_cache.stat().st_mode) == 0o000
+        finally:
+            if blocked_cache.exists():
+                blocked_cache.chmod(0o700)
+            if previous_cache_dir is None:
+                os.environ.pop("ABXPKG_UV_CACHE_DIR", None)
+            else:
+                os.environ["ABXPKG_UV_CACHE_DIR"] = previous_cache_dir
+
+    def test_managed_metadata_version_belongs_to_selected_executable(self, tmp_path):
+        install_root = tmp_path / "uv"
+        binaries = []
+        for package_dir, version in (("cowsay", "6.0"), ("second-cowsay", "6.1")):
+            provider = UvProvider(
+                install_root=install_root / "packages" / package_dir,
+                postinstall_scripts=True,
+                min_release_age=3,
+            ).get_provider_with_overrides(
+                overrides={"cowsay": {"install_args": [f"cowsay=={version}"]}},
+            )
+            installed = provider.install("cowsay")
+            assert installed is not None
+            assert installed.loaded_version == SemVer(version)
+            binaries.append(installed)
+
+        for root in (install_root, tmp_path / "separate-provider"):
+            provider = UvProvider(install_root=root)
+            for installed in binaries:
+                assert installed.loaded_abspath is not None
+                assert (
+                    provider.get_version(
+                        "cowsay",
+                        abspath=installed.loaded_abspath,
+                        no_cache=True,
+                    )
+                    == installed.loaded_version
+                )
+
     def test_install_args_win_for_exclude_newer_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             venv_path = Path(temp_dir) / "venv"

@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from datetime import UTC
+from importlib.metadata import distributions
 from pathlib import Path
 from typing import ClassVar, Self
 
@@ -753,32 +754,37 @@ class UvProvider(BinProvider):
         package_name: str,
         timeout: int | None = None,
         no_cache: bool = False,
+        abspath: HostBinPath | None = None,
     ) -> SemVer | None:
-        """Read a package version from ``uv pip show`` or ``uv tool list`` metadata."""
+        """Read installed distribution metadata or global ``uv tool list``."""
+        if self.install_root:
+            if abspath is not None:
+                owning_venv = next(
+                    (
+                        parent
+                        for parent in abspath.resolve().parents
+                        if (parent / "pyvenv.cfg").is_file()
+                    ),
+                    None,
+                )
+                venv_roots = [owning_venv] if owning_venv is not None else []
+            else:
+                venv_roots = self._managed_venv_roots(package_name)
+            for venv_root in venv_roots:
+                # Installed metadata is readable without invoking uv, whose
+                # interpreter discovery writes to its download/build cache.
+                for distribution in distributions(
+                    name=package_name,
+                    path=[str(self._runtime_site_packages(venv_root))],
+                ):
+                    version = SemVer.parse(distribution.version)
+                    if version:
+                        return version
+            return None
         try:
             uv_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert uv_abspath
         except (AssertionError, OSError, RuntimeError, ValueError):
-            return None
-        if self.install_root:
-            for venv_root in self._managed_venv_roots(package_name):
-                proc = self.exec(
-                    bin_name=uv_abspath,
-                    cmd=[
-                        *self._cache_args(no_cache=no_cache),
-                        "pip",
-                        "show",
-                        "--python",
-                        str(venv_root / "bin" / "python"),
-                        package_name,
-                    ],
-                    timeout=timeout,
-                    quiet=True,
-                )
-                if proc.returncode == 0:
-                    for line in proc.stdout.splitlines():
-                        if line.startswith("Version: "):
-                            return SemVer.parse(line.split("Version: ", 1)[1])
             return None
         proc = self.exec(
             bin_name=uv_abspath,
@@ -1130,59 +1136,36 @@ class UvProvider(BinProvider):
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except (OSError, RuntimeError, ValueError) as err:
             logger.debug("uv provider host-path probe failed for %s: %s", bin_name, err)
-        try:
-            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
-        except (OSError, RuntimeError, ValueError):
-            return None
-        # Fallback: ``uv pip show`` for venv mode.
+        # Managed libraries may have no console entrypoint.
         if self.install_root:
             tool_name = self.get_package_names(str(bin_name))[0]
-            assert installer_binary.loaded_abspath
 
             for venv_root in self._managed_venv_roots(str(bin_name)):
-                if not self._runtime_site_packages(venv_root).is_dir():
-                    continue
-                proc = self.exec(
-                    bin_name=installer_binary.loaded_abspath,
-                    cmd=[
-                        *self._cache_args(no_cache=no_cache),
-                        "pip",
-                        "show",
-                        "--python",
-                        str(venv_root / "bin" / "python"),
-                        tool_name,
-                    ],
-                    timeout=self.version_timeout,
-                    quiet=True,
-                )
-                if proc.returncode != 0:
+                location = self._runtime_site_packages(venv_root)
+                if (
+                    next(
+                        iter(distributions(name=tool_name, path=[str(location)])),
+                        None,
+                    )
+                    is None
+                ):
                     continue
                 candidate = venv_root / "bin" / str(bin_name)
                 if candidate.exists():
                     return TypeAdapter(HostBinPath).validate_python(candidate)
-                site_packages_locations = [
-                    Path(line.split("Location: ", 1)[1])
-                    for line in proc.stdout.splitlines()
-                    if line.startswith("Location: ")
-                ]
                 module_names = [
                     name.replace("-", "_").replace(".", "_")
                     for name in self.get_library_names(str(bin_name))
                 ]
-                for location in site_packages_locations:
-                    if location.resolve(strict=False) != self._runtime_site_packages(
-                        venv_root,
-                    ).resolve(strict=False):
-                        continue
-                    for module_name in module_names:
-                        for module_candidate in (
-                            location / module_name / "__init__.py",
-                            location / f"{module_name}.py",
-                        ):
-                            if module_candidate.exists():
-                                return TypeAdapter(HostBinPath).validate_python(
-                                    module_candidate,
-                                )
+                for module_name in module_names:
+                    for module_candidate in (
+                        location / module_name / "__init__.py",
+                        location / f"{module_name}.py",
+                    ):
+                        if module_candidate.exists():
+                            return TypeAdapter(HostBinPath).validate_python(
+                                module_candidate,
+                            )
         else:
             tool_name = self.get_package_names(str(bin_name))[0]
             candidate = self.tool_dir / tool_name / "bin" / str(bin_name)
@@ -1211,6 +1194,7 @@ class UvProvider(BinProvider):
             tool_name,
             timeout=timeout,
             no_cache=no_cache,
+            abspath=abspath,
         )
         if metadata_version:
             return metadata_version
