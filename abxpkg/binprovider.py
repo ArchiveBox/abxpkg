@@ -97,6 +97,7 @@ from .exceptions import (
     BinProviderUpdateError,
 )
 from .config import (
+    _fingerprints_match,
     apply_exec_env,
     build_exec_env,
     load_derived_cache,
@@ -1685,6 +1686,17 @@ class BinProvider(BaseModel):
             plans = dict(raw_plans) if isinstance(raw_plans, dict) else {}
             if plans.get(plan_key) == exec_plan:
                 return
+            # Script and dependency upgrades key new plans, and a plan whose
+            # fingerprinted files changed can never validate again. Every warm
+            # hook launch parses this whole file, so keep only live plans, as
+            # request_exec_projections already do (a long-lived lib reached
+            # 32MB of derived.env, making each warm launch several times slower).
+            plans = {
+                key: plan
+                for key, plan in plans.items()
+                if isinstance(plan, dict)
+                and _fingerprints_match(plan.get("fingerprint"))
+            }
             plans[plan_key] = exec_plan
             record["script_exec_plans"] = plans
         cache[cache_key] = record

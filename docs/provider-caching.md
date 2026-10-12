@@ -65,6 +65,22 @@ environment would leak unrelated caller state into subsequent invocations.
 external work happen outside cache mutation locks: bootstrap can enter another
 provider, and holding a lock across it previously risked deadlocks.
 
+## Runners may resolve a warm script exec in-process
+
+Each hook is an `abxpkg run --script` shebang, so running it by path starts a
+Python interpreter only to read these caches and exec the runtime; across ~60
+hooks per snapshot that wrapper cost dominated hook startup. `cli.resolve_script_exec`
+runs the wrapper's own resolver against the hook's environment and cwd and
+returns the exact argv/env it would exec. It must decline (return None) whenever
+the wrapper could observe something different: a cold cache, another abxpkg
+launcher on the hook's PATH, a relative path, differing HOME/XDG_CONFIG_HOME,
+locale coercion, or a uid change in the child. Keep the resolver free of reads
+of this process's `os.environ` and cwd; thread the hook's values instead.
+
+Script plans are keyed by their full context and fingerprint the script and its
+`--deps-from` files. Writing a plan drops plans whose fingerprints no longer
+match, so upgrades do not grow `derived.env`, which every warm launch parses.
+
 ## Installation and cache locks have separate lifetimes
 
 Complete install, update and uninstall operations serialize on the root's

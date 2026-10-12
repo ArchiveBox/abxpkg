@@ -8,6 +8,7 @@ import sys
 # Keep typing-only imports off the warm CLI path.
 TYPE_CHECKING = False
 if TYPE_CHECKING:
+    from collections.abc import Mapping, MutableMapping
     from typing import Any, cast
 else:
 
@@ -66,19 +67,24 @@ def _none_or_stripped(raw: str | None) -> str | None:
     return None if stripped.lower() in _NONE_STRINGS else stripped
 
 
-def _env_flag_is_true(name: str) -> bool:
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+def _env_flag_is_true(name: str, env: Mapping[str, str] | None = None) -> bool:
+    env = os.environ if env is None else env
+    return env.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _resolve_lib_dir(raw_value: str | None) -> str:
-    env_value = os.environ.get("ABXPKG_LIB_DIR")
+def _resolve_lib_dir(
+    raw_value: str | None,
+    env: MutableMapping[str, str] | None = None,
+) -> str:
+    env = os.environ if env is None else env
+    env_value = env.get("ABXPKG_LIB_DIR")
     if _none_or_stripped(raw_value) is None and raw_value is not None:
-        os.environ.pop("ABXPKG_LIB_DIR", None)
+        env.pop("ABXPKG_LIB_DIR", None)
         from .config import default_abxpkg_lib_dir
 
         return os.path.realpath(os.path.expanduser(default_abxpkg_lib_dir()))
     if _none_or_stripped(env_value) is None and env_value is not None:
-        os.environ.pop("ABXPKG_LIB_DIR", None)
+        env.pop("ABXPKG_LIB_DIR", None)
         from .config import default_abxpkg_lib_dir
 
         return os.path.realpath(os.path.expanduser(default_abxpkg_lib_dir()))
@@ -90,7 +96,7 @@ def _resolve_lib_dir(raw_value: str | None) -> str:
 
         lib_dir = os.fspath(default_abxpkg_lib_dir())
     resolved = os.path.realpath(os.path.expanduser(lib_dir))
-    os.environ["ABXPKG_LIB_DIR"] = resolved
+    env["ABXPKG_LIB_DIR"] = resolved
     return resolved
 
 
@@ -274,11 +280,14 @@ def _deps_from_config_specs(
     *,
     base_path: str | os.PathLike[str],
     lib_dir: str | os.PathLike[str],
+    env: Mapping[str, str] | None = None,
 ) -> list[Any]:
     from pathlib import Path
 
     deps: list[Any] = []
-    values = {key: str(value) for key, value in os.environ.items()}
+    values = {
+        key: str(value) for key, value in (os.environ if env is None else env).items()
+    }
     values["ABXPKG_LIB_DIR"] = os.fspath(lib_dir)
     for raw_spec_group in raw_specs:
         for raw_spec in str(raw_spec_group or "").split(","):
@@ -338,12 +347,14 @@ def _script_cache_context(
     meta: dict[str, Any],
     options: Any,
     explicit_provider_selection: bool,
+    env: Mapping[str, str] | None = None,
 ) -> str | None:
     from pathlib import Path
 
+    env = os.environ if env is None else env
     if set(raw_options) - {"--lib", "--binproviders", "--deps-from"}:
         return None
-    base_context = warm_run_context(options, binary_name)
+    base_context = warm_run_context(options, binary_name, env)
     if base_context is None:
         return None
 
@@ -353,6 +364,7 @@ def _script_cache_context(
             (raw_options.get("--deps-from", ""),),
             base_path=resolved_script.parent,
             lib_dir=options.lib_dir,
+            env=env,
         )
     except (OSError, KeyError, json.JSONDecodeError):
         return None
@@ -366,7 +378,7 @@ def _script_cache_context(
     projected_bin_dir = os.path.abspath(os.path.join(options.lib_dir, "env", "bin"))
     caller_path = os.pathsep.join(
         entry
-        for entry in os.environ.get("PATH", "").split(os.pathsep)
+        for entry in env.get("PATH", "").split(os.pathsep)
         if not entry or os.path.abspath(entry) != projected_bin_dir
     )
     context = json.dumps(
@@ -378,13 +390,13 @@ def _script_cache_context(
             "exec_env_inputs": {
                 "PATH": caller_path,
                 **{
-                    name: os.environ.get(name)
+                    name: env.get(name)
                     for name in ("NODE_PATH", "PYTHONPATH", "LD_LIBRARY_PATH")
                 },
             },
             "explicit_provider_selection": explicit_provider_selection,
             "metadata": meta,
-            "tool_env": {name: os.environ.get(name) for name in tool_env_names},
+            "tool_env": {name: env.get(name) for name in tool_env_names},
         },
         separators=(",", ":"),
         sort_keys=True,
@@ -392,7 +404,11 @@ def _script_cache_context(
     return context
 
 
-def warm_run_context(options: Any, binary_name: str) -> str | None:
+def warm_run_context(
+    options: Any,
+    binary_name: str,
+    env: Mapping[str, str] | None = None,
+) -> str | None:
     """Return the canonical context for CLI runs eligible for direct cache exec."""
     if any(
         (
@@ -416,7 +432,7 @@ def warm_run_context(options: Any, binary_name: str) -> str | None:
     context = {
         "lib_dir": str(options.lib_dir),
         "provider_names": list(options.provider_names),
-        "abxpkg_env": abxpkg_cache_env(os.environ),
+        "abxpkg_env": abxpkg_cache_env(os.environ if env is None else env),
     }
     if binary_name in {"python", "python3"} and "env" in options.provider_names:
         context["runtime_prefix"] = os.path.abspath(sys.prefix)
@@ -506,6 +522,7 @@ def _cached_request_projection(
     provider_names: list[str],
     *,
     ignored_env_base_keys: tuple[str, ...] = (),
+    base_env: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
     from .config import _load_cached_request_projection
 
@@ -513,6 +530,7 @@ def _cached_request_projection(
         lib_dir,
         request,
         provider_names,
+        base_env=base_env,
         ignored_env_base_keys=ignored_env_base_keys,
     )
 
@@ -523,12 +541,14 @@ def _cached_script_request_projection(
     provider_names: list[str],
     env_key: str | None,
     declared_name: str | None,
+    base_env: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, object], dict[str, object], str, dict[str, str]] | None:
     resolved = _cached_request_projection(
         lib_dir,
         request,
         provider_names,
         ignored_env_base_keys=(env_key,) if env_key else (),
+        base_env=base_env,
     )
     requested_name = request.get("name")
     if (
@@ -548,6 +568,7 @@ def _cached_script_request_projection(
         declared_request,
         provider_names,
         ignored_env_base_keys=(env_key,) if env_key else (),
+        base_env=base_env,
     )
     if resolved is None:
         return None
@@ -570,7 +591,7 @@ def _cached_records(
     yield from records(lib_dir, provider_names, binary_name)
 
 
-def _exec_cached_script_requests(
+def _cached_script_requests_target(
     *,
     lib_dir: str | os.PathLike[str],
     provider_names: list[str],
@@ -578,7 +599,9 @@ def _exec_cached_script_requests(
     dependencies: list[object],
     explicit_provider_selection: bool,
     script_args: list[str],
-) -> int | None:
+    env: Mapping[str, str],
+    cwd: str,
+) -> tuple[str, list[str], dict[str, str]] | None:
     resolved_dependencies: list[
         tuple[dict[str, object], dict[str, object], str | None]
     ] = []
@@ -617,6 +640,7 @@ def _exec_cached_script_requests(
             dependency_provider_names,
             env_key,
             declared_name,
+            env,
         )
         if resolved is None:
             return None
@@ -629,6 +653,7 @@ def _exec_cached_script_requests(
         target_provider_names,
         target_env_key,
         target_declared_name,
+        env,
     )
     if target is None:
         return None
@@ -638,7 +663,7 @@ def _exec_cached_script_requests(
 
     from .config import build_exec_env, resolve_env_projection
 
-    final_env = os.environ.copy()
+    final_env = dict(env)
     for record, _projection, env_key in resolved_dependencies:
         if env_key:
             abspath = record.get("abspath")
@@ -685,29 +710,63 @@ def _exec_cached_script_requests(
         for key in ("HOME", "LOGNAME", "USER")
         if key in target_validation_env
     }
-    final_env = build_exec_env(dependency_layers, base_env=final_env)
+    lib_dir_value = env.get("ABXPKG_LIB_DIR")
+    final_env = build_exec_env(
+        dependency_layers,
+        base_env=final_env,
+        lib_dir=lib_dir_value,
+    )
     final_env = build_exec_env(
         target_layers,
         base_env=final_env,
+        lib_dir=lib_dir_value,
     )
     final_env.update(user_env)
-    final_env["PWD"] = os.getcwd()
+    final_env["PWD"] = cwd
     exec_abspath = resolve_env_projection(exec_abspath)
-    try:
-        os.execvpe(exec_abspath, [exec_abspath, *script_args], final_env)
-    except OSError as err:
-        print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
-        return 1
-    return 1
+    return exec_abspath, [exec_abspath, *script_args], final_env
 
 
 def _validated_cached_plan(
     raw_plan: object,
     run_context: str,
+    *,
+    base_env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
 ) -> tuple[str, dict[str, str]] | None:
     from .config import _validated_cached_plan as validate
 
-    return validate(raw_plan, run_context)
+    return validate(raw_plan, run_context, base_env=base_env, cwd=cwd)
+
+
+def _cached_plan_target(
+    raw_plan: object,
+    run_context: str,
+    binary_args: list[str],
+    *,
+    env: Mapping[str, str] | None = None,
+    cwd: str | None = None,
+) -> tuple[str, list[str], dict[str, str]] | None:
+    from .config import resolve_env_projection
+
+    validated = _validated_cached_plan(raw_plan, run_context, base_env=env, cwd=cwd)
+    if validated is None:
+        return None
+    exec_abspath, final_env = validated
+    # Old plans can still be valid while naming a foreign env/bin alias. Repair
+    # only execution, preserving stable metadata and all cache validation rules.
+    exec_abspath = resolve_env_projection(exec_abspath)
+    return exec_abspath, [exec_abspath, *binary_args], final_env
+
+
+def _exec_target(target: tuple[str, list[str], dict[str, str]]) -> int:
+    exec_abspath, exec_argv, final_env = target
+    try:
+        os.execvpe(exec_abspath, exec_argv, final_env)
+    except OSError as err:
+        print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
+        return 1
+    return 1
 
 
 def _exec_cached_plan(
@@ -715,25 +774,8 @@ def _exec_cached_plan(
     run_context: str,
     binary_args: list[str],
 ) -> int | None:
-    from .config import resolve_env_projection
-
-    validated = _validated_cached_plan(raw_plan, run_context)
-    if validated is None:
-        return None
-    exec_abspath, final_env = validated
-    # Old plans can still be valid while naming a foreign env/bin alias. Repair
-    # only execution, preserving stable metadata and all cache validation rules.
-    exec_abspath = resolve_env_projection(exec_abspath)
-    try:
-        os.execvpe(
-            exec_abspath,
-            [exec_abspath, *binary_args],
-            final_env,
-        )
-    except OSError as err:
-        print(f"abxpkg: failed to exec {exec_abspath}: {err}", file=sys.stderr)
-        return 1
-    return 1
+    target = _cached_plan_target(raw_plan, run_context, binary_args)
+    return None if target is None else _exec_target(target)
 
 
 def _format_cached_load(record: dict[str, object]) -> str | None:
@@ -813,6 +855,110 @@ def _load_cached(argv: list[str]) -> int | None:
     return None
 
 
+def _cached_script_target(
+    script_parsed: tuple[dict[str, str], str, str, list[str]],
+    env: MutableMapping[str, str],
+    cwd: str,
+) -> tuple[str, list[str], dict[str, str]] | None:
+    """Resolve a warm `run --script` request to its exec target, or None.
+
+    `env` is the environment the wrapper process would run with and is mutated
+    exactly as the wrapper mutates its own os.environ, so the returned exec env
+    and any cold fallback observe identical inputs.
+    """
+    raw_options, binary_name, script_path, script_args = script_parsed
+    if not os.path.isfile(script_path):
+        return None
+    try:
+        meta = parse_script_metadata(script_path)
+    except RuntimeError:
+        return None
+    if meta is None:
+        return None
+    raw_lib_dir = raw_options.get("--lib")
+    lib_dir = _resolve_lib_dir(raw_lib_dir, env)
+    raw_names = raw_options.get("--binproviders")
+    if raw_names is None:
+        raw_names = env.get("ABXPKG_BINPROVIDERS")
+    if raw_names is None:
+        import abxpkg as package
+
+        provider_names = list(package.DEFAULT_PROVIDER_NAMES)
+    else:
+        provider_names = [name.strip() for name in raw_names.split(",") if name.strip()]
+    if not provider_names or any(
+        re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
+    ):
+        return None
+    env["ABXPKG_LIB_DIR"] = str(lib_dir)
+    if raw_names is not None:
+        env["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
+    else:
+        env.pop("ABXPKG_BINPROVIDERS", None)
+
+    tool_section = meta.get("tool")
+    tool_config = (
+        tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
+    )
+    for key, value in tool_config.items():
+        if key != "runtime_binproviders":
+            env.setdefault(str(key), str(value))
+    cache_context = _script_cache_context(
+        raw_options,
+        binary_name,
+        script_path,
+        meta,
+        ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
+        explicit_provider_selection=raw_names is not None,
+        env=env,
+    )
+    if cache_context is None:
+        return None
+    import hashlib
+    import abxpkg as package
+
+    run_context = cache_context
+    plan_key = hashlib.sha256(run_context.encode()).hexdigest()
+    for record in _cached_records(
+        lib_dir,
+        list(package.ALL_PROVIDER_NAMES),
+        binary_name,
+    ):
+        raw_plans = record.get("script_exec_plans")
+        if not isinstance(raw_plans, dict):
+            continue
+        target = _cached_plan_target(
+            raw_plans.get(plan_key),
+            run_context,
+            script_args,
+            env=env,
+            cwd=cwd,
+        )
+        if target is not None:
+            return target
+    if tool_config.get("runtime_binproviders"):
+        return None
+    dependencies = [
+        *meta.get("dependencies", []),
+        *_deps_from_config_specs(
+            (raw_options.get("--deps-from", ""),),
+            base_path=os.path.dirname(os.path.realpath(script_path)),
+            lib_dir=lib_dir,
+            env=env,
+        ),
+    ]
+    return _cached_script_requests_target(
+        lib_dir=lib_dir,
+        provider_names=provider_names,
+        binary_name=binary_name,
+        dependencies=dependencies,
+        explicit_provider_selection=raw_names is not None,
+        script_args=script_args,
+        env=env,
+        cwd=cwd,
+    )
+
+
 def _run_cached(argv: list[str]) -> int | None:
     if any(
         _env_flag_is_true(name)
@@ -826,93 +972,10 @@ def _run_cached(argv: list[str]) -> int | None:
 
     script_parsed = _parse_script_argv(argv)
     if script_parsed is not None:
-        raw_options, binary_name, script_path, script_args = script_parsed
-        if not os.path.isfile(script_path):
-            return None
-        try:
-            meta = parse_script_metadata(script_path)
-        except RuntimeError:
-            return None
-        if meta is None:
-            return None
-        raw_lib_dir = raw_options.get("--lib")
-        lib_dir = _resolve_lib_dir(raw_lib_dir)
-        raw_names = raw_options.get("--binproviders")
-        if raw_names is None:
-            raw_names = os.environ.get("ABXPKG_BINPROVIDERS")
-        if raw_names is None:
-            import abxpkg as package
-
-            provider_names = list(package.DEFAULT_PROVIDER_NAMES)
-        else:
-            provider_names = [
-                name.strip() for name in raw_names.split(",") if name.strip()
-            ]
-        if not provider_names or any(
-            re.fullmatch(r"[a-z][a-z0-9_-]*", name) is None for name in provider_names
-        ):
-            return None
-        os.environ["ABXPKG_LIB_DIR"] = str(lib_dir)
-        if raw_names is not None:
-            os.environ["ABXPKG_BINPROVIDERS"] = ",".join(provider_names)
-        else:
-            os.environ.pop("ABXPKG_BINPROVIDERS", None)
-
-        tool_section = meta.get("tool")
-        tool_config = (
-            tool_section.get("abxpkg", {}) if isinstance(tool_section, dict) else {}
-        )
-        for key, value in tool_config.items():
-            if key != "runtime_binproviders":
-                os.environ.setdefault(str(key), str(value))
-        cache_context = _script_cache_context(
-            raw_options,
-            binary_name,
-            script_path,
-            meta,
-            ScriptOptions(lib_dir=lib_dir, provider_names=provider_names),
-            explicit_provider_selection=raw_names is not None,
-        )
-        if cache_context is None:
-            return None
-        import hashlib
-        import abxpkg as package
-
-        run_context = cache_context
-        plan_key = hashlib.sha256(run_context.encode()).hexdigest()
-        for record in _cached_records(
-            lib_dir,
-            list(package.ALL_PROVIDER_NAMES),
-            binary_name,
-        ):
-            raw_plans = record.get("script_exec_plans")
-            if not isinstance(raw_plans, dict):
-                continue
-            result = _exec_cached_plan(
-                raw_plans.get(plan_key),
-                run_context,
-                script_args,
-            )
-            if result is not None:
-                return result
-        if tool_config.get("runtime_binproviders"):
-            return None
-        dependencies = [
-            *meta.get("dependencies", []),
-            *_deps_from_config_specs(
-                (raw_options.get("--deps-from", ""),),
-                base_path=os.path.dirname(os.path.realpath(script_path)),
-                lib_dir=lib_dir,
-            ),
-        ]
-        return _exec_cached_script_requests(
-            lib_dir=lib_dir,
-            provider_names=provider_names,
-            binary_name=binary_name,
-            dependencies=dependencies,
-            explicit_provider_selection=raw_names is not None,
-            script_args=script_args,
-        )
+        # The wrapper's own environment is the hook's environment: resolve
+        # against it in place so a cold fallback sees the same mutations.
+        target = _cached_script_target(script_parsed, os.environ, os.getcwd())
+        return None if target is None else _exec_target(target)
 
     parsed = _parse_warm_argv(argv)
     if parsed is None:
@@ -957,6 +1020,115 @@ def _run_cached(argv: list[str]) -> int | None:
         if result is not None:
             return result
     return None
+
+
+_SHEBANG_SHELL_SYNTAX = frozenset("\"'\\$#")
+
+
+def resolve_script_exec(
+    script_path: str,
+    script_args: list[str],
+    *,
+    env: Mapping[str, str],
+    cwd: str,
+) -> tuple[str, list[str], dict[str, str]] | None:
+    """Return the argv/env a warm `#!/usr/bin/env -S abxpkg run --script` would exec.
+
+    Runners that already imported abxpkg (abx-dl spawns ~60 hooks per snapshot)
+    can launch the resolved interpreter directly instead of paying for a fresh
+    Python interpreter, imports and cache reads in a wrapper process per hook.
+    This calls the same resolver the wrapper uses, against the hook's own env.
+    It returns None whenever the wrapper could observe something different
+    from this process (another abxpkg install, process-global inputs such as
+    HOME or a relative path, locale coercion) or the cache is cold; the caller
+    must then execute the script normally so the wrapper owns that case.
+    """
+    if not os.path.isabs(script_path) or os.getuid() != os.geteuid():
+        return None
+    try:
+        with open(script_path, "rb") as script_file:
+            first_line = script_file.readline(4096)
+    except OSError:
+        return None
+    if not first_line.startswith(b"#!") or not first_line.endswith(b"\n"):
+        return None
+    tokens = first_line[2:].decode("utf-8", errors="replace").split()
+    # Only the plain form, where whitespace splitting is exactly what both the
+    # kernel and `env -S` do: no quoting, escapes, ${VAR} or comments.
+    if (
+        len(tokens) < 4
+        or not os.path.isabs(tokens[0])
+        or os.path.basename(tokens[0]) != "env"
+        or tokens[1] != "-S"
+        or tokens[2] != "abxpkg"
+        or any(char in _SHEBANG_SHELL_SYNTAX for token in tokens for char in token)
+    ):
+        return None
+
+    # `env` finds abxpkg on the hook's PATH. Only that launcher running this
+    # very interpreter (same venv, same sys.prefix, same abxpkg code) is
+    # guaranteed to resolve exactly like this process does.
+    path_entries = env.get("PATH", "").split(os.pathsep)
+    if not env.get("PATH") or any(not os.path.isabs(entry) for entry in path_entries):
+        return None
+    launcher = next(
+        (
+            candidate
+            for candidate in (os.path.join(entry, "abxpkg") for entry in path_entries)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK)
+        ),
+        None,
+    )
+    interpreter_dir = os.path.dirname(os.path.abspath(sys.executable))
+    if launcher is None or os.path.dirname(launcher) != interpreter_dir:
+        return None
+    try:
+        with open(launcher, "rb") as launcher_file:
+            launcher_line = launcher_file.readline(4096)
+    except OSError:
+        return None
+    launcher_interpreter = launcher_line[2:].decode("utf-8", errors="replace").strip()
+    if (
+        not launcher_line.startswith(b"#!")
+        or os.path.dirname(
+            launcher_interpreter,
+        )
+        != interpreter_dir
+    ):
+        return None
+
+    # Values the wrapper derives from its own process state rather than `env`:
+    # the default lib dir and `~` expansion (platformdirs reads HOME/XDG), and
+    # PEP 538 locale coercion, which exports LC_CTYPE into the wrapper's env.
+    if any(env.get(key) != os.environ.get(key) for key in ("HOME", "XDG_CONFIG_HOME")):
+        return None
+    if env.get("PYTHONCOERCECLOCALE") != "0" and not env.get("LC_ALL"):
+        effective_locale = env.get("LC_CTYPE") or env.get("LANG") or "C"
+        if effective_locale in {"C", "POSIX"}:
+            return None
+
+    script_parsed = _parse_script_argv([*tokens[3:], script_path, *script_args])
+    if script_parsed is None:
+        return None
+    raw_lib_dir = script_parsed[0].get("--lib") or env.get("ABXPKG_LIB_DIR")
+    if (
+        raw_lib_dir
+        and _none_or_stripped(raw_lib_dir) is not None
+        and not os.path.isabs(os.path.expanduser(raw_lib_dir))
+    ):
+        return None
+
+    exec_env = dict(env)
+    # Importing abxpkg in the wrapper sets this default (see abxpkg/__init__.py)
+    # before resolution, so hooks have always inherited it.
+    exec_env.setdefault("PYDANTIC_DISABLE_PLUGINS", "1")
+    if any(
+        _env_flag_is_true(name, exec_env)
+        for name in ("ABXPKG_DRY_RUN", "DRY_RUN", "ABXPKG_DEBUG", "ABXPKG_NO_CACHE")
+    ):
+        return None
+    # The wrapper reports PWD from getcwd(), which is the physical path.
+    return _cached_script_target(script_parsed, exec_env, os.path.realpath(cwd))
 
 
 def main() -> None:
@@ -1005,4 +1177,5 @@ __all__ = [
     "abx_main",
     "main",
     "parse_script_metadata",
+    "resolve_script_exec",
 ]

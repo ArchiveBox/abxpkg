@@ -196,13 +196,19 @@ def _forbidden_convenience_lib_bins(abxpkg_lib_dir: str | None) -> frozenset[Pat
     return frozenset((lib_dir.expanduser().absolute() / "bin") for lib_dir in lib_dirs)
 
 
-def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
+def is_forbidden_convenience_lib_bin(
+    path: str | Path | None,
+    lib_dir: str | None = None,
+) -> bool:
     """True only for flat abxpkg lib ``bin`` convenience directories.
 
     Install flows can create that directory for humans, but abxpkg must not
     use it for PATH-based discovery or runtime execution. Provider-owned dirs
     like ``ABXPKG_LIB_DIR/env/bin`` and ``ABXPKG_LIB_DIR/playwright/bin``
     remain valid runtime paths.
+
+    ``lib_dir`` names the environment's ABXPKG_LIB_DIR when it is not this
+    process's own environment, e.g. when resolving a hook's exec env in-process.
     """
     if path is None:
         return False
@@ -211,18 +217,18 @@ def is_forbidden_convenience_lib_bin(path: str | Path | None) -> bool:
 
         candidate = Path(path).expanduser().absolute()
         forbidden_dirs = _forbidden_convenience_lib_bins(
-            os.environ.get("ABXPKG_LIB_DIR"),
+            os.environ.get("ABXPKG_LIB_DIR") if lib_dir is None else lib_dir,
         )
     except Exception:
         return False
     return candidate in forbidden_dirs
 
 
-def _split_path(path_value: str | None) -> list[str]:
+def _split_path(path_value: str | None, lib_dir: str | None = None) -> list[str]:
     return [
         entry
         for entry in str(path_value or "").split(os.pathsep)
-        if entry and not is_forbidden_convenience_lib_bin(entry)
+        if entry and not is_forbidden_convenience_lib_bin(entry, lib_dir)
     ]
 
 
@@ -252,6 +258,7 @@ def apply_exec_env(
 def merge_exec_path(
     *path_layers: str | None,
     base_path: str | None = None,
+    lib_dir: str | None = None,
 ) -> str:
     """Merge PATH prefixes in precedence order, then append ``base_path``.
 
@@ -263,7 +270,7 @@ def merge_exec_path(
     seen: set[str] = set()
 
     for layer in (*path_layers, base_path):
-        for entry in _split_path(layer):
+        for entry in _split_path(layer, lib_dir):
             if entry in seen:
                 continue
             seen.add(entry)
@@ -278,6 +285,7 @@ def build_exec_env(
     base_env: Mapping[str, str] | None = None,
     extra_env: Mapping[str, str] | None = None,
     include_exec_only_env: bool = True,
+    lib_dir: str | None = None,
 ) -> dict[str, str]:
     """Build the final env used for runtime execution.
 
@@ -398,6 +406,7 @@ def build_exec_env(
         env.get("PATH", ""),
         *provider_path_append_layers,
         *extra_path_append_layers,
+        lib_dir=lib_dir,
     )
     if merged_path:
         env["PATH"] = merged_path
@@ -406,6 +415,7 @@ def build_exec_env(
             *pathlike_prepend_layers[key],
             env.get(key, ""),
             *append_layers,
+            lib_dir=lib_dir,
         )
         if merged_pathlike:
             env[key] = merged_pathlike
@@ -717,6 +727,7 @@ def _validated_cached_plan(
     base_env: Mapping[str, str] | None = None,
     ignored_env_base_keys: Iterable[str] = (),
     require_executable: bool = True,
+    cwd: str | None = None,
 ) -> tuple[str, dict[str, str]] | None:
     # Warm plans must prove their inputs still match, not just that a binary
     # exists. Ignoring PATH or venv changes previously reused the wrong runtime.
@@ -780,7 +791,7 @@ def _validated_cached_plan(
         return None
     final_env = dict(current_env)
     final_env.update(typed_env)
-    final_env["PWD"] = os.getcwd()
+    final_env["PWD"] = os.getcwd() if cwd is None else cwd
     for raw_resolution in resolutions:
         if not isinstance(raw_resolution, dict):
             return None

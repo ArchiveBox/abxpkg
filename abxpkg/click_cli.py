@@ -2211,6 +2211,18 @@ def _prepare_script_execution(
             runtime_providers=all_exec_providers,
             base_env=script_cache_base_env,
             exec_env=final_exec_env,
+            # The context is keyed on what these files declared. Fingerprinting
+            # them lets plans written for an older script or config be pruned
+            # once those files change, instead of accumulating per upgrade.
+            extra_fingerprint_paths=(
+                script_path,
+                *(
+                    script_path.parent / config_path
+                    for spec_group in deps_from
+                    for spec in spec_group.split(",")
+                    if (config_path := spec.strip().partition(":")[0])
+                ),
+            ),
             resolution_binaries=resolved_script_binaries,
         )
     return binary, exec_kwargs

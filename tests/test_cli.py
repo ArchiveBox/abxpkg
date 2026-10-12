@@ -4358,6 +4358,159 @@ def test_dependency_scripts_with_distinct_paths_keep_warm_exec_plans(tmp_path):
         assert sorted(cached_elapsed)[1] - sorted(direct_elapsed)[1] < 0.1
 
 
+def test_dependency_script_plans_drop_entries_for_changed_scripts(tmp_path):
+    lib = tmp_path / "lib"
+    git = shutil.which("git")
+    node = shutil.which("node")
+    assert git is not None
+    assert node is not None
+
+    (tmp_path / "config.json").write_text(
+        json.dumps({"required_binaries": ["node", "git"]}),
+    )
+    scripts = {}
+    for name in ("first", "second"):
+        # Distinct git dirs give each script its own cold resolution, which is
+        # what writes a script plan into the shared node record.
+        git_dir = tmp_path / f"{name}-bin"
+        git_dir.mkdir()
+        shutil.copy2(git, git_dir / "git")
+        script = tmp_path / f"{name}.js"
+        script.write_text(
+            "#!/usr/bin/env -S abxpkg run --script "
+            "--deps-from=./config.json:required_binaries node\n"
+            "// /// script\n"
+            "// ///\n"
+            f'console.log("{name}");\n',
+        )
+        script.chmod(0o755)
+        scripts[name] = script
+
+    def run(name):
+        result = _run_cli(
+            scripts[name],
+            env_overrides={
+                "ABXPKG_LIB_DIR": str(lib),
+                "PATH": os.pathsep.join(
+                    (
+                        str(_abxpkg_executable().parent),
+                        str(tmp_path / f"{name}-bin"),
+                        str(Path(node).parent),
+                        os.defpath,
+                    ),
+                ),
+            },
+        )
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == name
+
+    def planned_scripts():
+        return sorted(
+            json.loads(cast(dict[str, str], plan)["run_context"])["script_path"]
+            for record in load_derived_cache(lib / "env" / "derived.env").values()
+            for plan in cast(
+                dict[str, object],
+                record.get("script_exec_plans", {}),
+            ).values()
+        )
+
+    run("first")
+    assert planned_scripts() == [str(scripts["first"].resolve())]
+
+    # An edited (or upgraded) script can never match its old plan again.
+    with scripts["first"].open("a") as script_file:
+        script_file.write("// edited\n")
+    run("second")
+    assert planned_scripts() == [str(scripts["second"].resolve())]
+
+    run("first")
+    assert planned_scripts() == sorted(
+        str(script.resolve()) for script in scripts.values()
+    )
+
+
+def _env_dump_script(path: Path) -> Path:
+    path.write_text(
+        "#!/usr/bin/env -S abxpkg run --script "
+        "--deps-from=./config.json:required_binaries node\n"
+        "// /// script\n"
+        "// ///\n"
+        "process.stdout.write(JSON.stringify("
+        "{argv: process.argv, env: process.env, cwd: process.cwd()}));\n",
+    )
+    path.chmod(0o755)
+    return path
+
+
+def test_resolve_script_exec_matches_warm_wrapper_exec(tmp_path):
+    lib = tmp_path / "lib"
+    node = shutil.which("node")
+    assert node is not None
+    (tmp_path / "config.json").write_text(
+        json.dumps({"required_binaries": ["node"]}),
+    )
+    script = _env_dump_script(tmp_path / "dump.js")
+    cwd = tmp_path / "output"
+    cwd.mkdir()
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    env["ABXPKG_LIB_DIR"] = str(lib)
+    env["PATH"] = os.pathsep.join(
+        (str(_abxpkg_executable().parent), str(Path(node).parent), os.defpath),
+    )
+    args = ["--url=https://example.com", "--snapshot-id=abc"]
+
+    # Cold caches stay with the wrapper, which owns resolution and installs.
+    assert (
+        cli_module.resolve_script_exec(str(script), args, env=env, cwd=str(cwd)) is None
+    )
+
+    def run_wrapper() -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            [str(script), *args],
+            env=env,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert result.returncode == 0, result.stderr
+        return result
+
+    run_wrapper()  # cold: the wrapper resolves and records its plan
+    wrapped = run_wrapper()  # warm: the wrapper's own cached exec
+
+    target = cli_module.resolve_script_exec(str(script), args, env=env, cwd=str(cwd))
+    assert target is not None
+    exec_abspath, exec_argv, exec_env = target
+    assert Path(exec_abspath).is_file()
+    assert exec_argv == [exec_abspath, str(script), *args]
+    direct = subprocess.run(
+        exec_argv,
+        env=exec_env,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert direct.returncode == 0, direct.stderr
+    # Same interpreter, argv, cwd and every environment variable as the
+    # wrapper's own exec of the hook.
+    assert json.loads(direct.stdout) == json.loads(wrapped.stdout)
+
+    # `env` would run a different abxpkg launcher here, which may resolve
+    # differently, so the in-process shortcut must decline.
+    other_bin = tmp_path / "other-bin"
+    other_bin.mkdir()
+    shutil.copy2(_abxpkg_executable(), other_bin / "abxpkg")
+    other_env = {**env, "PATH": os.pathsep.join((str(other_bin), env["PATH"]))}
+    assert (
+        cli_module.resolve_script_exec(str(script), args, env=other_env, cwd=str(cwd))
+        is None
+    )
+
+
 def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallbacks(
     tmp_path,
 ):
