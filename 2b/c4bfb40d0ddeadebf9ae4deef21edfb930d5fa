@@ -1,0 +1,19 @@
+.github/pages/base/footer-start.html
+  s_13875c652141e9::t_f52105f4ae66c5 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bc4bfb40d0ddeadebf9ae4deef21edfb930d5fa",
+  "prompts": {},
+  "sessions": {
+    "s_13875c652141e9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0db9-b5f1-78a0-9a25-34f77a94022b",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
