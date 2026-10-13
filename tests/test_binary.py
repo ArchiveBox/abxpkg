@@ -21,6 +21,44 @@ from abxpkg.exceptions import (
 
 
 class TestBinary:
+    def test_max_version_rejects_and_downgrades_real_installed_package(self, tmp_path):
+        provider = UvProvider(install_root=tmp_path / "uv", postinstall_scripts=True)
+        newer = Binary(
+            name="black",
+            binproviders=[provider],
+            overrides={"uv": {"install_args": ["black==24.4.2"]}},
+        ).install()
+        assert newer.loaded_version == SemVer("24.4.2")
+
+        pinned = Binary(
+            name="black",
+            binproviders=[provider],
+            min_version=SemVer("23.1.0"),
+            max_version=SemVer("23.1.0"),
+            overrides={"uv": {"install_args": ["black==23.1.0"]}},
+        )
+        with pytest.raises(BinaryLoadError):
+            pinned.load()
+        downgraded = pinned.install()
+        assert downgraded.loaded_version == SemVer("23.1.0")
+        assert downgraded.loaded_abspath == newer.loaded_abspath
+        assert pinned.load().loaded_version == SemVer("23.1.0")
+        assert downgraded.exec(cmd=["--version"]).returncode == 0
+        pinned.overrides = {"uv": {"install_args": ["black==24.4.2"]}}
+        with pytest.raises(BinaryUpdateError, match="max_version"):
+            pinned.update()
+
+    def test_max_version_rejects_existing_env_binary(self):
+        binary = Binary(
+            name="python",
+            binproviders=[EnvProvider()],
+            max_version=SemVer("1.0.0"),
+        )
+        with pytest.raises(BinaryLoadError, match="max_version"):
+            binary.load()
+        with pytest.raises(BinaryInstallError, match="max_version"):
+            binary.install()
+
     @pytest.mark.parametrize("binary_name", ["go", "brew", "npm"])
     def test_env_binary_uses_installer_owner_version_handler(self, binary_name):
         loaded = Binary(
@@ -303,8 +341,8 @@ class TestBinary:
             test_machine.assert_shallow_binary_loaded(installed)
             assert installed.loaded_abspath is not None
             provider = binary.get_binprovider("pip")
-            assert provider.install_root == install_root
-            assert provider.bin_dir == install_root / "venv" / "bin"
+            assert provider.install_root == install_root.resolve()
+            assert provider.bin_dir == install_root.resolve() / "venv" / "bin"
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_binary_dry_run_passes_through_to_provider_without_installing(self):

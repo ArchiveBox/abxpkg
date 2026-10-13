@@ -39,6 +39,7 @@ _SHELL_SINGLE_QUOTE_ESCAPE = "'\"'\"'"
 _BINARY_REQUEST_CACHE_FIELDS = (
     "name",
     "min_version",
+    "max_version",
     "postinstall_scripts",
     "min_release_age",
     "binproviders",

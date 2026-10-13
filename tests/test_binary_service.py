@@ -17,6 +17,81 @@ from abxpkg import Binary, EnvProvider, NodeProvider
 from abxpkg.semver import SemVer
 
 
+def test_binary_service_max_version_rejects_cached_version_and_installs_pin(
+    tmp_path: Path,
+) -> None:
+    from abxpkg import UvProvider
+    from abxpkg.binary_service import (
+        BinaryCacheService,
+        BinaryEvent,
+        BinaryRequestEvent,
+        BinaryService,
+        JSONFileBinaryCacheBackend,
+    )
+
+    lib_dir = tmp_path / "lib"
+    installed = Binary(
+        name="black",
+        binproviders=[
+            UvProvider(install_root=lib_dir / "uv", postinstall_scripts=True),
+        ],
+        overrides={"uv": {"install_args": ["black==24.4.2"]}},
+    ).install()
+    assert installed.loaded_version == SemVer("24.4.2")
+    backend = JSONFileBinaryCacheBackend(tmp_path / "binary-cache.json")
+    backend.set(BinaryRequestEvent(name="black"), installed)
+
+    async def run():
+        bus = abxbus.EventBus(name="maximum_version_real_install")
+        BinaryCacheService(bus, backend=backend)
+        BinaryService(bus, lib_dir=lib_dir)
+
+        async def resolve(*, auto_install, max_version=None, name="black"):
+            request = await bus.emit(
+                BinaryRequestEvent(
+                    name=name,
+                    binproviders="uv",
+                    auto_install=auto_install,
+                    min_version="23.1.0",
+                    max_version=max_version,
+                    postinstall_scripts=True,
+                    overrides={"uv": {"install_args": ["black==23.1.0"]}},
+                ),
+            ).now()
+            return await bus.find(
+                BinaryEvent,
+                child_of=request,
+                past=True,
+                future=False,
+            )
+
+        try:
+            # Populate the existing request projection with an unconstrained hit.
+            unconstrained = await resolve(auto_install=False)
+            assert isinstance(unconstrained, BinaryEvent)
+            assert unconstrained.version == "24.4.2"
+            assert (
+                await resolve(
+                    auto_install=False,
+                    max_version="23.1.0",
+                    name=unconstrained.abspath,
+                )
+                is None
+            )
+            assert await resolve(auto_install=False, max_version="23.1.0") is None
+            assert backend.get(BinaryRequestEvent(name="black")) is None
+            for _ in range(2):
+                resolved = await resolve(auto_install=True, max_version="23.1.0")
+                assert isinstance(resolved, BinaryEvent)
+                assert resolved.version == "23.1.0"
+                assert Path(resolved.abspath) == installed.loaded_abspath
+        finally:
+            await bus.wait_until_idle()
+            await bus.destroy(clear=False)
+
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("no_cache", [False, True])
 def test_explicit_managed_binary_request_preserves_runtime_projection(
     tmp_path: Path,

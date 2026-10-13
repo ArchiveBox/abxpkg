@@ -46,6 +46,7 @@ class ScriptOptions:
     debug = False
     no_cache = False
     min_version = None
+    max_version = None
     postinstall_scripts = None
     min_release_age = None
     overrides = None
@@ -416,6 +417,7 @@ def warm_run_context(
             options.debug,
             options.no_cache,
             options.min_version is not None,
+            options.max_version is not None,
             options.postinstall_scripts is not None,
             options.min_release_age is not None,
             options.overrides is not None,

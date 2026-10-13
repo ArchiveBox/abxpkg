@@ -66,6 +66,7 @@ class CliOptions:
     # also where the ``supports_postinstall_disable`` /
     # ``supports_min_release_age`` warning emitters live.
     min_version: str | None = None
+    max_version: str | None = None
     postinstall_scripts: bool | None = None
     min_release_age: float | None = None
     overrides: dict[str, Any] | None = None
@@ -372,6 +373,7 @@ def build_binary(binary_name: str, options: CliOptions, *, dry_run: bool) -> Bin
     # warn-and-ignore path fires for providers that can't enforce them.
     for key, value in (
         ("min_version", options.min_version),
+        ("max_version", options.max_version),
         ("postinstall_scripts", options.postinstall_scripts),
         ("min_release_age", options.min_release_age),
         ("overrides", merge_binary_overrides(inferred_overrides, options.overrides)),
@@ -391,6 +393,7 @@ def build_cli_options(
     debug: bool | None,
     no_cache: bool | None,
     min_version: str | None,
+    max_version: str | None = None,
     abspath_override: Any = None,
     version_override: Any = None,
     install_args_override: Any = None,
@@ -468,6 +471,7 @@ def build_cli_options(
             debug=resolve_debug(debug),
             no_cache=resolve_no_cache(no_cache),
             min_version=min_version,
+            max_version=max_version,
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
             overrides=normalized_overrides,
@@ -502,6 +506,7 @@ def build_cli_options(
         debug=_override(debug, group.debug),
         no_cache=_override(no_cache, group.no_cache),
         min_version=_override(min_version, group.min_version),
+        max_version=_override(max_version, group.max_version),
         postinstall_scripts=_override(postinstall_scripts, group.postinstall_scripts),
         min_release_age=_override(min_release_age, group.min_release_age),
         overrides=merge_binary_overrides(group.overrides, subcommand_overrides),
@@ -1051,6 +1056,13 @@ def shared_options(command):
             help="Allow post-install scripts ('True'/'False'/'1'/'0'/'None' or bare `--postinstall-scripts` for implicit True). Providers that can't disable them warn and ignore.",
         ),
         click.option(
+            "--max-version",
+            metavar="SEMVER",
+            default=None,
+            callback=_click_parse(_none_or_stripped),
+            help="Maximum acceptable Binary version (SemVer). Combine with --min-version for an exact required version.",
+        ),
+        click.option(
             "--min-version",
             metavar="SEMVER",
             default=None,
@@ -1161,6 +1173,7 @@ _SHARED_OPTION_NAMES: tuple[str, ...] = (
     "debug",
     "no_cache",
     "min_version",
+    "max_version",
     "abspath_override",
     "version_override",
     "install_args_override",
@@ -1987,6 +2000,7 @@ def search_command(
     )
     min_version_str = options.min_version
     min_version = SemVer.parse(min_version_str) if min_version_str else None
+    max_version = SemVer.parse(options.max_version) if options.max_version else None
 
     def _search(provider: BinProvider) -> tuple[str, list[Binary]]:
         try:
@@ -1994,6 +2008,7 @@ def search_command(
                 provider.search(
                     binary_name,
                     min_version=min_version,
+                    max_version=max_version,
                     min_release_age=options.min_release_age,
                     no_cache=options.no_cache,
                 ),

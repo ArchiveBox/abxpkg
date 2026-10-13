@@ -19,6 +19,7 @@ from .semver import SemVer
 _REQUEST_PROJECTION_FIELDS = {
     "name",
     "min_version",
+    "max_version",
     "postinstall_scripts",
     "min_release_age",
     "binproviders",
@@ -61,6 +62,7 @@ class BinaryRequestEvent(BaseEvent):
     name: str = Field(min_length=1)
     description: str = ""
     min_version: str | None = None
+    max_version: str | None = None
     postinstall_scripts: bool | None = None
     min_release_age: float | None = None
     binproviders: str | list[str] = "env"
@@ -442,6 +444,14 @@ class BinaryCacheService:
                 f"cached binary version {binary.loaded_version} is below "
                 f"requested minimum {min_version}"
             )
+        max_version = SemVer(event.max_version) if event.max_version else None
+        if max_version and (
+            binary.loaded_version is None or binary.loaded_version > max_version
+        ):
+            return (
+                f"cached binary version {binary.loaded_version} exceeds "
+                f"requested maximum {max_version}"
+            )
         return ""
 
 
@@ -459,6 +469,7 @@ class BinaryService:
         provider_names: str | list[str] | None = None,
         description: str = "",
         min_version: str | None = None,
+        max_version: str | None = None,
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         overrides: Mapping[str, Any] | None = None,
@@ -478,6 +489,7 @@ class BinaryService:
         self.provider_names = provider_names
         self.description = description
         self.min_version = min_version
+        self.max_version = max_version
         self.postinstall_scripts = postinstall_scripts
         self.min_release_age = min_release_age
         self.overrides = dict(overrides or {})
@@ -643,6 +655,11 @@ class BinaryService:
                 if (min_version := self._min_version_for_event(event))
                 else None
             ),
+            max_version=(
+                SemVer(max_version)
+                if (max_version := self._max_version_for_event(event))
+                else None
+            ),
             postinstall_scripts=self._postinstall_scripts_for_event(event),
             min_release_age=self._min_release_age_for_event(event),
             binproviders=self._providers_for_event(event),
@@ -691,6 +708,9 @@ class BinaryService:
 
     def _description_for_event(self, event: BinaryRequestEvent) -> str:
         return event.description or self.description
+
+    def _max_version_for_event(self, event: BinaryRequestEvent) -> str | None:
+        return self.max_version if event.max_version is None else event.max_version
 
     def _min_version_for_event(self, event: BinaryRequestEvent) -> str | None:
         return self.min_version if event.min_version is None else event.min_version
@@ -747,6 +767,7 @@ class BinaryService:
         request.update(
             {
                 "min_version": self._min_version_for_event(event),
+                "max_version": self._max_version_for_event(event),
                 "postinstall_scripts": self._postinstall_scripts_for_event(event),
                 "min_release_age": self._min_release_age_for_event(event),
                 "binproviders": self._provider_names(event.binproviders),

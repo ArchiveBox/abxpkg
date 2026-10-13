@@ -245,6 +245,7 @@ abx --min-version=2024.1.1 --min-release-age=3 yt-dlp --help
 | Flag | Type | Meaning |
 | --- | --- | --- |
 | `--min-version=SEMVER` | `str` | Minimum acceptable version (set on `Binary.min_version`). |
+| `--max-version=SEMVER` | `str` | Maximum acceptable version (set on `Binary.max_version`). |
 | `--postinstall-scripts[=BOOL]` | `bool` | Allow post-install scripts. Bare `--postinstall-scripts` = `True`. Providers that can't disable them warn-and-ignore. |
 | `--min-release-age=DAYS` | `float` | Minimum days since publication. Non-supporting providers warn-and-ignore. |
 | `--no-cache[=BOOL]` | `bool` | Skip cached/current-state checks and force fresh install/update/load probes. Bare `--no-cache` = `True`. |
@@ -363,7 +364,7 @@ curl = Binary(
 ).install()
 ```
 
-`min_version` is enforced after a provider resolves or installs a binary — provider discovery can still succeed, but the final `Binary` is rejected if the loaded version is below the floor. Use `min_version=None` to disable the check.
+`min_version` and `max_version` are inclusive bounds enforced after a provider resolves or installs a binary, including cached requests. A `None` bound is unconstrained. Set both to the same SemVer to require an exact version. Provider-specific `install_args` still select the package to install; they do not constrain an already-installed binary. For example, pair `min_version="2.5.8", max_version="2.5.8"` with `overrides={"uv": {"install_args": ["opendataloader-pdf==2.5.8"]}}` to reject an existing newer version and install the declared pin. Bounds validate the result; they do not choose an upper-bounded package version for the package manager.
 
 Pass `no_cache=True` to `load()` / `install()` / `update()` / `uninstall()` when you want to bypass cached/current-state checks. For `install()`, `no_cache=True` skips the initial `load()` check and forces a fresh install path. The equivalent CLI and env controls are `--no-cache` and `ABXPKG_NO_CACHE=1`.
 
@@ -753,7 +754,7 @@ Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin t
 
 **Per-`Binary` / per-`BinProvider` fields** (constructor kwargs, most-specific wins):
 
-- `min_version` can be set on any individual `Binary`.
+- `min_version` and `max_version` can be set on any individual `Binary`.
 - `min_release_age` can be set on `Binary` or `BinProvider`, or via `ABXPKG_MIN_RELEASE_AGE` (days).
 - `postinstall_scripts` can be set on `Binary` or `BinProvider`, or via `ABXPKG_POSTINSTALL_SCRIPTS`.
 - `no_cache` can be passed per-call to `load()` / `install()` / `update()` / `uninstall()`, or enabled globally for the CLI via `ABXPKG_NO_CACHE`.
@@ -1336,7 +1337,7 @@ Represents a single binary dependency aka a package (e.g. `wget`, `curl`, `ffmpe
 - `mtime` / `loaded_mtime`
 - `euid` / `loaded_euid`
 
-`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`. `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, `sha256`, `mtime`, and `euid` cleared after removal. `Binary.load()`, `Binary.install()`, and `Binary.update()` all enforce `min_version` consistently. All four lifecycle methods also accept `no_cache=True` to bypass cached/current-state checks.
+`Binary.install()` and `Binary.update()` return a fresh loaded `Binary`. `Binary.uninstall()` returns a `Binary` with `binprovider`, `abspath`, `version`, `sha256`, `mtime`, and `euid` cleared after removal. `Binary.load()`, `Binary.install()`, and `Binary.update()` all enforce `min_version` and `max_version` consistently. All four lifecycle methods also accept `no_cache=True` to bypass cached/current-state checks.
 
 ```python
 from abxpkg import Binary, SemVer, env, brew

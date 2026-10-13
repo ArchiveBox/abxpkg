@@ -62,6 +62,7 @@ class Binary(ShallowBinary):
     overrides: BinaryOverrides = Field(default_factory=dict)
 
     min_version: SemVer | None = None
+    max_version: SemVer | None = None
 
     postinstall_scripts: bool | None = Field(
         default=None,
@@ -106,11 +107,9 @@ class Binary(ShallowBinary):
     def parse_version(cls, value: Any) -> SemVer | None:
         return SemVer(value) if value else None
 
-    @field_validator("min_version", mode="before")
-    def parse_min_version(cls, value: Any) -> SemVer | None:
-        # Preserve the semantic difference between "no version floor" and an
-        # actual minimum version. `None` means any discovered version is
-        # acceptable; non-empty values get normalized into SemVer.
+    @field_validator("min_version", "max_version", mode="before")
+    def parse_version_bound(cls, value: Any) -> SemVer | None:
+        # None leaves this version bound unconstrained.
         return SemVer(value) if value else None
 
     @field_serializer("overrides", when_used="json")
@@ -197,6 +196,8 @@ class Binary(ShallowBinary):
             return False
         if self.min_version and self.loaded_version < self.min_version:
             return False
+        if self.max_version and self.loaded_version > self.max_version:
+            return False
         return True
 
     @log_method_call()
@@ -250,10 +251,10 @@ class Binary(ShallowBinary):
         mtime: int | None,
         euid: int | None,
     ) -> Self:
-        """Return a loaded copy and enforce the Binary-level min_version gate.
+        """Return a loaded copy and enforce the Binary-level version bounds.
 
         Providers can legitimately resolve a binary that still fails this
-        Binary's declared version floor. Keeping the final validation here makes
+        Binary's declared version bounds. Keeping the final validation here makes
         install/load/update all share one consistent check.
         """
         result = self.model_copy(
@@ -269,7 +270,7 @@ class Binary(ShallowBinary):
         )
         if not result.is_valid:
             raise ValueError(
-                f"{provider.name} resolved {self.name} with version {result.loaded_version} which does not satisfy min_version {self.min_version}",
+                f"{provider.name} resolved {self.name} with version {result.loaded_version} which does not satisfy min_version {self.min_version} and max_version {self.max_version}",
             )
         return result
 
@@ -329,6 +330,7 @@ class Binary(ShallowBinary):
                     postinstall_scripts=binary_postinstall_scripts,
                     min_release_age=binary_min_release_age,
                     min_version=self.min_version,
+                    max_version=self.max_version,
                 )
                 if installed_bin is not None and installed_bin.loaded_abspath:
                     installed = self._validated_loaded_copy(
@@ -459,6 +461,7 @@ class Binary(ShallowBinary):
                     postinstall_scripts=binary_postinstall_scripts,
                     min_release_age=binary_min_release_age,
                     min_version=self.min_version,
+                    max_version=self.max_version,
                 )
                 if updated_bin is not None and updated_bin.loaded_abspath:
                     return self._validated_loaded_copy(

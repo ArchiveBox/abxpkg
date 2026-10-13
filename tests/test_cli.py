@@ -29,6 +29,51 @@ from abxpkg import PROVIDER_CLASS_BY_INSTALLER_BIN, EnvProvider, PnpmProvider
 from abxpkg.config import load_derived_cache, save_derived_cache
 
 
+def test_cli_max_version_rejects_warm_run_and_installs_exact_version(tmp_path):
+    options = [
+        f"--lib={tmp_path / 'lib'}",
+        "--binproviders=uv",
+        "--postinstall-scripts=True",
+    ]
+    newer = _run_abxpkg_cli(
+        *options,
+        "install",
+        '--install-args=["black==24.4.2"]',
+        "black",
+    )
+    assert newer.returncode == 0, newer.stderr
+    warm = _run_abxpkg_cli(*options, "run", "black", "--version")
+    assert warm.returncode == 0, warm.stderr
+    assert "24.4.2" in warm.stdout
+    rejected = _run_abxpkg_cli(
+        *options,
+        "--max-version=23.1.0",
+        "run",
+        "black",
+        "--version",
+    )
+    assert rejected.returncode != 0
+    assert "max_version" in rejected.stderr
+    pinned = _run_abxpkg_cli(
+        *options,
+        "install",
+        "--min-version=23.1.0",
+        "--max-version=23.1.0",
+        '--install-args=["black==23.1.0"]',
+        "black",
+    )
+    assert pinned.returncode == 0, pinned.stderr
+    loaded = _run_abxpkg_cli(
+        *options,
+        "--max-version=23.1.0",
+        "run",
+        "black",
+        "--version",
+    )
+    assert loaded.returncode == 0, loaded.stderr
+    assert "23.1.0" in loaded.stdout
+
+
 def test_shebang_script_exec_replaces_launcher_so_sigterm_reaches_child(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text(

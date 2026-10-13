@@ -3211,17 +3211,23 @@ class BinProvider(BaseModel):
     ) -> bool:
         return False
 
-    def _assert_min_version_satisfied(
+    def _assert_version_bounds_satisfied(
         self,
         *,
         bin_name: BinName,
         action: Literal["install", "update"],
         loaded_version: SemVer | None,
         min_version: SemVer | None,
+        max_version: SemVer | None,
     ) -> None:
         if min_version and loaded_version and loaded_version < min_version:
             raise ValueError(
                 f"🚫 {self.__class__.__name__}.{action} resolved {bin_name} with version {loaded_version} which does not satisfy min_version {min_version}",
+            )
+
+        if max_version and loaded_version and loaded_version > max_version:
+            raise ValueError(
+                f"🚫 {self.__class__.__name__}.{action} resolved {bin_name} with version {loaded_version} which does not satisfy max_version {max_version}",
             )
 
     @final
@@ -3237,6 +3243,7 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        max_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         explicit_postinstall_scripts = postinstall_scripts is not None
         explicit_min_release_age = min_release_age is not None
@@ -3248,6 +3255,7 @@ class BinProvider(BaseModel):
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
+                max_version=max_version,
             )
         postinstall_scripts = (
             self.postinstall_scripts
@@ -3302,19 +3310,30 @@ class BinProvider(BaseModel):
             except Exception:
                 installed = None
             if installed is not None and (
-                min_version is None
-                or (
-                    installed.loaded_version is not None
-                    and installed.loaded_version >= min_version
+                (
+                    min_version is None
+                    or (
+                        installed.loaded_version is not None
+                        and installed.loaded_version >= min_version
+                    )
+                )
+                and (
+                    max_version is None
+                    or (
+                        installed.loaded_version is not None
+                        and installed.loaded_version <= max_version
+                    )
                 )
             ):
                 if not self.cached_binary_state_mismatch(bin_name, {}):
                     return installed
         if (
             installed is not None
-            and min_version is not None
             and installed.loaded_version is not None
-            and installed.loaded_version < min_version
+            and (
+                (min_version is not None and installed.loaded_version < min_version)
+                or (max_version is not None and installed.loaded_version > max_version)
+            )
         ):
             installed = self.update(
                 bin_name=bin_name,
@@ -3324,6 +3343,7 @@ class BinProvider(BaseModel):
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
+                max_version=max_version,
             )
             if installed:
                 return installed
@@ -3342,11 +3362,12 @@ class BinProvider(BaseModel):
         ):
             result = self.load(bin_name=bin_name, quiet=quiet, no_cache=no_cache)
             if result is not None:
-                self._assert_min_version_satisfied(
+                self._assert_version_bounds_satisfied(
                     bin_name=bin_name,
                     action="install",
                     loaded_version=result.loaded_version,
                     min_version=min_version,
+                    max_version=max_version,
                 )
             return result
 
@@ -3484,11 +3505,12 @@ class BinProvider(BaseModel):
                 )
             return None
         if result is not None:
-            self._assert_min_version_satisfied(
+            self._assert_version_bounds_satisfied(
                 bin_name=bin_name,
                 action="install",
                 loaded_version=result.loaded_version,
                 min_version=min_version,
+                max_version=max_version,
             )
         return result
 
@@ -3505,6 +3527,7 @@ class BinProvider(BaseModel):
         postinstall_scripts: bool | None = None,
         min_release_age: float | None = None,
         min_version: SemVer | None = None,
+        max_version: SemVer | None = None,
     ) -> ShallowBinary | None:
         if dry_run is not None and dry_run != self.dry_run:
             return self.get_provider_with_overrides(dry_run=dry_run).update(
@@ -3514,6 +3537,7 @@ class BinProvider(BaseModel):
                 postinstall_scripts=postinstall_scripts,
                 min_release_age=min_release_age,
                 min_version=min_version,
+                max_version=max_version,
             )
         postinstall_scripts = (
             self.postinstall_scripts
@@ -3625,11 +3649,12 @@ class BinProvider(BaseModel):
                 f"❌ {self.__class__.__name__} Unable to find version for {bin_name} after updating. PATH={self.PATH} LOG={update_log}"
             )
         if result is not None:
-            self._assert_min_version_satisfied(
+            self._assert_version_bounds_satisfied(
                 bin_name=bin_name,
                 action="update",
                 loaded_version=result.loaded_version,
                 min_version=min_version,
+                max_version=max_version,
             )
         return result
 
@@ -3728,6 +3753,7 @@ class BinProvider(BaseModel):
         min_release_age: float | None = None,
         no_cache: bool = False,
         timeout: int | None = None,
+        max_version: SemVer | None = None,
     ) -> "list[Binary]":
         """Search this provider's package index for matches of bin_name.
 
@@ -3772,9 +3798,9 @@ class BinProvider(BaseModel):
         binaries: list[Binary] = [
             result for result in results if isinstance(result, Binary)
         ]
-        if min_version is None:
+        if min_version is None and max_version is None:
             return binaries
-        # Filter by ``min_version`` centrally — handlers stash the
+        # Filter by version bounds centrally — handlers stash the
         # discovered package version somewhere in ``description`` (by
         # convention, the leading token, but we scan all whitespace-
         # separated tokens so handlers that put the version after a
@@ -3794,7 +3820,10 @@ class BinProvider(BaseModel):
                 ),
                 None,
             )
-            if discovered is not None and discovered < min_version:
+            if discovered is not None and (
+                (min_version is not None and discovered < min_version)
+                or (max_version is not None and discovered > max_version)
+            ):
                 continue
             filtered.append(binary)
         return filtered
