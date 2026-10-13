@@ -603,6 +603,32 @@ def _fingerprints_match(raw_fingerprints: object) -> bool:
     return True
 
 
+# Runners resolve every hook launch in-process (resolve_script_exec), and each
+# lookup reads ~17 providers' derived.env files. Decoding them again on every
+# launch cost ~100ms per hook with a 24MB env/derived.env (and tens of ms with
+# small ones), GIL-bound work that also stalls the runner's event loop. Reuse
+# the decoded cache while the file's identity is unchanged: every write replaces
+# content and so changes size/mtime/ctime (or the inode). Ownership and permission
+# checks still run on each lookup, before this memo is consulted. Records are
+# shared read-only; callers must copy before changing them.
+_DECODED_DERIVED_CACHES: dict[
+    str,
+    tuple[tuple[int, ...], dict[str, dict[str, object]]],
+] = {}
+
+
+def _file_identity(stat_result: os.stat_result) -> tuple[int, ...]:
+    return (
+        stat_result.st_dev,
+        stat_result.st_ino,
+        stat_result.st_size,
+        stat_result.st_mtime_ns,
+        stat_result.st_ctime_ns,
+        stat_result.st_uid,
+        stat_result.st_mode,
+    )
+
+
 def _cached_records(
     lib_dir: str | os.PathLike[str],
     provider_names: list[str],
@@ -639,25 +665,19 @@ def _cached_records(
                     or before.st_mode & 0o022
                 ):
                     continue
-                with os.fdopen(fd, encoding="utf-8") as cache_file:
-                    fd = -1
-                    contents = cache_file.read()
-                    after = os.fstat(cache_file.fileno())
-                stable_fields = (
-                    "st_dev",
-                    "st_ino",
-                    "st_size",
-                    "st_mtime_ns",
-                    "st_ctime_ns",
-                    "st_uid",
-                    "st_mode",
-                )
-                if any(
-                    getattr(before, field) != getattr(after, field)
-                    for field in stable_fields
-                ):
-                    continue
-                cache = load_derived_cache_text(contents)
+                identity = _file_identity(before)
+                memo = _DECODED_DERIVED_CACHES.get(derived_env_path)
+                if memo is not None and memo[0] == identity:
+                    cache = memo[1]
+                else:
+                    with os.fdopen(fd, encoding="utf-8") as cache_file:
+                        fd = -1
+                        contents = cache_file.read()
+                        after = os.fstat(cache_file.fileno())
+                    if _file_identity(after) != identity:
+                        continue
+                    cache = load_derived_cache_text(contents)
+                    _DECODED_DERIVED_CACHES[derived_env_path] = (identity, cache)
             except OSError:
                 continue
             finally:

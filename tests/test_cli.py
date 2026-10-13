@@ -4511,6 +4511,72 @@ def test_resolve_script_exec_matches_warm_wrapper_exec(tmp_path):
     )
 
 
+def test_resolve_script_exec_reuses_decoded_cache_until_it_changes(tmp_path):
+    lib = tmp_path / "lib"
+    node = shutil.which("node")
+    assert node is not None
+    (tmp_path / "config.json").write_text(
+        json.dumps({"required_binaries": ["node"]}),
+    )
+    script = _env_dump_script(tmp_path / "dump.js")
+    cwd = tmp_path / "output"
+    cwd.mkdir()
+    env = {
+        key: value for key, value in os.environ.items() if not key.startswith("ABXPKG_")
+    }
+    env["ABXPKG_LIB_DIR"] = str(lib)
+    env["PATH"] = os.pathsep.join(
+        (str(_abxpkg_executable().parent), str(Path(node).parent), os.defpath),
+    )
+    args = ["--url=https://example.com"]
+
+    def run_wrapper() -> None:
+        result = subprocess.run(
+            [str(script), *args],
+            env=env,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        assert result.returncode == 0, result.stderr
+
+    def resolve():
+        return cli_module.resolve_script_exec(str(script), args, env=env, cwd=str(cwd))
+
+    run_wrapper()  # cold: the wrapper resolves and records its plan
+    derived_env = lib / "env" / "derived.env"
+    cache = load_derived_cache(derived_env)
+    # A long-lived lib accumulates many records: make decoding the file cost
+    # far more than resolving from already-decoded records.
+    cache["unrelated-records"] = {"padding": ["x" * 64] * 200_000}
+    save_derived_cache(derived_env, cache)
+    assert resolve() is not None
+
+    decode_started = time.perf_counter()
+    load_derived_cache(derived_env)
+    decode_elapsed = time.perf_counter() - decode_started
+    resolve_elapsed = []
+    for _ in range(5):
+        started = time.perf_counter()
+        assert resolve() is not None
+        resolve_elapsed.append(time.perf_counter() - started)
+    # Each runner hook launch resolves in-process. Re-reading and decoding
+    # derived.env per launch made every hook pay for the whole cache file.
+    assert sorted(resolve_elapsed)[2] < decode_elapsed / 2
+
+    # Any rewrite of the file must be observed by the next lookup: dropping
+    # the plan makes the in-process shortcut decline, and the wrapper's next
+    # cold run restores it.
+    without_plans = load_derived_cache(derived_env)
+    for record in without_plans.values():
+        record.pop("script_exec_plans", None)
+    save_derived_cache(derived_env, without_plans)
+    assert resolve() is None
+    run_wrapper()
+    assert resolve() is not None
+
+
 def test_env_dependency_does_not_expand_derived_defaults_into_installer_fallbacks(
     tmp_path,
 ):
