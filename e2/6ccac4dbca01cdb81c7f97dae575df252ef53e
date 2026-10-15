@@ -1,0 +1,23 @@
+abxpkg/binprovider_puppeteer.py
+  s_10bc94d001be49::t_3212f00ae4bea8 35,943-958
+  s_10bc94d001be49::t_547f21d888b1b5 959-963
+tests/test_puppeteer_empty_apt.py
+  s_10bc94d001be49::t_b7efaefd26e220 1-62
+  s_10bc94d001be49::t_96bb4eca36309c 63-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e26ccac4dbca01cdb81c7f97dae575df252ef53e",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
