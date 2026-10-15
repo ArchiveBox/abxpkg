@@ -32,6 +32,7 @@ from .binprovider import (
     remap_kwargs,
 )
 from .binprovider_pnpm import PnpmProvider
+from .binprovider_apt import AptProvider
 from .logging import (
     format_command,
     format_subprocess_output,
@@ -939,6 +940,27 @@ class PuppeteerProvider(BinProvider):
             installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
         installer_bin = installer_binary.loaded_abspath
         assert installer_bin
+        # Puppeteer runs apt-get satisfy directly; unlike the apt provider it
+        # does not populate package indexes first. Slim images intentionally
+        # remove those indexes, even when unzip is already installed.
+        if (
+            sys.platform.startswith("linux")
+            and "--install-deps" in normalized_install_args
+        ):
+            apt_binary = EnvProvider().load("apt-get")
+            if apt_binary and apt_binary.loaded_abspath:
+                apt = AptProvider()
+                with apt.apt_lock():
+                    if not apt.apt_lists_recent():
+                        update = apt.exec(
+                            bin_name=apt_binary.loaded_abspath,
+                            cmd=["update", "-qq"],
+                            timeout=timeout
+                            if timeout is not None
+                            else self.install_timeout,
+                        )
+                        if update.returncode != 0:
+                            apt._raise_proc_error("update", "package indexes", update)
         self._install_chromium_system_deps(
             installer_bin,
             normalized_install_args,
