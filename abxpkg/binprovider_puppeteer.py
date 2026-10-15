@@ -268,13 +268,7 @@ class PuppeteerProvider(BinProvider):
             self.INSTALLER_BIN,
         )
 
-    def _cli_binary(
-        self,
-        *,
-        postinstall_scripts: bool,
-        min_release_age: float,
-        no_cache: bool = False,
-    ) -> Binary:
+    def _cli_provider(self) -> PnpmProvider:
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
         if (
             self.install_root is not None
@@ -286,8 +280,29 @@ class PuppeteerProvider(BinProvider):
             pnpm_install_root = self.install_root / "pnpm"
         else:
             pnpm_install_root = None
-        cli_provider = PnpmProvider(
+        return PnpmProvider(
             install_root=pnpm_install_root,
+            postinstall_scripts=self.postinstall_scripts,
+            min_release_age=self.min_release_age,
+        )
+
+    def exec_env_providers(self) -> list[BinProvider]:
+        providers = super().exec_env_providers()
+        if self.install_root is not None:
+            # A cached browsers CLI can be rediscovered through EnvProvider.
+            # Its pnpm-owned Node runtime must remain available after reload.
+            for provider in self._cli_provider().exec_env_providers():
+                self._append_unique_provider(providers, provider)
+        return providers
+
+    def _cli_binary(
+        self,
+        *,
+        postinstall_scripts: bool,
+        min_release_age: float,
+        no_cache: bool = False,
+    ) -> Binary:
+        cli_provider = self._cli_provider().get_provider_with_overrides(
             postinstall_scripts=postinstall_scripts,
             min_release_age=min_release_age,
         )
@@ -781,9 +796,19 @@ class PuppeteerProvider(BinProvider):
         if sudo_binary is None or sudo_binary.loaded_abspath is None:
             return None
 
+        # sudo's secure_path replaces PATH even with -E. Preserve the already
+        # resolved installer dependencies so its node shebang cannot select an
+        # older system Node than the one that bootstrapped Puppeteer.
+        installer_env = self.build_exec_env(providers=self.exec_env_providers())
         proc = self.exec(
             bin_name=sudo_binary.loaded_abspath,
-            cmd=["-E", str(installer_bin), "install", *install_args],
+            cmd=[
+                "-E",
+                f"PATH={installer_env['PATH']}",
+                str(installer_bin),
+                "install",
+                *install_args,
+            ],
             cwd=self.install_root or ".",
             timeout=self.install_timeout,
         )
