@@ -28,6 +28,57 @@ from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:
+    def test_revalidating_projection_uses_owning_provider_version_metadata(
+        self,
+        tmp_path,
+    ):
+        managed_provider = UvProvider(
+            install_root=tmp_path / "lib" / "uv",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={
+                "opendataloader-pdf": {"install_args": ["opendataloader-pdf==2.5.8"]},
+            },
+        )
+        managed = managed_provider.install("opendataloader-pdf")
+        assert managed is not None
+        assert managed.loaded_abspath is not None
+        assert managed.loaded_version == SemVer("2.5.8")
+        # This real CLI has no --version flag; the uv distribution owns its
+        # version metadata. A failed executable probe must not erase its link.
+        probe = subprocess.run(
+            [str(managed.loaded_abspath), "--version"],
+            capture_output=True,
+            text=True,
+        )
+        assert probe.returncode != 0
+        assert "input_path" in probe.stderr
+        env_root = tmp_path / "lib" / "env"
+        projected = EnvProvider(install_root=env_root).project_binary(
+            managed,
+            "opendataloader-pdf",
+        )
+        assert projected is not None and projected.is_symlink()
+        loaded = EnvProvider(install_root=env_root).load(
+            "opendataloader-pdf",
+            no_cache=True,
+        )
+        assert loaded is not None
+        assert loaded.loaded_abspath == projected
+        assert loaded.loaded_version == managed.loaded_version
+        assert loaded.loaded_sha256 == managed.loaded_sha256
+        assert loaded.loaded_binprovider is not None
+        assert loaded.loaded_binprovider.name == "uv"
+        assert projected.resolve() == managed.loaded_abspath.resolve()
+        command = subprocess.run(
+            [str(projected), "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert command.returncode == 0, command.stderr
+        assert "input_path" in command.stdout
+
     def test_quiet_version_probe_does_not_warn_before_provider_fallback(
         self,
         tmp_path,

@@ -4435,6 +4435,21 @@ class EnvProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> "VersionFuncReturnValue":
+        if abspath is not None:
+            projection_record = self._projection_cache_record(abspath, bin_name)
+            if projection_record is not None:
+                provider = self._resolved_provider_from_cache_record(projection_record)
+                if not isinstance(provider, EnvProvider):
+                    # A managed projection retains its provider's version
+                    # contract. Some real CLIs have no --version option and
+                    # must be checked through package metadata instead.
+                    return provider.get_provider_with_overrides(
+                        version_timeout=timeout,
+                    ).get_version(
+                        bin_name,
+                        abspath=Path(resolve_env_projection(abspath)),
+                        no_cache=no_cache,
+                    )
         owner = next(
             (
                 provider
