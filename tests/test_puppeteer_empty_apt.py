@@ -24,6 +24,34 @@ WORKDIR /tmp
     script = """
 from pathlib import Path
 from abxpkg import Binary, PuppeteerProvider
+import fcntl
+import threading
+import psutil
+
+observed_satisfy = threading.Event()
+unlocked_satisfy = []
+finished = threading.Event()
+def observe_real_apt():
+    while not finished.wait(0.005):
+        for proc in psutil.Process().children(recursive=True):
+            try:
+                args = proc.cmdline()
+                if not args or Path(args[0]).name != 'apt-get' or 'satisfy' not in args:
+                    continue
+                observed_satisfy.set()
+                with open('/tmp/abxpkg-apt.lock') as lock:
+                    try:
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        continue
+                    else:
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                        if proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE:
+                            unlocked_satisfy.append(args)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+observer = threading.Thread(target=observe_real_apt)
+observer.start()
 
 lists = Path('/var/lib/apt/lists')
 assert not any(p.is_file() and p.name != 'lock' for p in lists.iterdir())
@@ -32,7 +60,14 @@ browser = Binary(
     min_version='155.0.8059.79', max_version='155.0.8059.79',
     postinstall_scripts=True, min_release_age=0,
     overrides={'puppeteer': {'install_args': ['chrome@155.0.8059.79', '--install-deps']}},
-).install()
+)
+try:
+    browser = browser.install()
+finally:
+    finished.set()
+    observer.join()
+assert observed_satisfy.is_set(), 'No real apt-get satisfy observed'
+assert not unlocked_satisfy, f'Puppeteer ran APT without its shared lock: {unlocked_satisfy[:1]}'
 assert browser.loaded_abspath and browser.loaded_abspath.is_file()
 proc = browser.exec(cmd=['--headless', '--no-sandbox', '--disable-gpu', '--dump-dom',
                         'data:text/html,<h1>Actual stable Chrome works</h1>'], timeout=30)
@@ -70,6 +105,8 @@ print('PASS: empty-index install, stable Chrome DOM, unchanged indexes on reuse'
                 "3.13",
                 "--with",
                 "/src",
+                "--with",
+                "psutil",
                 "python",
                 "-",
             ],
