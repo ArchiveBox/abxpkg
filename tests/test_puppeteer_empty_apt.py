@@ -19,7 +19,7 @@ def test_stable_chrome_installs_system_dependencies_with_empty_apt_lists(
     image = f"abxpkg-empty-apt-test:{uuid.uuid4().hex}"
     dockerfile = """
 FROM ghcr.io/astral-sh/uv:0.10.6 AS uv
-FROM public.ecr.aws/docker/library/node:24.18.0-trixie-slim
+FROM docker.io/library/node:24.18.0-trixie-slim
 COPY --from=uv /uv /usr/bin/uv
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates unzip sudo && useradd --uid 911 --create-home abxtest && rm -rf /var/lib/apt/lists/*
 ENV UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_CACHE_DIR=/tmp/uv-cache ABXPKG_LIB_DIR=/opt/abxpkg ABXPKG_POSTINSTALL_SCRIPTS=true
