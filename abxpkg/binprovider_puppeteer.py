@@ -802,7 +802,10 @@ class PuppeteerProvider(BinProvider):
         # resolved installer dependencies so its node shebang cannot select an
         # older system Node than the one that bootstrapped Puppeteer.
         installer_env = self.build_exec_env(providers=self.exec_env_providers())
-        proc = self.exec(
+        # Use the existing privileged execution boundary. A user-owned provider
+        # otherwise permanently drops retained ruid=0 before invoking sudo.
+        privileged = self.model_copy(update={"euid": 0})
+        proc = privileged.exec(
             bin_name=sudo_binary.loaded_abspath,
             cmd=[
                 "-E",
@@ -820,7 +823,7 @@ class PuppeteerProvider(BinProvider):
                 # ArchiveBox can retain ruid=0 while running as its service user.
                 uid = os.geteuid()
                 gid = os.getegid()
-                chown_proc = self.exec(
+                chown_proc = privileged.exec(
                     bin_name=sudo_binary.loaded_abspath,
                     cmd=["chown", "-R", f"{uid}:{gid}", str(cache_dir)],
                     cwd=self.install_root or ".",

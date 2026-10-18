@@ -9,7 +9,11 @@ import pytest
 
 
 @pytest.mark.docker_required
-def test_stable_chrome_installs_system_dependencies_with_empty_apt_lists(test_machine):
+@pytest.mark.parametrize("run_as_uid", [0, 911])
+def test_stable_chrome_installs_system_dependencies_with_empty_apt_lists(
+    test_machine,
+    run_as_uid,
+):
     docker = test_machine.require_docker_daemon()
     repo = Path(__file__).resolve().parents[1]
     image = f"abxpkg-empty-apt-test:{uuid.uuid4().hex}"
@@ -17,8 +21,8 @@ def test_stable_chrome_installs_system_dependencies_with_empty_apt_lists(test_ma
 FROM ghcr.io/astral-sh/uv:0.10.6 AS uv
 FROM public.ecr.aws/docker/library/node:24.18.0-trixie-slim
 COPY --from=uv /uv /usr/bin/uv
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates unzip && rm -rf /var/lib/apt/lists/*
-ENV UV_PYTHON_PREFERENCE=only-managed ABXPKG_LIB_DIR=/opt/abxpkg ABXPKG_POSTINSTALL_SCRIPTS=true
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends ca-certificates unzip sudo && useradd --uid 911 --create-home abxtest && rm -rf /var/lib/apt/lists/*
+ENV UV_PYTHON_PREFERENCE=only-managed UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_CACHE_DIR=/tmp/uv-cache ABXPKG_LIB_DIR=/opt/abxpkg ABXPKG_POSTINSTALL_SCRIPTS=true
 WORKDIR /tmp
 """
     script = """
@@ -27,6 +31,20 @@ from abxpkg import Binary, PuppeteerProvider
 import fcntl
 import threading
 import psutil
+import os
+import pwd
+
+run_as_uid = __RUN_AS_UID__
+if run_as_uid:
+    account = pwd.getpwuid(run_as_uid)
+    Path('/opt/abxpkg').mkdir()
+    os.chown('/opt/abxpkg', run_as_uid, account.pw_gid)
+    os.setegid(account.pw_gid)
+    os.seteuid(run_as_uid)
+    os.environ['HOME'] = account.pw_dir
+    os.environ['USER'] = account.pw_name
+    os.environ['LOGNAME'] = account.pw_name
+assert os.getuid() == 0 and os.geteuid() == run_as_uid
 
 observed_satisfy = threading.Event()
 unlocked_satisfy = []
@@ -69,6 +87,7 @@ finally:
 assert observed_satisfy.is_set(), 'No real apt-get satisfy observed'
 assert not unlocked_satisfy, f'Puppeteer ran APT without its shared lock: {unlocked_satisfy[:1]}'
 assert browser.loaded_abspath and browser.loaded_abspath.is_file()
+assert browser.loaded_abspath.stat().st_uid == run_as_uid
 proc = browser.exec(cmd=['--headless', '--no-sandbox', '--disable-gpu', '--dump-dom',
                         'data:text/html,<h1>Actual stable Chrome works</h1>'], timeout=30)
 assert proc.returncode == 0, proc.stderr
@@ -79,7 +98,7 @@ again = browser.install()
 assert again.loaded_abspath == browser.loaded_abspath
 assert indexes == {p.name: p.stat().st_mtime_ns for p in lists.iterdir() if p.is_file() and p.name != 'lock'}
 print('PASS: empty-index install, stable Chrome DOM, unchanged indexes on reuse')
-"""
+""".replace("__RUN_AS_UID__", str(run_as_uid))
     try:
         build = subprocess.run(
             [docker, "build", "-t", image, "-"],
