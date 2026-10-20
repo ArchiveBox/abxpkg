@@ -1,0 +1,20 @@
+tests/conftest.py
+  h_923c208e183a7b 53-66
+tests/test_bunprovider.py
+  h_923c208e183a7b 217,222,231
+tests/test_pnpmprovider.py
+  h_923c208e183a7b 1179,1184,1193
+tests/test_yarnprovider.py
+  h_923c208e183a7b 183,188,197,202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8098356d05561e735967cab92f806d8c5be4534",
+  "prompts": {},
+  "humans": {
+    "h_923c208e183a7b": {
+      "author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
