@@ -50,6 +50,20 @@ def _ensure_test_machine_dependencies() -> None:
 
 
 class TestMachine:
+    def npm_release_age_excluding_latest(self, package: str) -> int:
+        with urllib.request.urlopen(
+            f"https://registry.npmjs.org/{package}",
+            timeout=30,
+        ) as response:
+            metadata = json.load(response)
+        latest = metadata["dist-tags"]["latest"]
+        published = datetime.fromisoformat(
+            metadata["time"][latest].replace("Z", "+00:00"),
+        )
+        # A fixed 365-day fixture stops excluding latest as the package ages.
+        # Keep the gate strict even when upstream has not released recently.
+        return max(365, (datetime.now(timezone.utc) - published).days + 2)
+
     def assert_npm_release_age_gate(
         self,
         package: str,

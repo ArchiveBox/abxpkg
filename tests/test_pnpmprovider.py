@@ -1176,11 +1176,12 @@ class TestPnpmProvider:
             assert not (lib_dir / "cache" / "pnpm").exists()
 
     def test_min_release_age_pins_to_older_version_when_strict(self, test_machine):
+        min_days = test_machine.npm_release_age_excluding_latest("zx")
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = PnpmProvider(
                 install_root=Path(tmpdir) / "pnpm",
                 postinstall_scripts=True,
-                min_release_age=365,
+                min_release_age=min_days,
             )
             assert strict_provider.supports_min_release_age("install") is True
             installed = strict_provider.install("zx")
@@ -1189,7 +1190,7 @@ class TestPnpmProvider:
             test_machine.assert_npm_release_age_gate(
                 "zx",
                 installed.loaded_version,
-                365,
+                min_days,
             )
 
     def test_supports_methods_do_not_emit_unsupported_warnings(self, caplog):

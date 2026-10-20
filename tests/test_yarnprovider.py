@@ -180,11 +180,12 @@ class TestYarnProvider:
             test_machine.assert_shallow_binary_loaded(installed)
 
     def test_min_release_age_pins_to_older_version_when_strict(self, test_machine):
+        min_days = test_machine.npm_release_age_excluding_latest("zx")
         with tempfile.TemporaryDirectory() as tmpdir:
             strict_provider = _berry_provider(
                 install_root=Path(tmpdir) / "yarn",
                 postinstall_scripts=True,
-                min_release_age=365,
+                min_release_age=min_days,
             )
             assert strict_provider.supports_min_release_age("install")
             installed = strict_provider.install("zx")
@@ -193,12 +194,12 @@ class TestYarnProvider:
             test_machine.assert_npm_release_age_gate(
                 "zx",
                 installed.loaded_version,
-                365,
+                min_days,
             )
             # Side effect: the .yarnrc.yml records the gate.
             yarnrc = Path(tmpdir) / "yarn" / ".yarnrc.yml"
             assert yarnrc.exists()
-            assert "npmMinimalAgeGate: 365d" in yarnrc.read_text()
+            assert f"npmMinimalAgeGate: {min_days}d" in yarnrc.read_text()
 
     def test_provider_defaults_and_binary_overrides_enforce_postinstall_scripts(
         self,
