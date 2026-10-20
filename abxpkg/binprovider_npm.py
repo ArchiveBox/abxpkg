@@ -816,6 +816,40 @@ class NpmProvider(BinProvider):
         except ValueError:
             pass
 
+        # Env projections retain the executable and owner, not install_args.
+        # Recover scoped package identity from its declared bin entry instead
+        # of guessing that the executable name is also the npm package name.
+        candidate = abspath or bin_abspath(bin_name, PATH=self.PATH)
+        if candidate is not None:
+            executable = Path(candidate).resolve()
+            for parent in executable.parents:
+                try:
+                    package_info = json.loads(
+                        (parent / "package.json").read_text(encoding="utf-8"),
+                    )
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(package_info, dict):
+                    continue
+                package_version = package_info.get("version")
+                if not isinstance(package_version, str):
+                    continue
+                package_bins = package_info.get("bin", {})
+                entries = (
+                    [package_bins]
+                    if isinstance(package_bins, str)
+                    else list(package_bins.values())
+                    if isinstance(package_bins, dict)
+                    else []
+                )
+                if any(
+                    isinstance(entry, str) and (parent / entry).resolve() == executable
+                    for entry in entries
+                ):
+                    version = SemVer.parse(package_version)
+                    if version:
+                        return version
+
         try:
             npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
             assert npm_abspath

@@ -6,6 +6,7 @@ import pytest
 
 from abxpkg import (
     Binary,
+    EnvProvider,
     NpmProvider,
     PnpmProvider,
     PuppeteerProvider,
@@ -14,6 +15,55 @@ from abxpkg import (
 
 
 class TestNpmProvider:
+    def test_scoped_package_without_version_flag_survives_env_projection(
+        self,
+        tmp_path: Path,
+    ):
+        npm_root = tmp_path / "npm"
+        installed = Binary(
+            name="mercury-parser",
+            binproviders=[NpmProvider(install_root=npm_root)],
+            overrides={
+                "npm": {"install_args": ["@jocmp/mercury-parser@3.1.1"]},
+            },
+        ).install()
+        assert installed is not None
+        assert installed.loaded_abspath is not None
+        assert installed.loaded_version == SemVer("3.1.1")
+        original_bytes = installed.loaded_abspath.read_bytes()
+        result = installed.exec(cmd=("--version",), quiet=True)
+        assert result.returncode == 0, result.stderr
+        assert "Usage:" in result.stdout
+        assert "3.1.1" not in result.stdout
+
+        env_root = tmp_path / "env"
+        projected = EnvProvider(install_root=env_root).project_binary(
+            installed,
+            "mercury-parser",
+        )
+        assert projected is not None
+        assert projected.resolve() == installed.loaded_abspath.resolve()
+        # A fresh owner reconstructed from the projection has no install_args.
+        # Its version must come from this executable's actual scoped package.
+        reloaded = EnvProvider(install_root=env_root).load(
+            "mercury-parser",
+            no_cache=True,
+        )
+        assert reloaded is not None
+        assert reloaded.loaded_version == SemVer("3.1.1")
+        assert reloaded.loaded_abspath == projected
+        assert projected.read_bytes() == original_bytes
+        assert reloaded.exec(cmd=("--help",), quiet=True).returncode == 0
+
+        explicit = NpmProvider(install_root=npm_root).get_provider_with_overrides(
+            overrides={"mercury-parser": {"version": "9.8.7"}},
+        )
+        assert explicit.get_version(
+            "mercury-parser",
+            abspath=installed.loaded_abspath,
+            no_cache=True,
+        ) == SemVer("9.8.7")
+
     def test_installer_binary_uses_host_first_provider_order(self, test_machine):
         installer = NpmProvider().INSTALLER_BINARY(no_cache=True)
         test_machine.assert_shallow_binary_loaded(installer)
