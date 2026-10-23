@@ -43,6 +43,7 @@ dependencies = [
     "platformdirs>=4.9.2",
     "pydantic>=2.12.5",
     "rich-click>=1.9.7",
+    "packaging>=26.3",
 ]
 
 [project.scripts]

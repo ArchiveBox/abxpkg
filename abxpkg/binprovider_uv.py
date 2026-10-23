@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import ClassVar, Self
 
 from platformdirs import user_cache_path
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.utils import canonicalize_name
 from pydantic import Field, TypeAdapter, computed_field, model_validator
 
 from .base_types import (
@@ -709,6 +711,72 @@ class UvProvider(BinProvider):
             )
         )
 
+    def _version_requirements(
+        self,
+        bin_name: BinName,
+        venv_root: Path | None = None,
+    ) -> list[Requirement]:
+        environment = {}
+        if venv_root is not None and (venv_root / "pyvenv.cfg").is_file():
+            for line in (venv_root / "pyvenv.cfg").read_text().splitlines():
+                key, _, value = line.partition("=")
+                if key.strip() == "version":
+                    environment["python_full_version"] = value.strip()
+                    environment["python_version"] = ".".join(
+                        value.strip().split(".")[:2],
+                    )
+        requirements = []
+        for argument in self.get_install_args(bin_name, quiet=True):
+            try:
+                requirement = Requirement(argument)
+            except InvalidRequirement:
+                # Installer switches, paths and bare URLs remain uv-owned.
+                continue
+            if requirement.specifier and (
+                requirement.marker is None or requirement.marker.evaluate(environment)
+            ):
+                requirements.append(requirement)
+        return requirements
+
+    def _get_version_at_abspath(
+        self,
+        bin_name: BinName,
+        installed_abspath: HostBinPath,
+        *,
+        quiet: bool,
+    ) -> SemVer | None:
+        if self.install_root:
+            owning_venv = next(
+                (
+                    parent
+                    for parent in installed_abspath.resolve().parents
+                    if (parent / "pyvenv.cfg").is_file()
+                ),
+                None,
+            )
+            if owning_venv is not None:
+                # Managed uv environments use this runtime's interpreter.
+                # A matching CLI version does not prove its pinned libraries
+                # were upgraded when a plugin changed only install_args.
+                location = self._runtime_site_packages(owning_venv)
+                for requirement in self._version_requirements(bin_name, owning_venv):
+                    distribution = next(
+                        iter(
+                            distributions(name=requirement.name, path=[str(location)]),
+                        ),
+                        None,
+                    )
+                    if distribution is None or not requirement.specifier.contains(
+                        distribution.version,
+                        prereleases=True,
+                    ):
+                        return None
+        return super()._get_version_at_abspath(
+            bin_name,
+            installed_abspath,
+            quiet=quiet,
+        )
+
     def get_cache_info(
         self,
         bin_name: BinName,
@@ -719,7 +787,6 @@ class UvProvider(BinProvider):
             return cache_info
 
         package_name = self.get_package_names(str(bin_name))[0]
-        normalized_name = package_name.lower().replace("-", "_")
         venv_roots = self._managed_venv_roots(str(bin_name))
         owning_venv = next(
             (
@@ -736,17 +803,27 @@ class UvProvider(BinProvider):
         venv_python = owning_venv / "bin" / "python"
         if venv_python.exists():
             cache_info["fingerprint_paths"].append(venv_python)
-        metadata_files = sorted(
-            (owning_venv / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/METADATA",
-            ),
-        ) or sorted(
-            (owning_venv / "lib").glob(
-                f"python*/site-packages/{normalized_name}*.dist-info/PKG-INFO",
-            ),
-        )
-        if metadata_files:
-            cache_info["fingerprint_paths"].append(metadata_files[0])
+        for name in dict.fromkeys(
+            [
+                package_name,
+                *(
+                    req.name
+                    for req in self._version_requirements(bin_name, owning_venv)
+                ),
+            ],
+        ):
+            normalized_name = canonicalize_name(name).replace("-", "_")
+            metadata_files = sorted(
+                (owning_venv / "lib").glob(
+                    f"python*/site-packages/{normalized_name}-*.dist-info/METADATA",
+                ),
+            ) or sorted(
+                (owning_venv / "lib").glob(
+                    f"python*/site-packages/{normalized_name}-*.dist-info/PKG-INFO",
+                ),
+            )
+            if metadata_files:
+                cache_info["fingerprint_paths"].append(metadata_files[0])
         return cache_info
 
     def _version_from_uv_metadata(

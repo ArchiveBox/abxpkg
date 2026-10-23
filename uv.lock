@@ -21,6 +21,7 @@ name = "abxpkg"
 version = "1.13.65"
 source = { editable = "." }
 dependencies = [
+    { name = "packaging" },
     { name = "platformdirs" },
     { name = "pydantic" },
     { name = "rich-click" },
@@ -80,6 +81,7 @@ requires-dist = [
     { name = "ansible", marker = "extra == 'ansible'", specifier = ">=12.3.0" },
     { name = "ansible-core", marker = "extra == 'ansible'", specifier = ">=2.0.0" },
     { name = "ansible-runner", marker = "extra == 'ansible'", specifier = ">=2.4.2" },
+    { name = "packaging", specifier = ">=26.3" },
     { name = "platformdirs", specifier = ">=4.9.2" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pyinfra", marker = "extra == 'pyinfra'", specifier = ">=3.6.1" },

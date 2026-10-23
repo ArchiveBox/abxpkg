@@ -1573,7 +1573,7 @@ class BinProvider(BaseModel):
         if fingerprints is None:
             return None
         return {
-            "version": 6,
+            "version": 7,
             "script": plan_key is not None,
             "run_context": run_context,
             "abspath": str(exec_abspath),

@@ -2,6 +2,7 @@ __package__ = "abxpkg"
 
 from typing import Any
 from typing import Self
+from pathlib import Path
 
 from pydantic import (
     Field,
@@ -15,6 +16,7 @@ from pydantic import (
 )
 
 from .semver import SemVer
+from .config import resolve_env_projection
 from .shallowbinary import ShallowBinary
 from .binprovider import BinProvider, EnvProvider, BinaryOverrides
 from .logging import (
@@ -272,6 +274,28 @@ class Binary(ShallowBinary):
             raise ValueError(
                 f"{provider.name} resolved {self.name} with version {result.loaded_version} which does not satisfy min_version {self.min_version} and max_version {self.max_version}",
             )
+        if abspath is not None:
+            source_path = Path(resolve_env_projection(abspath))
+            for candidate in self.binproviders:
+                owner = self.get_binprovider(candidate.name)
+                if owner.env_projection_target(source_path) is None:
+                    continue
+                if owner.name == provider.name and owner.get_install_args(
+                    self.name,
+                    quiet=True,
+                ) == provider.get_install_args(self.name, quiet=True):
+                    continue
+                # Env may expose a managed entrypoint, but only its owner can
+                # validate the current request's installation requirements.
+                owned = owner.load(self.name)
+                if (
+                    owned is None
+                    or owned.loaded_abspath is None
+                    or Path(resolve_env_projection(owned.loaded_abspath)) != source_path
+                ):
+                    raise ValueError(
+                        f"{owner.name} does not accept {source_path} for {self.name}",
+                    )
         return result
 
     @validate_call

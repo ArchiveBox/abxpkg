@@ -6,6 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, cast
+from importlib.metadata import distributions
 
 import pytest
 
@@ -15,6 +16,106 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
+    def test_dependency_pins_preserve_unowned_env_fallback(self, tmp_path):
+        external = (
+            UvProvider(
+                install_root=tmp_path / "external",
+                postinstall_scripts=True,
+                min_release_age=0,
+            )
+            .get_provider_with_overrides(
+                overrides={"cowsay": {"install_args": ["cowsay==6.1", "idna==3.10"]}},
+            )
+            .install("cowsay")
+        )
+        assert external is not None and external.loaded_abspath is not None
+        binary = Binary(
+            name="cowsay",
+            binproviders=[
+                UvProvider(install_root=tmp_path / "managed"),
+                EnvProvider(
+                    install_root=None,
+                    PATH=str(external.loaded_abspath.parent),
+                ),
+            ],
+            overrides={"uv": {"install_args": ["cowsay==6.1", "idna==3.11"]}},
+        ).load()
+        assert binary.loaded_abspath == external.loaded_abspath
+        assert binary.loaded_version == external.loaded_version
+        assert (
+            next(
+                iter(
+                    distributions(
+                        name="idna",
+                        path=[
+                            str(
+                                UvProvider._runtime_site_packages(
+                                    tmp_path / "external" / "venv",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ).version
+            == "3.10"
+        )
+
+    def test_declared_dependencies_validate_real_metadata_and_markers(self, tmp_path):
+        install_root = tmp_path / "uv-root"
+        arguments = [
+            "cowsay==6.1",
+            "requests[socks]==2.32.5",
+            "idna==3.11; python_version >= '3'",
+            "idna==2.0; python_version < '2'",
+            "--only-binary",
+            ":all:",
+        ]
+        provider = UvProvider(
+            install_root=install_root,
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"cowsay": {"install_args": arguments}},
+        )
+        installed = provider.install("cowsay")
+        assert installed is not None and installed.loaded_abspath is not None
+        location = provider._runtime_site_packages(install_root / "venv")
+        assert (
+            next(iter(distributions(name="idna", path=[str(location)]))).version
+            == "3.11"
+        )
+        assert (
+            next(iter(distributions(name="PySocks", path=[str(location)]))).version
+            == "1.7.1"
+        )
+        assert provider.load("cowsay") is not None
+        cache = load_derived_cache(provider.derived_env_path)
+        assert any(
+            "idna-3.11.dist-info/METADATA" in fingerprint["path"]
+            for record in cache.values()
+            if record.get("bin_name") == "cowsay"
+            for fingerprint in cast(list[dict[str, Any]], record.get("fingerprint", []))
+        )
+        older = provider.get_provider_with_overrides(
+            overrides={"cowsay": {"install_args": ["cowsay==6.1", "idna==3.10"]}},
+        )
+        downgraded = older.install("cowsay")
+        assert downgraded is not None
+        assert downgraded.loaded_abspath == installed.loaded_abspath
+        assert (
+            next(iter(distributions(name="idna", path=[str(location)]))).version
+            == "3.10"
+        )
+        assert provider.load("cowsay") is None
+        restored = provider.install("cowsay")
+        assert (
+            restored is not None and restored.loaded_abspath == installed.loaded_abspath
+        )
+        assert (
+            next(iter(distributions(name="idna", path=[str(location)]))).version
+            == "3.11"
+        )
+
     def test_uv_cache_is_enabled_unless_no_cache_is_explicit(self, tmp_path):
         provider = UvProvider(install_root=tmp_path / "uv")
 

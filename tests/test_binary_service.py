@@ -9,12 +9,90 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, cast
+from importlib.metadata import distributions
 
 import pytest
 import abxbus
 
 from abxpkg import Binary, EnvProvider, NodeProvider
 from abxpkg.semver import SemVer
+
+
+@pytest.mark.parametrize("absolute", [False, True])
+def test_binary_service_reconciles_uv_dependency_pins(tmp_path: Path, absolute: bool):
+    from abxpkg import UvProvider
+    from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+
+    root = tmp_path / "lib"
+    install_root = root / "uv" / "packages" / "cowsay"
+    provider = UvProvider(
+        install_root=install_root,
+        postinstall_scripts=True,
+        min_release_age=0,
+    ).get_provider_with_overrides(
+        overrides={"cowsay": {"install_args": ["cowsay==6.1", "idna==3.10"]}},
+    )
+    installed = provider.install("cowsay")
+    assert installed is not None and installed.loaded_abspath is not None
+    old_path = installed.loaded_abspath
+    site_packages = provider._runtime_site_packages(install_root / "venv")
+    assert (
+        next(iter(distributions(name="idna", path=[str(site_packages)]))).version
+        == "3.10"
+    )
+
+    async def run():
+        bus = abxbus.EventBus(name="uv_dependency_pin_reconciliation")
+        BinaryService(bus, lib_dir=root)
+
+        async def resolve(auto_install):
+            request = await bus.emit(
+                BinaryRequestEvent(
+                    name=str(old_path) if absolute else "cowsay",
+                    binproviders="uv,env",
+                    auto_install=auto_install,
+                    postinstall_scripts=True,
+                    min_release_age=0,
+                    overrides={
+                        "uv": {
+                            "install_root": str(install_root),
+                            "install_args": ["cowsay==6.1", "idna==3.11"],
+                        },
+                        "env": {"PATH": str(old_path.parent)},
+                    },
+                ),
+            ).now()
+            return await bus.find(
+                BinaryEvent,
+                child_of=request,
+                past=True,
+                future=False,
+            )
+
+        try:
+            assert await resolve(False) is None
+            assert (
+                next(
+                    iter(distributions(name="idna", path=[str(site_packages)])),
+                ).version
+                == "3.10"
+            )
+            for _ in range(2):
+                result = await resolve(True)
+                assert isinstance(result, BinaryEvent)
+                assert Path(result.abspath).resolve() == old_path.resolve()
+                assert SemVer(result.version) == installed.loaded_version
+                assert (
+                    next(
+                        iter(distributions(name="idna", path=[str(site_packages)])),
+                    ).version
+                    == "3.11"
+                )
+        finally:
+            await bus.wait_until_idle()
+            await bus.destroy(clear=False)
+
+    asyncio.run(run())
 
 
 def test_binary_service_max_version_rejects_cached_version_and_installs_pin(
@@ -55,7 +133,13 @@ def test_binary_service_max_version_rejects_cached_version_and_installs_pin(
                     min_version="23.1.0",
                     max_version=max_version,
                     postinstall_scripts=True,
-                    overrides={"uv": {"install_args": ["black==23.1.0"]}},
+                    overrides={
+                        "uv": {
+                            "install_args": [
+                                "black==23.1.0" if max_version else "black",
+                            ],
+                        },
+                    },
                 ),
             ).now()
             return await bus.find(
