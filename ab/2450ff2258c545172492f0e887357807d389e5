@@ -1,0 +1,21 @@
+abxpkg/binprovider_node.py
+  s_10bc94d001be49::t_388062b1a31ba0 35,48,52,56,60
+tests/test_nodeprovider.py
+  s_10bc94d001be49::t_f2cf34c13a8df2 57,69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab2450ff2258c545172492f0e887357807d389e5",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
