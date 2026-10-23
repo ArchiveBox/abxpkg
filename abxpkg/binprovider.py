@@ -2869,6 +2869,7 @@ class BinProvider(BaseModel):
             *,
             env: dict[str, str],
             preexec_fn: Callable[[], None] | None = None,
+            sudo_abspath: str | None = None,
         ) -> subprocess.CompletedProcess:
             if replace_process:
                 os.chdir(cwd_path)
@@ -2876,22 +2877,93 @@ class BinProvider(BaseModel):
                     preexec_fn()
                 os.execvpe(exec_cmd[0], exec_cmd, env)
 
-            if kwargs.get("capture_output", True):
-                return subprocess.run(
-                    exec_cmd,
-                    cwd=str(cwd_path),
-                    env=env,
-                    preexec_fn=preexec_fn,
-                    **kwargs,
-                )
-
-            popen_kwargs = kwargs.copy()
-            popen_kwargs.pop("capture_output", None)
-
             def start_child_group() -> None:
                 os.setsid()
                 if preexec_fn is not None:
                     preexec_fn()
+
+            popen_kwargs = kwargs.copy()
+            capture_output = popen_kwargs.pop("capture_output", True)
+            if capture_output:
+                timeout = popen_kwargs.pop("timeout", None)
+                check = popen_kwargs.pop("check", False)
+                input_data = popen_kwargs.pop("input", None)
+                if (
+                    popen_kwargs.get("stdout") is not None
+                    or popen_kwargs.get("stderr") is not None
+                ):
+                    raise ValueError(
+                        "stdout and stderr arguments may not be used with capture_output",
+                    )
+                popen_kwargs.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if input_data is not None:
+                    if popen_kwargs.get("stdin") is not None:
+                        raise ValueError(
+                            "stdin and input arguments may not both be used",
+                        )
+                    popen_kwargs["stdin"] = subprocess.PIPE
+                with subprocess.Popen(
+                    exec_cmd,
+                    cwd=str(cwd_path),
+                    env=env,
+                    preexec_fn=start_child_group,
+                    **popen_kwargs,
+                ) as proc:
+                    try:
+                        stdout, stderr = proc.communicate(input_data, timeout=timeout)
+                    except BaseException:
+                        # Killing sudo alone leaves privileged descendants alive.
+                        # Signal our fresh group with the same installation authority.
+                        for signum in (signal.SIGTERM, signal.SIGKILL):
+                            try:
+                                if sudo_abspath:
+                                    subprocess.run(
+                                        [
+                                            sudo_abspath,
+                                            "-n",
+                                            "--",
+                                            "kill",
+                                            f"-{signum}",
+                                            "--",
+                                            f"-{proc.pid}",
+                                        ],
+                                        capture_output=True,
+                                        timeout=5,
+                                        check=True,
+                                    )
+                                else:
+                                    os.killpg(proc.pid, signum)
+                            except ProcessLookupError:
+                                pass
+                            except (
+                                OSError,
+                                subprocess.SubprocessError,
+                            ) as cleanup_error:
+                                logger.warning(
+                                    "Could not signal command group: %s",
+                                    cleanup_error,
+                                )
+                            try:
+                                proc.communicate(timeout=5)
+                                break
+                            except subprocess.TimeoutExpired:
+                                continue
+                        if proc.poll() is None:
+                            proc.kill()
+                        raise
+                    if check and proc.returncode:
+                        raise subprocess.CalledProcessError(
+                            proc.returncode,
+                            exec_cmd,
+                            stdout,
+                            stderr,
+                        )
+                    return subprocess.CompletedProcess(
+                        exec_cmd,
+                        proc.returncode,
+                        stdout,
+                        stderr,
+                    )
 
             proc = subprocess.Popen(
                 exec_cmd,
@@ -2946,6 +3018,7 @@ class BinProvider(BaseModel):
                 sudo_proc = _run_exec(
                     sudo_cmd,
                     env=sudo_env,
+                    sudo_abspath=sudo_abspath,
                 )
                 if sudo_proc.returncode == 0:
                     return sudo_proc

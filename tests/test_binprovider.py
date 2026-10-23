@@ -3,6 +3,9 @@ import json
 import subprocess
 import tempfile
 import threading
+import signal
+import shutil
+import time
 from pathlib import Path
 import sys
 
@@ -956,6 +959,77 @@ class TestBinProvider:
                 timeout=2,
                 quiet=True,
             )
+
+    def test_exec_timeout_terminates_child_commands(self):
+        can_sudo = (
+            os.geteuid() != 0
+            and shutil.which("sudo") is not None
+            and subprocess.run(
+                ["sudo", "-n", "true"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+        provider = EnvProvider(
+            euid=0 if can_sudo else os.geteuid(),
+            postinstall_scripts=True,
+            min_release_age=3,
+        )
+        child_pid = None
+        started = time.monotonic()
+        try:
+            with pytest.raises(subprocess.TimeoutExpired) as caught:
+                provider.exec(
+                    "/bin/sh",
+                    cmd=["-c", "id -u; sleep 30 & echo $!; wait"],
+                    timeout=1,
+                    quiet=True,
+                )
+            command_uid, child = caught.value.output.strip().splitlines()
+            child_pid = int(child)
+            assert int(command_uid) == provider.EUID
+            assert time.monotonic() - started < 10
+            child = subprocess.run(
+                ["ps", "-p", str(child_pid), "-o", "stat=,comm="],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            assert not child.stdout.strip() or child.stdout.lstrip().startswith("Z"), (
+                child.stdout
+            )
+        finally:
+            if child_pid is not None:
+                if can_sudo:
+                    subprocess.run(
+                        ["sudo", "-n", "--", "kill", "-TERM", str(child_pid)],
+                        capture_output=True,
+                        check=False,
+                    )
+                else:
+                    try:
+                        os.kill(child_pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+
+    @pytest.mark.parametrize("text", [True, False])
+    def test_exec_preserves_captured_input_and_checked_failure(self, text):
+        provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
+        payload = "captured input\n" if text else b"captured input\n"
+        result = provider.exec("/bin/cat", input=payload, text=text, check=True)
+        assert result.stdout == payload
+        assert result.returncode == 0
+        with pytest.raises(subprocess.CalledProcessError) as caught:
+            provider.exec(
+                "/bin/sh",
+                ["-c", "printf output; printf error >&2; exit 7"],
+                text=text,
+                check=True,
+            )
+        assert caught.value.returncode == 7
+        assert caught.value.stdout == ("output" if text else b"output")
+        assert caught.value.stderr == ("error" if text else b"error")
 
     def test_docs_url_returns_provider_specific_link_for_unloaded_binary(self):
         from abxpkg import Binary, ShallowBinary
