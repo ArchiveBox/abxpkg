@@ -1,0 +1,23 @@
+abxpkg/binprovider.py
+  s_10bc94d001be49::t_edfe0f1df8b833 1833-1841,1927-1928
+abxpkg/binprovider_brew.py
+  s_10bc94d001be49::t_edfe0f1df8b833 219,341-343,669-671
+tests/test_brewprovider.py
+  s_10bc94d001be49::t_8eb7bd6d2a0e15 17-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "072b53cffeae39d78a0b18eab964f8747b08361f",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
