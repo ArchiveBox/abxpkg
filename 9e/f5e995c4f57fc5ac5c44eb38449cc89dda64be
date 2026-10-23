@@ -1,0 +1,20 @@
+.github/workflows/tests.yml
+  s_10bc94d001be49::t_71c08676830065 128-135
+  s_10bc94d001be49::t_981ab6d06a438c 136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ef5e995c4f57fc5ac5c44eb38449cc89dda64be",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
