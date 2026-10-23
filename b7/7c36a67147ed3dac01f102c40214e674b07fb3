@@ -1,0 +1,27 @@
+.github/workflows/deploy-pages.yml
+  s_10bc94d001be49::t_d1ab7028b3b4af 42
+.github/workflows/docs.yml
+  s_10bc94d001be49::t_410a81c493c376 46
+.github/workflows/release-candidate.yml
+  s_10bc94d001be49::t_6170f619378472 35
+.github/workflows/release.yml
+  s_10bc94d001be49::t_916c4291848fe9 103
+.github/workflows/tests.yml
+  s_10bc94d001be49::t_1d52afbb2992d0 46,101,136,185
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b77c36a67147ed3dac01f102c40214e674b07fb3",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
