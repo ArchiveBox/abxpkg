@@ -1,0 +1,41 @@
+tests/test_uvprovider.py
+  s_10bc94d001be49::t_6ee896face5d8a 19,31-35,40-44,62,83,85,103-105,107
+  s_10bc94d001be49::t_30e168abfbf69f 9,63-82,86-91,93-99,101-102,106
+  s_10bc94d001be49::t_481d0831f8f6bb 20-30,36-39,45-61,84,92,100
+  s_10bc94d001be49::t_8814848178e514 108-118
+tests/test_binary_service.py
+  s_10bc94d001be49::t_f4721b5d18a9f6 12,21-79,83,90
+  s_10bc94d001be49::t_4d2383267c5e5f 80-82,84-89,91-97,136-142
+abxpkg/binary.py
+  s_10bc94d001be49::t_5e0b4162f72505 5,19,277-298
+abxpkg/binprovider_uv.py
+  s_10bc94d001be49::t_1836c6a76c6f8b 20,714-719,721-725,734,760,807
+  s_10bc94d001be49::t_65de3ed81a3a09 19,726-733,735-759,761-779,806,808-809,811-813,815-818,823
+  s_10bc94d001be49::t_985029ace6bd07 720
+  s_10bc94d001be49::t_2740838e207009 810,814
+  s_10bc94d001be49::t_edcf329639cd3c 819-822,824-826
+tests/test_cli.py
+  s_10bc94d001be49::t_f3d0436b1228d2 991
+abxpkg/config.py
+  s_10bc94d001be49::t_0f9b3182d9a05a 760
+abxpkg/binprovider.py
+  s_10bc94d001be49::t_0f9b3182d9a05a 1576
+pyproject.toml
+  s_10bc94d001be49::t_137a06772e254d 46
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61c7ec5ffd4caee8146dcc1ca7b53a5b25089e1b",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
