@@ -54,7 +54,7 @@ class TestNodeProvider:
             assert (install_root / "bin" / "npm").exists()
             assert (
                 provider.exec("node", cmd=("--version",), quiet=True).stdout.strip()
-                == "v22.23.1"
+                == "v24.22.1"
             )
             assert provider.exec("npm", cmd=("--version",), quiet=True).returncode == 0
 
@@ -66,7 +66,7 @@ class TestNodeProvider:
             with pytest.raises(ValueError):
                 provider.install(
                     "node",
-                    min_version=SemVer("23.0.0"),
+                    min_version=SemVer("25.0.0"),
                     no_cache=True,
                 )
 
