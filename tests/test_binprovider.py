@@ -29,6 +29,7 @@ from abxpkg import (
     YarnProvider,
 )
 from abxpkg.binprovider import ShallowBinary
+from abxpkg.logging import format_subprocess_output
 
 
 class TestBinProvider:
@@ -799,11 +800,15 @@ class TestBinProvider:
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
-        chromium = PlaywrightProvider(
-            install_root=tmp_path / "host-playwright",
-            postinstall_scripts=True,
-            min_release_age=3,
-        ).install("chromium")
+        try:
+            chromium = PlaywrightProvider(
+                install_root=tmp_path / "host-playwright",
+                postinstall_scripts=True,
+                min_release_age=3,
+            ).install("chromium")
+        except subprocess.TimeoutExpired as exc:
+            exc.add_note(format_subprocess_output(exc.stdout, exc.stderr))
+            raise
         test_machine.assert_shallow_binary_loaded(
             chromium,
             assert_version_command=False,

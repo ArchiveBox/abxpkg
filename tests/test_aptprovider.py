@@ -10,6 +10,7 @@ import pytest
 
 import abxpkg.binprovider_apt as apt_module
 from abxpkg import AptProvider, Binary, EnvProvider
+from abxpkg.logging import format_subprocess_output
 
 
 class TestAptProviderConfig:
@@ -264,6 +265,9 @@ class TestAptProvider:
             assert installed.loaded_abspath is not None
             assert installed.loaded_abspath.parent.name == "sbin"
             assert installed.loaded_version is not None
+        except subprocess.TimeoutExpired as exc:
+            exc.add_note(format_subprocess_output(exc.stdout, exc.stderr))
+            raise
         finally:
             provider.uninstall(bin_name, quiet=True, no_cache=True)
 
