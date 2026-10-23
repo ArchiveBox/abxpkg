@@ -494,7 +494,9 @@ class AptProvider(BinProvider):
 
             proc = self.exec(
                 bin_name=installer_bin,
-                cmd=["install", "-y", "-qq", "--no-install-recommends", *install_args],
+                # Keep acquisition diagnostics in TimeoutExpired output; -qq
+                # hides the package/URI until unpacking starts.
+                cmd=["install", "-y", "-q", "--no-install-recommends", *install_args],
                 timeout=timeout,
             )
             if (
@@ -513,7 +515,7 @@ class AptProvider(BinProvider):
                     cmd=[
                         "install",
                         "-y",
-                        "-qq",
+                        "-q",
                         "--no-install-recommends",
                         *install_args,
                     ],
