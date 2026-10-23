@@ -125,6 +125,15 @@ jobs:
     steps:
     - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+    - name: Use the standard Ubuntu archive on hosted Linux
+      if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+      run: |
+        # The Azure mirror can trickle bytes indefinitely without triggering
+        # APT's stall timeout: https://github.com/actions/runner-images/issues/14823
+        if [[ -f /etc/apt/apt-mirrors.txt ]]; then
+          sudo sed -Ei '\|^http://azure\.archive\.ubuntu\.com/ubuntu/[[:space:]]+priority:1$|d' /etc/apt/apt-mirrors.txt
+        fi
+
     - name: Setup Python
       uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
       with:
