@@ -149,3 +149,7 @@ Documentation = "https://abxpkg.archivebox.io/"
 "Bug Tracker" = "https://github.com/ArchiveBox/abxpkg/issues"
 Changelog = "https://github.com/ArchiveBox/abxpkg/releases"
 Donate = "https://github.com/ArchiveBox/ArchiveBox/wiki/Donations"
+
+[tool.ruff.lint]
+# Keep the pre-0.16 Ruff policy explicit when upgrading the linter.
+select = ["E4", "E7", "E9", "F"]
