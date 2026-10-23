@@ -1830,6 +1830,15 @@ class BinProvider(BaseModel):
         Checks ``{INSTALLER_BIN}_BINARY`` env var (e.g. ``NPM_BINARY``) first.
         Subclasses override only if they need extra resolution logic.
         """
+        return self._resolve_installer_binary(no_cache=no_cache, install=True)
+
+    def _resolve_installer_binary(
+        self,
+        *,
+        no_cache: bool = False,
+        install: bool = False,
+    ) -> ShallowBinary:
+        """Resolve installer provenance, bootstrapping only for explicit use."""
         from . import Binary, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
@@ -1915,6 +1924,8 @@ class BinProvider(BaseModel):
             try:
                 loaded = installer.load(no_cache=no_cache)
             except BinaryLoadError:
+                if not install:
+                    raise
                 loaded = installer.install()
             if loaded and loaded.loaded_abspath:
                 if loaded.loaded_version and loaded.loaded_sha256:

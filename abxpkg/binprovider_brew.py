@@ -216,7 +216,7 @@ class BrewProvider(BinProvider):
         installer_binary = None if no_cache else self._INSTALLER_BINARY
         if installer_binary is None or installer_binary.loaded_abspath is None:
             try:
-                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                installer_binary = self._resolve_installer_binary(no_cache=no_cache)
             except Exception:
                 installer_binary = None
         installer_abspath = (
@@ -338,7 +338,9 @@ class BrewProvider(BinProvider):
 
             brew_binary = None
             try:
-                brew_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                # A fallback provider may be probed before apt installs a missing
+                # formula. Looking for installed packages must not install brew.
+                brew_binary = self._resolve_installer_binary(no_cache=no_cache)
             except Exception:
                 brew_binary = None
             brew_abspath = (
@@ -664,7 +666,9 @@ class BrewProvider(BinProvider):
             return self._refresh_bin_link(bin_name, abspath)
 
         try:
-            brew_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            brew_abspath = self._resolve_installer_binary(
+                no_cache=no_cache,
+            ).loaded_abspath
             assert brew_abspath
         except Exception:
             return None

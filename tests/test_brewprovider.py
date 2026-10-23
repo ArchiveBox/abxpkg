@@ -14,6 +14,26 @@ from abxpkg.exceptions import BinaryInstallError
 
 
 class TestBrewProvider:
+    def test_missing_formula_lookup_does_not_bootstrap_homebrew(self, tmp_path):
+        from .conftest import _run_with_lib_dir
+
+        result = _run_with_lib_dir(
+            str(tmp_path / "lib"),
+            """
+from pathlib import Path
+from abxpkg import BrewProvider
+from abxpkg.binprovider_brew import GUESSED_BREW_PREFIX
+
+brew_binary = GUESSED_BREW_PREFIX / 'bin' / 'brew'
+already_installed = brew_binary.exists()
+provider = BrewProvider()
+assert provider.load('abxpkg-missing-formula-probe', no_cache=True) is None
+assert brew_binary.exists() == already_installed, 'Availability lookup installed Homebrew'
+assert not (Path(provider.install_root).parent / 'bash' / 'bin' / 'brew').exists()
+""",
+        )
+        assert result.returncode == 0, result.stderr
+
     def test_shallow_repository_uses_homebrew_owned_version_floor(
         self,
         tmp_path,
