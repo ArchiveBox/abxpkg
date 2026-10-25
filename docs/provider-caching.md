@@ -46,6 +46,11 @@ miss; compare warm runs in the same environment.
   launcher or Python venv. Blanket `realpath()` at the execution boundary can
   discard `pyvenv.cfg` discovery or break launchers that use argv[0]. Canonical
   paths used for identity comparison are not automatically valid launch paths.
+* Publish a projection's link and owner metadata under the same mutation lock.
+  Host discovery must recheck that metadata after acquiring its write lock:
+  another installer may have selected a pinned runtime during the host probe.
+  Otherwise a concurrent bootstrap can silently replace the required Node with
+  the ambient host version, even after dependency resolution returned success.
 * Script requests retain their schema's declared name: an alias need not equal
   the executable basename. The script helper validates that a declared-name
   cache result resolves to the requested path before using it.

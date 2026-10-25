@@ -4155,6 +4155,7 @@ class EnvProvider(BinProvider):
         self.add_host_bin_dir(abspath.parent)
         return {}
 
+    @mutation_locked
     def project_binary(
         self,
         binary: ShallowBinary,
@@ -4174,6 +4175,9 @@ class EnvProvider(BinProvider):
             )
         if loaded_binprovider is not None:
             self.set_projection_providers([loaded_binprovider])
+        # Publish the link and its owner metadata together. Otherwise another
+        # installer can see an unowned link and replace a pinned runtime with
+        # the host executable while this projection is still being recorded.
         projected_abspath = self._link_loaded_binary(
             Path(str(bin_name)).name,
             binary.loaded_abspath,
@@ -4798,6 +4802,22 @@ class EnvProvider(BinProvider):
                     return abspath
                 link_path = self.bin_dir / Path(bin_name_str).name
                 with self.mutation_lock():
+                    # A concurrent dependency request may have published a
+                    # managed runtime while we probed this host candidate.
+                    # Preserve that choice; load() validates it after return.
+                    projected_abspath = bin_abspath(
+                        bin_name_str,
+                        PATH=str(self.bin_dir),
+                    )
+                    if (
+                        projected_abspath is not None
+                        and self._projection_cache_record(
+                            projected_abspath,
+                            str(bin_name),
+                        )
+                        is not None
+                    ):
+                        return projected_abspath
                     projected_abspath = self._link_loaded_binary(
                         bin_name_str,
                         abspath,
