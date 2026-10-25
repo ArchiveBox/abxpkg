@@ -1,0 +1,26 @@
+abxpkg/binprovider.py
+  s_10bc94d001be49::t_d1d26e93403abe 4158,4178-4180,4805-4814
+  s_10bc94d001be49::t_cbb05f41f90fe8 4815-4820
+tests/test_env_projection_concurrency.py
+  s_10bc94d001be49::t_e37879151eacaa 7-13
+  s_10bc94d001be49::t_a47fcc657e9039 1-6,14-41
+  s_10bc94d001be49::t_5bc30b955ca3f7 42-47
+docs/provider-caching.md
+  s_10bc94d001be49::t_fd13036a5234e7 49-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0be3d13be7085fd0a6010af45d96abe98e633123",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
