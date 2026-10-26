@@ -179,7 +179,7 @@ def test_env_deps_from_honors_dependency_binproviders(tmp_path):
     assert (package_root / "node_modules" / "abxbus" / "package.json").exists()
 
 
-def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
+def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path, test_machine):
     lib_dir = tmp_path / "lib"
     package_root = lib_dir / "npm" / "packages" / "pnpm"
     config_path = tmp_path / "config.json"
@@ -237,6 +237,10 @@ def test_env_deps_from_projects_managed_pnpm_before_export(tmp_path):
     assert loaded_projection.loaded_abspath == projected
     assert loaded_projection.loaded_binprovider is not None
     assert loaded_projection.loaded_binprovider.name == "npm"
+    test_machine.assert_shallow_binary_loaded(
+        loaded_projection,
+        assert_version_command=True,
+    )
 
     version = _run_abxpkg_cli(
         f"--lib={lib_dir}",

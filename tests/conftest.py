@@ -30,6 +30,7 @@ from abxpkg import (
     SemVer,
 )
 from abxpkg.exceptions import BinaryLoadError
+from abxpkg.config import resolve_env_projection
 
 
 def _ensure_test_machine_dependencies() -> None:
@@ -166,9 +167,14 @@ class TestMachine:
         assert bool(str(loaded))
 
         provider = loaded.loaded_binprovider
-        assert (
-            provider.get_abspath(loaded.name, quiet=True, no_cache=True)
-            == loaded.loaded_abspath
+        provider_abspath = provider.get_abspath(loaded.name, quiet=True, no_cache=True)
+        assert provider_abspath is not None
+        # Public metadata may retain an env/bin alias while loaded_binprovider
+        # identifies the installation owner. Compare the exact executable launch
+        # paths through the same projection resolver as execution; realpath()
+        # would incorrectly equate distinct Python venv launchers.
+        assert resolve_env_projection(provider_abspath) == resolve_env_projection(
+            loaded.loaded_abspath,
         )
         assert (
             provider.get_version(loaded.name, quiet=True, no_cache=True)
