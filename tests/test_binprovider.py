@@ -1,5 +1,6 @@
 import os
 import json
+import pty
 import subprocess
 import tempfile
 import threading
@@ -1035,6 +1036,48 @@ class TestBinProvider:
         assert caught.value.returncode == 7
         assert caught.value.stdout == ("output" if text else b"output")
         assert caught.value.stderr == ("error" if text else b"error")
+
+    @pytest.mark.parametrize("inherit_stdin", [False, True])
+    def test_captured_exec_leaves_terminal_input_with_the_caller(self, inherit_stdin):
+        # A real terminal exposes the difference from PIPE/DEVNULL-backed pytest
+        # stdin. Captured probes run in their own session; inheriting an unowned
+        # PTY let Chrome --version revoke the caller's terminal on macOS. Explicit
+        # stdin=None remains an opt-in to subprocess's inheritance semantics.
+        master, slave = pty.openpty()
+        try:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    """
+import json, os, sys
+from abxpkg import EnvProvider
+before = os.isatty(0)
+options = {"stdin": None} if sys.argv[1] == "inherit" else {}
+result = EnvProvider().exec(
+    sys.executable, ["-c", "import os; print(os.isatty(0))"],
+    timeout=5, check=True, **options,
+)
+print(json.dumps({"before": before, "after": os.isatty(0),
+                  "child_tty": result.stdout.strip()}))
+""",
+                    "inherit" if inherit_stdin else "default",
+                ],
+                stdin=slave,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=True,
+                start_new_session=True,
+            )
+        finally:
+            os.close(slave)
+            os.close(master)
+        assert json.loads(result.stdout) == {
+            "before": True,
+            "after": True,
+            "child_tty": str(inherit_stdin),
+        }
 
     def test_docs_url_returns_provider_specific_link_for_unloaded_binary(self):
         from abxpkg import Binary, ShallowBinary

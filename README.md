@@ -445,6 +445,8 @@ print(curl.abspath, curl.version, curl.binprovider, curl.is_valid)  # Path(...) 
 curl.exec(cmd=['--version'])                                        # curl 8.4.0 (x86_64-apple-darwin23.0) libcurl/8.4.0 ...
 ```
 
+Captured commands default to disconnected stdin so installers and version probes cannot take over the caller's terminal. Pass `input=` to supply input, or explicit `stdin=None` to inherit it; interactive execution keeps its existing terminal behavior.
+
 </details>
 
 

@@ -2902,6 +2902,14 @@ class BinProvider(BaseModel):
                             "stdin and input arguments may not both be used",
                         )
                     popen_kwargs["stdin"] = subprocess.PIPE
+                else:
+                    # Captured installers/probes must not take the caller's
+                    # terminal input into their separate session. On macOS even
+                    # Chrome --version can revoke an inherited unowned PTY and
+                    # invalidate all of the caller's standard streams on exit.
+                    # Explicit stdin (including None) and interactive exec keep
+                    # their existing behavior; input= still uses the pipe above.
+                    popen_kwargs.setdefault("stdin", subprocess.DEVNULL)
                 with subprocess.Popen(
                     exec_cmd,
                     cwd=str(cwd_path),
