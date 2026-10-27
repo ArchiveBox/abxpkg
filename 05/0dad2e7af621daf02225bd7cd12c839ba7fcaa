@@ -1,0 +1,21 @@
+abxpkg/binprovider_uv.py
+  s_10bc94d001be49::t_f9e377e13a2061 431-437
+tests/test_uv_sudo.py
+  s_10bc94d001be49::t_1232eec8dd2ac1 1-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "050dad2e7af621daf02225bd7cd12c839ba7fcaa",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
