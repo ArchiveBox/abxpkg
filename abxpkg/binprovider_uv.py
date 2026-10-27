@@ -428,6 +428,13 @@ class UvProvider(BinProvider):
         sudo_uid = self._sudo_managed_install_euid()
         if sudo_uid is not None:
             return sudo_uid
+        if self.install_root is not None:
+            # A fresh managed environment belongs to its caller, not whoever
+            # installed the shared uv executable. Debian installs uv as the
+            # service account, while personal collections run as their owner
+            # (possibly with ruid=0/euid=user after sudo). Switching that user
+            # to uv's owner loses access to the collection and package tree.
+            return os.geteuid()
         return super().detect_euid(
             owner_paths=owner_paths,
             preserve_root=True,
