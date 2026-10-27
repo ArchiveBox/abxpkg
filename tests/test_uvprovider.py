@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 from importlib.metadata import distributions
+from contextlib import chdir
 
 import pytest
 
@@ -618,6 +619,37 @@ class TestUvProvider:
                     )
                     == installed.loaded_version
                 )
+
+    def test_zero_release_age_overrides_project_cutoff_for_install_and_update(
+        self,
+        tmp_path,
+    ):
+        # A plugin can explicitly allow a freshly released fix. uv must not
+        # silently replace that policy with the unrelated caller project's age.
+        project = tmp_path / "project"
+        project.mkdir()
+        (project / "uv.toml").write_text('exclude-newer = "2000-01-01T00:00:00Z"\n')
+        provider = UvProvider(
+            install_root=tmp_path / "uv",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"cowsay": {"install_args": ["cowsay==6.0"]}},
+        )
+        with chdir(project):
+            installed = provider.install("cowsay")
+            assert installed is not None and installed.loaded_abspath is not None
+            assert installed.loaded_version == SemVer("6.0")
+            result = installed.exec(cmd=["-t", "installed under explicit age policy"])
+            assert result.returncode == 0 and "explicit age policy" in result.stdout
+            updated = provider.get_provider_with_overrides(
+                overrides={"cowsay": {"install_args": ["cowsay==6.1"]}},
+            ).update("cowsay")
+            assert updated is not None
+            assert updated.loaded_abspath == installed.loaded_abspath
+            assert updated.loaded_version == SemVer("6.1")
+            result = updated.exec(cmd=["-t", "updated under explicit age policy"])
+            assert result.returncode == 0 and "explicit age policy" in result.stdout
 
     def test_install_args_win_for_exclude_newer_flag(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -666,11 +666,13 @@ class UvProvider(BinProvider):
     @staticmethod
     def _release_age_cutoff(min_release_age: float | None) -> str | None:
         """Translate ``min_release_age`` days into uv's ``--exclude-newer`` timestamp."""
-        if min_release_age is None or min_release_age <= 0:
+        if min_release_age is None:
             return None
         from datetime import datetime, timedelta
 
-        return (datetime.now(UTC) - timedelta(days=min_release_age)).strftime(
+        # Explicit zero must also reach uv: omitting the flag lets an unrelated
+        # caller's uv.toml age cutoff silently override the provider's policy.
+        return (datetime.now(UTC) - timedelta(days=max(0, min_release_age))).strftime(
             "%Y-%m-%dT%H:%M:%SZ",
         )
 
