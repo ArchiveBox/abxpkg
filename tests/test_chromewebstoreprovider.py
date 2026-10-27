@@ -75,6 +75,58 @@ class TestChromeWebstoreProvider:
                 server.shutdown()
                 thread.join()
 
+    def test_update_replaces_cached_extension_without_no_cache(self, test_machine):
+        test_machine.require_tool("node")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            install_args = [
+                "mpiodijhokgodhhofbcjdecpffjipkle",
+                "--name=singlefile",
+            ]
+            provider = ChromeWebstoreProvider(
+                install_root=root,
+                bin_dir=root / "extensions",
+            ).get_provider_with_overrides(
+                overrides={
+                    "singlefile": {
+                        "install_args": [
+                            *install_args,
+                            "--url=https://github.com/gildas-lormeau/SingleFile/releases/download/v1.31.5/singlefile-extension-source.zip",
+                        ],
+                    },
+                },
+            )
+            installed = provider.install("singlefile")
+            assert_extension_binary_loaded(installed)
+            assert str(installed.loaded_version) == "1.31.5"
+            before = json.loads(installed.loaded_abspath.read_text())
+            before_sha256 = hashlib.sha256(
+                Path(before["crx_path"]).read_bytes(),
+            ).hexdigest()
+
+            # Use actual published archives: an update must replace the cached
+            # payload without requiring callers to know the provider's caches.
+            provider = provider.get_provider_with_overrides(
+                overrides={
+                    "singlefile": {
+                        "install_args": [
+                            *install_args,
+                            "--url=https://github.com/gildas-lormeau/SingleFile/releases/download/v1.32.0/singlefile-extension-source.zip",
+                        ],
+                    },
+                },
+            )
+            updated = provider.update("singlefile")
+            assert_extension_binary_loaded(updated)
+            assert str(updated.loaded_version) == "1.32.0"
+            after = json.loads(updated.loaded_abspath.read_text())
+            after_sha256 = hashlib.sha256(
+                Path(after["crx_path"]).read_bytes(),
+            ).hexdigest()
+            assert after_sha256 != before_sha256
+            manifest = Path(after["unpacked_path"]) / "manifest.json"
+            assert json.loads(manifest.read_text())["version"] == "1.32.0"
+
     def test_unzip_dependency_uses_native_system_package_providers(self):
         provider = ChromeWebstoreProvider()
 

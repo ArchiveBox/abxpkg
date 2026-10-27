@@ -65,7 +65,7 @@ class ChromeWebstoreProvider(BinProvider):
             "version": "self.chromewebstore_version_handler",
             "install_args": "self.chromewebstore_install_args_handler",
             "install": "self.chromewebstore_install_handler",
-            "update": "self.chromewebstore_install_handler",
+            "update": "self.chromewebstore_update_handler",
             "uninstall": "self.chromewebstore_uninstall_handler",
             "docs_url": "self.default_docs_url_handler",
             "search": "self.chromewebstore_search_handler",
@@ -411,6 +411,26 @@ class ChromeWebstoreProvider(BinProvider):
         self._sanitize_unpacked_extension(unpacked_path)
 
         return format_subprocess_output(proc.stdout, proc.stderr)
+
+    @remap_kwargs({"packages": "install_args"})
+    def chromewebstore_update_handler(
+        self,
+        bin_name: str,
+        install_args: list[str] | tuple[str, ...] | None = None,
+        timeout: int | None = None,
+        no_cache: bool = False,
+        **context,
+    ) -> str:
+        # Install may reuse an existing extension, but an explicit update must
+        # fetch and unpack its source again. Otherwise both JS cache layers keep
+        # returning the old manifest even when a required minimum version rose.
+        return self.chromewebstore_install_handler(
+            bin_name,
+            install_args=install_args,
+            timeout=timeout,
+            no_cache=True,
+            **context,
+        )
 
     @remap_kwargs({"packages": "install_args"})
     def chromewebstore_uninstall_handler(
