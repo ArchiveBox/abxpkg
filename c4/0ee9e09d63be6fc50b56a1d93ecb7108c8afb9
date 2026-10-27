@@ -1,0 +1,21 @@
+abxpkg/binprovider_chromewebstore.py
+  s_10bc94d001be49::t_6b4b5e21300bde 68,415-434
+tests/test_chromewebstoreprovider.py
+  s_10bc94d001be49::t_2d8c070993e4d0 78-129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c40ee9e09d63be6fc50b56a1d93ecb7108c8afb9",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
