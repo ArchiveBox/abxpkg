@@ -5,6 +5,7 @@ from .conftest import (
 # ci-runner: hosted
 # Requires a real Docker daemon; NAS runners do not expose the host socket.
 import logging
+import json
 import multiprocessing
 import os
 import pwd
@@ -14,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, EnvProvider, NpmProvider, PnpmProvider, SemVer
+from abxpkg import Binary, EnvProvider, NodeProvider, NpmProvider, PnpmProvider, SemVer
 from abxpkg.base_types import bin_abspath
 from abxpkg.config import load_derived_cache
 from abxpkg.exceptions import (
@@ -389,6 +390,79 @@ class TestPnpmProvider:
             assert projected_pnpm.resolve() == Path(pnpm_binary).resolve()
             assert version.returncode == 0, version.stderr
             assert not (lib_dir / "bin").exists()
+
+    def test_pnpm_uses_managed_node_before_host_projection(
+        self,
+        tmp_path,
+        test_machine,
+    ):
+        host_node = Path(test_machine.require_tool("node")).absolute()
+        lib_dir = tmp_path / "lib"
+        managed = Binary(
+            name="node",
+            binproviders=[NodeProvider(install_root=lib_dir / "node")],
+            min_version=SemVer("24.22.1"),
+            max_version=SemVer("24.22.1"),
+        ).install()
+        assert managed.loaded_abspath is not None
+        assert managed.loaded_abspath.resolve() != host_node.resolve()
+        projection = EnvProvider(
+            install_root=lib_dir / "env",
+            PATH=str(host_node.parent),
+        )
+        assert projection.load("node") is not None
+        provider = PnpmProvider(
+            install_root=lib_dir / "pnpm" / "packages" / "probe",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        installer = provider.INSTALLER_BINARY()
+        assert installer.loaded_abspath is not None
+        (provider.install_root / "package.json").write_text('{"private": true}\n')
+        result = provider.exec(
+            installer.loaded_abspath,
+            cmd=(
+                "exec",
+                "node",
+                "-p",
+                "JSON.stringify({execPath:process.execPath,version:process.version})",
+            ),
+            cwd=provider.install_root,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        actual = json.loads(result.stdout)
+        assert Path(actual["execPath"]).resolve() == managed.loaded_abspath.resolve()
+        assert actual["version"] == f"v{managed.loaded_version}"
+        exec_env = provider.build_exec_env(
+            providers=provider.exec_env_providers(),
+            base_env={},
+        )
+        assert exec_env["NODE_PATH"].split(os.pathsep)[0] == str(
+            provider.install_root / "node_modules",
+        )
+        projection.set_projection_providers([provider])
+        projected_env = projection.build_exec_env(
+            providers=projection.exec_env_providers(),
+        )
+        projected = subprocess.run(
+            [
+                str(installer.loaded_abspath),
+                "exec",
+                "node",
+                "-p",
+                "JSON.stringify({execPath:process.execPath,version:process.version})",
+            ],
+            cwd=provider.install_root,
+            env=projected_env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert projected.returncode == 0, projected.stderr
+        actual = json.loads(projected.stdout)
+        assert Path(actual["execPath"]).resolve() == managed.loaded_abspath.resolve()
+        assert actual["version"] == f"v{managed.loaded_version}"
 
     def test_env_projection_exec_env_includes_projected_pnpm_owner(
         self,

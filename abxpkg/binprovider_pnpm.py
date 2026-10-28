@@ -265,6 +265,12 @@ class PnpmProvider(BinProvider):
         if npm_binary and os.path.isabs(npm_binary) and Path(npm_binary).is_file():
             path_entries.append(Path(npm_binary).parent)
         self.PATH = self._merge_PATH(*path_entries, PATH=self.PATH)
+        if managed_lib_dir is not None:
+            node_bin_dir = managed_lib_dir / "node" / "bin"
+            if (node_bin_dir / "node").is_file():
+                # Env projections retain this provider's PATH as their first
+                # layer, so its managed runtime must also lead that layer.
+                self.PATH = self._merge_PATH(node_bin_dir, PATH=self.PATH, prepend=True)
         super().setup_PATH(no_cache=no_cache)
 
     def exec_env_providers(self) -> list[BinProvider]:
@@ -275,6 +281,12 @@ class PnpmProvider(BinProvider):
 
             node_provider = NodeProvider(install_root=managed_lib_dir / "node")
             if node_provider.bin_dir and (node_provider.bin_dir / "node").is_file():
+                # Keep package modules first while its managed Node PATH wins
+                # over host bootstrap projections used by lifecycle children.
+                providers = [
+                    self,
+                    *(provider for provider in providers if provider is not self),
+                ]
                 self._append_unique_provider(providers, node_provider)
         return providers
 

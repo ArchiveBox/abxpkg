@@ -2931,6 +2931,7 @@ class BinProvider(BaseModel):
                                 snapshot = subprocess.run(
                                     [
                                         "ps",
+                                        "-ww",
                                         "--sid",
                                         str(proc.pid),
                                         "-o",

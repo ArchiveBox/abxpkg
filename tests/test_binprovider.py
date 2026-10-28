@@ -984,6 +984,8 @@ class TestBinProvider:
         )
         child_pid = None
         started = time.monotonic()
+        old_columns = os.environ.get("COLUMNS")
+        os.environ["COLUMNS"] = "80"
         try:
             with pytest.raises(subprocess.TimeoutExpired) as caught:
                 provider.exec(
@@ -1006,7 +1008,10 @@ class TestBinProvider:
                 ]
                 assert len(samples) == 1
                 assert str(child_pid) in samples[0]
-                assert "sleep" in samples[0]
+                rows = [line.split() for line in samples[0].splitlines()[2:]]
+                assert any(
+                    row[0] == str(child_pid) and row[-1] == "sleep" for row in rows
+                )
                 assert "STARTED" in samples[0] and "WCHAN" in samples[0]
                 assert "timeout-private-argument" not in samples[0]
                 assert "timeout-private-value" not in samples[0]
@@ -1022,6 +1027,10 @@ class TestBinProvider:
                 child.stdout
             )
         finally:
+            if old_columns is None:
+                os.environ.pop("COLUMNS", None)
+            else:
+                os.environ["COLUMNS"] = old_columns
             if child_pid is not None:
                 if can_sudo:
                     subprocess.run(
