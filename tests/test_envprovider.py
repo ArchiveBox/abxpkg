@@ -28,6 +28,35 @@ from abxpkg.exceptions import BinaryUninstallError
 
 
 class TestEnvProvider:
+    def test_new_provider_captures_current_ambient_path(self, tmp_path):
+        git = shutil.which("git")
+        assert git is not None
+        providers = []
+        old_path = os.environ.get("PATH")
+        try:
+            for name in ("first", "second"):
+                host_bin = tmp_path / name / "host-bin"
+                host_bin.mkdir(parents=True)
+                host_git = host_bin / "git"
+                host_git.symlink_to(git)
+                os.environ["PATH"] = str(host_bin)
+                providers.append(
+                    (EnvProvider(install_root=tmp_path / name / "env"), host_git),
+                )
+            for provider, host_git in providers:
+                loaded = provider.load("git", no_cache=True)
+                assert loaded is not None and loaded.loaded_abspath is not None
+                assert loaded.loaded_abspath.is_symlink()
+                assert loaded.loaded_abspath.readlink() == host_git
+                result = loaded.exec(cmd=("--version",))
+                assert result.returncode == 0
+                assert result.stdout.startswith("git version ")
+        finally:
+            if old_path is None:
+                os.environ.pop("PATH", None)
+            else:
+                os.environ["PATH"] = old_path
+
     def test_revalidating_projection_uses_owning_provider_version_metadata(
         self,
         tmp_path,

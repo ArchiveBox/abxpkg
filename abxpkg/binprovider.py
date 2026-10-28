@@ -4121,8 +4121,20 @@ class EnvProvider(BinProvider):
         "python": ("PYTHON_BINARY",),
         "python3": ("PYTHON_BINARY",),
     }
-    PATH: PATHStr = (
-        DEFAULT_ENV_PATH  # Ambient runtime PATH; no provider-specific setup step.
+    # Capture the caller's ambient PATH when constructing this provider, not
+    # when importing abxpkg: installer bootstrap can follow a runtime switch.
+    PATH: PATHStr = Field(
+        default_factory=lambda: TypeAdapter(PATHStr).validate_python(
+            list(
+                dict.fromkeys(
+                    [
+                        PYTHON_BIN_DIR,
+                        *os.environ.get("PATH", DEFAULT_PATH).split(":"),
+                        *DEFAULT_PATH.split(":"),
+                    ],
+                ),
+            ),
+        ),
     )
     install_root: Path | None = Field(
         default_factory=lambda: (
