@@ -2919,7 +2919,35 @@ class BinProvider(BaseModel):
                 ) as proc:
                     try:
                         stdout, stderr = proc.communicate(input_data, timeout=timeout)
-                    except BaseException:
+                    except BaseException as error:
+                        if isinstance(
+                            error,
+                            subprocess.TimeoutExpired,
+                        ) and sys.platform.startswith("linux"):
+                            # Nested installers can finish downloading but stall in
+                            # postinstall. Capture the live session before cleanup
+                            # destroys that evidence; never log arguments or env.
+                            try:
+                                snapshot = subprocess.run(
+                                    [
+                                        "ps",
+                                        "--sid",
+                                        str(proc.pid),
+                                        "-o",
+                                        "pid,lstart,state,time,wchan:32,comm",
+                                    ],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=2,
+                                    check=False,
+                                )
+                                if snapshot.returncode == 0:
+                                    logger.warning(
+                                        "Timed-out command session before termination:\n%s",
+                                        "\n".join(snapshot.stdout.splitlines()[:65]),
+                                    )
+                            except (OSError, subprocess.SubprocessError):
+                                pass
                         # Killing sudo alone leaves privileged descendants alive.
                         # Signal our fresh group with the same installation authority.
                         for signum in (signal.SIGTERM, signal.SIGKILL):

@@ -966,7 +966,7 @@ class TestBinProvider:
                 quiet=True,
             )
 
-    def test_exec_timeout_terminates_child_commands(self):
+    def test_exec_timeout_terminates_child_commands(self, caplog):
         can_sudo = (
             os.geteuid() != 0
             and shutil.which("sudo") is not None
@@ -988,12 +988,28 @@ class TestBinProvider:
             with pytest.raises(subprocess.TimeoutExpired) as caught:
                 provider.exec(
                     "/bin/sh",
-                    cmd=["-c", "id -u; sleep 30 & echo $!; wait"],
+                    cmd=[
+                        "-c",
+                        "id -u; sleep 30 & echo $!; wait # timeout-private-argument",
+                    ],
+                    env={**os.environ, "TIMEOUT_PRIVATE_ENV": "timeout-private-value"},
                     timeout=1,
                     quiet=True,
                 )
             command_uid, child = caught.value.output.strip().splitlines()
             child_pid = int(child)
+            if sys.platform.startswith("linux"):
+                samples = [
+                    record.message
+                    for record in caplog.records
+                    if "Timed-out command session" in record.message
+                ]
+                assert len(samples) == 1
+                assert str(child_pid) in samples[0]
+                assert "sleep" in samples[0]
+                assert "STARTED" in samples[0] and "WCHAN" in samples[0]
+                assert "timeout-private-argument" not in samples[0]
+                assert "timeout-private-value" not in samples[0]
             assert int(command_uid) == provider.EUID
             assert time.monotonic() - started < 10
             child = subprocess.run(
