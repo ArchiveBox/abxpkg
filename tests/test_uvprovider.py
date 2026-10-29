@@ -17,6 +17,63 @@ from abxpkg.exceptions import BinaryInstallError, BinProviderInstallError
 
 
 class TestUvProvider:
+    @pytest.mark.parametrize("missing_python", ["missing", "dangling"])
+    def test_install_replaces_venv_with_unavailable_interpreter(
+        self,
+        tmp_path,
+        missing_python,
+    ):
+        provider = UvProvider(
+            install_root=tmp_path / "managed",
+            postinstall_scripts=True,
+            min_release_age=0,
+        ).get_provider_with_overrides(
+            overrides={"cowsay": {"install_args": ["cowsay==6.1"]}},
+        )
+        installed = provider.install("cowsay")
+        assert installed is not None
+        assert installed.exec(cmd=["-t", "before"]).returncode == 0
+        venv = tmp_path / "managed" / "venv"
+        assert (venv / "pyvenv.cfg").is_file()
+        python = venv / "bin" / "python"
+        python.unlink()
+        if missing_python == "dangling":
+            # Restored runtime caches can reference a Python installation that
+            # no longer exists on the current host. Keep the real installed
+            # environment, but reproduce that unavailable interpreter on disk.
+            python.symlink_to(tmp_path / "removed-python" / "bin" / "python")
+        assert not python.exists()
+
+        installed = provider.install("cowsay", no_cache=True)
+
+        assert installed is not None
+        assert installed.loaded_version == SemVer("6.1")
+        assert python.is_file() and os.access(python, os.X_OK)
+        result = installed.exec(cmd=["-t", "restored interpreter"])
+        assert result.returncode == 0
+        assert "restored interpreter" in result.stdout
+
+    def test_install_preserves_healthy_venv(self, tmp_path):
+        provider = UvProvider(
+            install_root=tmp_path / "managed",
+            postinstall_scripts=True,
+            min_release_age=0,
+        )
+        installed = provider.install("cowsay")
+        assert installed is not None
+        marker = tmp_path / "managed" / "venv" / "preserved.txt"
+        marker.write_text("existing environment")
+
+        installed = provider.install("pyfiglet")
+
+        assert installed is not None
+        result = installed.exec(cmd=["preserved"])
+        assert result.returncode == 0 and result.stdout.strip()
+        assert marker.read_text() == "existing environment"
+        cowsay = provider.load("cowsay", no_cache=True)
+        assert cowsay is not None
+        assert cowsay.exec(cmd=["-t", "still installed"]).returncode == 0
+
     def test_dependency_pins_preserve_unowned_env_fallback(self, tmp_path):
         external = (
             UvProvider(

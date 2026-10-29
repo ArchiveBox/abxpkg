@@ -544,12 +544,15 @@ class UvProvider(BinProvider):
             expected = f"{sys.version_info.major}.{sys.version_info.minor}"
             if proc.returncode == 0 and proc.stdout.strip() == expected:
                 return
-            # Python hook scripts run under the interpreter that launched
-            # abxpkg, but provider deps are exposed through PYTHONPATH. A stale
-            # managed venv from a different Python minor can point compiled
-            # wheels such as pydantic-core at an incompatible ABI, so rebuild it
-            # before any package install/load can leak those paths downstream.
-            shutil.rmtree(venv_root, ignore_errors=True)
+        if (venv_root / "pyvenv.cfg").is_file():
+            # A restored venv can retain its files but lose the interpreter its
+            # symlink targets. It needs the same rebuild as an incompatible
+            # Python minor (whose compiled wheels cannot enter PYTHONPATH).
+            # Check the venv marker independently of executable availability;
+            # otherwise uv refuses to create over the broken environment. Only
+            # remove a recognized venv, under the caller's installation lock,
+            # and surface deletion failures instead of hiding their cause.
+            shutil.rmtree(venv_root)
         target_root.mkdir(parents=True, exist_ok=True)
         self._ensure_managed_root_access(target_root)
         installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
