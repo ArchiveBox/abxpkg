@@ -1,0 +1,23 @@
+abxpkg/binprovider_uv.py
+  s_10bc94d001be49::t_1185cc15fda6e2 547-555
+tests/test_uvprovider.py
+  s_10bc94d001be49::t_655ba3939c887e 20-53
+  s_10bc94d001be49::t_c8c879d5d4d62d 54-74
+  s_10bc94d001be49::t_6e4a974857a5ee 75-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7c3393b20bfbe1e6a3313a0225681fb49801a6e",
+  "prompts": {},
+  "sessions": {
+    "s_10bc94d001be49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a11f62-2c55-7051-a677-585a21b42fb4",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
