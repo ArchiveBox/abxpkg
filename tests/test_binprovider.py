@@ -955,7 +955,7 @@ class TestBinProvider:
             assert str(installed.loaded_version) in proc.stdout
             assert str(ambient_installed.loaded_version) not in proc.stdout
 
-    def test_exec_timeout_is_enforced_for_real_commands(self):
+    def test_exec_timeout_is_enforced_for_real_commands(self, caplog):
         provider = EnvProvider(postinstall_scripts=True, min_release_age=3)
 
         with pytest.raises(subprocess.TimeoutExpired):
@@ -965,6 +965,15 @@ class TestBinProvider:
                 timeout=2,
                 quiet=True,
             )
+        if sys.platform.startswith("linux"):
+            samples = [
+                record.message
+                for record in caplog.records
+                if "Timed-out command kernel I/O" in record.message
+            ]
+            assert len(samples) == 1
+            assert "read_bytes:" in samples[0] and "write_bytes:" in samples[0]
+            assert "No owned TCP sockets" in samples[0]
 
     def test_exec_timeout_terminates_child_commands(self, caplog):
         can_sudo = (

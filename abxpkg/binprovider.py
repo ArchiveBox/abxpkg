@@ -2949,6 +2949,45 @@ class BinProvider(BaseModel):
                                     )
                             except (OSError, subprocess.SubprocessError):
                                 pass
+                            try:
+                                # ep_poll alone cannot distinguish a silent peer
+                                # from a downloader failing to consume its socket.
+                                # Record kernel counters/queues before termination,
+                                # without reading payloads, arguments, or secrets
+                                # from the environment. Bound diagnostic output.
+                                proc_dir = Path(f"/proc/{proc.pid}")
+                                io_counters = (proc_dir / "io").read_text()
+                                fd_targets = (
+                                    os.readlink(fd)
+                                    for fd in (proc_dir / "fd").iterdir()
+                                )
+                                socket_ids = {
+                                    target[8:-1]
+                                    for target in fd_targets
+                                    if target.startswith("socket:[")
+                                }
+                                tcp_rows: list[str] = []
+                                for table in ("tcp", "tcp6"):
+                                    with (proc_dir / "net" / table).open() as tcp:
+                                        rows = tcp.read(1024 * 1024).splitlines()
+                                    tcp_rows.extend(
+                                        f"{table}: {' '.join(fields[:10])}"
+                                        for row in rows[1:]
+                                        if len(fields := row.split()) >= 10
+                                        and fields[9] in socket_ids
+                                    )
+                                logger.warning(
+                                    "Timed-out command kernel I/O (pid=%s):\n%s"
+                                    "TCP queues (slot local remote state tx:rx timer retransmit uid timeout inode):\n%s",
+                                    proc.pid,
+                                    io_counters[:2048],
+                                    "\n".join(tcp_rows[:32]) or "No owned TCP sockets",
+                                )
+                            except OSError:
+                                # /proc can disappear as the child exits or deny
+                                # access across UIDs. Diagnostics must never mask
+                                # the original timeout or prevent group cleanup.
+                                pass
                         # Killing sudo alone leaves privileged descendants alive.
                         # Signal our fresh group with the same installation authority.
                         for signum in (signal.SIGTERM, signal.SIGKILL):
