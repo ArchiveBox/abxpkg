@@ -1032,6 +1032,17 @@ class PuppeteerProvider(BinProvider):
                     raise RuntimeError(install_hint) from None
                 self._raise_proc_error("install", bin_name, proc)
 
+        if apt is not None:
+            # Chrome's deb.deps installs launch libraries and Latin fonts, but
+            # no CJK font: otherwise valid captures silently render tofu boxes.
+            # Zen Hei covers Chinese, Japanese and Korean in one small package.
+            # Use APT's normal privilege/locking path, outside the browser's
+            # apt_lock above because that file lock must not be nested.
+            apt.default_install_handler(
+                "fonts-wqy-zenhei",
+                timeout=timeout if timeout is not None else self.install_timeout,
+            )
+
         installed_path = self._parse_installed_browser_path(
             install_output,
             browser_name,

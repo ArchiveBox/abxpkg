@@ -1245,6 +1245,7 @@ bin_dir = install_root / "bin"
 - `dry_run`: shared behavior.
 - Security: `min_release_age` is unsupported for browser installs and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported for the underlying npm bootstrap path, and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here.
 - Overrides: `install_args` are passed through to `@puppeteer/browsers install ...`, with the provider appending `--path=<cache_dir>`. Installing `puppeteer-browsers` itself is treated as the CLI bootstrap case, not as a browser target.
+- On APT-based Linux, `--install-deps` also installs `fonts-wqy-zenhei` so Chinese, Japanese, and Korean text renders in minimal container images.
 - Notes: installed-browser resolution uses semantic version ordering, not lexicographic string sorting. The provider records `node` and `puppeteer-browsers` as dependency cache entries when they are resolved through upstream providers.
 
 </details>

@@ -33,6 +33,7 @@ import threading
 import psutil
 import os
 import pwd
+import subprocess
 
 run_as_uid = __RUN_AS_UID__
 if run_as_uid:
@@ -92,6 +93,13 @@ proc = browser.exec(cmd=['--headless', '--no-sandbox', '--disable-gpu', '--dump-
                         'data:text/html,<h1>Actual stable Chrome works</h1>'], timeout=30)
 assert proc.returncode == 0, proc.stderr
 assert '<h1>Actual stable Chrome works</h1>' in proc.stdout, proc.stdout
+# Chrome's deb.deps can satisfy launch libraries while leaving CJK text as
+# missing-glyph boxes. Check the actual fontconfig coverage in the slim image,
+# including the non-root install path, rather than only whether Chrome starts.
+for language in ('ja', 'zh', 'ko'):
+    fonts = subprocess.run(['fc-list', f':lang={language}', 'family'],
+                           capture_output=True, text=True, check=True)
+    assert fonts.stdout.strip(), f'No installed fonts cover {language}'
 indexes = {p.name: p.stat().st_mtime_ns for p in lists.iterdir() if p.is_file() and p.name != 'lock'}
 assert indexes
 again = browser.install()
