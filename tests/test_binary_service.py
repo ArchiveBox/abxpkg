@@ -3,6 +3,7 @@ from .conftest import (
     _real_python_binary,
 )
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -16,6 +17,97 @@ import abxbus
 
 from abxpkg import Binary, EnvProvider, NodeProvider
 from abxpkg.semver import SemVer
+
+
+def test_dependency_projection_does_not_cross_python_minors(tmp_path: Path):
+    """A real cached console tool must not export a foreign Python's libraries."""
+    source = Path(__file__).resolve().parents[1]
+    script = tmp_path / "resolve_dependency.py"
+    script.write_text(
+        """
+import asyncio, json, os, sys
+from pathlib import Path
+import abxbus
+from abxpkg.binary_service import BinaryEvent, BinaryRequestEvent, BinaryService
+
+async def main():
+    root = Path(sys.argv[1])
+    bus = abxbus.EventBus(name='cross_python_dependency')
+    BinaryService(bus, lib_dir=root, base_env=json.loads(sys.argv[3]))
+    try:
+        request = await bus.emit(BinaryRequestEvent(
+            name='cowsay', binproviders='uv', auto_install=sys.argv[2] == 'install',
+            min_release_age=0, postinstall_scripts=True,
+            overrides={'uv': {'install_root': str(root / 'uv/packages/cowsay'), 'install_args': ['cowsay==6.1']}},
+        )).now()
+        result = await bus.find(BinaryEvent, child_of=request, past=True, future=False)
+        print(json.dumps({'runtime': sys.version.split()[0], 'found': result is not None, 'pythonpath': result.env.get('PYTHONPATH', '') if result else ''}))
+    finally:
+        await bus.wait_until_idle()
+        await bus.destroy(clear=False)
+
+asyncio.run(main())
+""",
+    )
+    # Callers may supply the same hook environment to two real interpreters.
+    # Their compiled dependency paths still have different ABI requirements.
+    base_env = json.dumps(
+        {
+            key: os.environ[key]
+            for key in ("PATH", "VIRTUAL_ENV", "PYTHONPATH", "HOME", "XDG_CONFIG_HOME")
+            if key in os.environ
+        },
+    )
+    runtimes = []
+    for version in ("3.13", "3.14"):
+        runtime_root = tmp_path / version
+        subprocess.run(
+            ["uv", "venv", "--python", version, str(runtime_root)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        runtime = runtime_root / "bin/python3"
+        # Workspace dependency overrides must not replace the source under test
+        # with a published wheel in these isolated interpreters.
+        subprocess.run(
+            [
+                "uv",
+                "--no-config",
+                "pip",
+                "install",
+                "--python",
+                str(runtime),
+                "--editable",
+                str(source),
+                "abxbus>=2.5.9",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        runtimes.append(runtime)
+
+    def resolve(runtime, mode):
+        result = subprocess.run(
+            [str(runtime), str(script), str(tmp_path / "lib"), mode, base_env],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        return json.loads(result.stdout.strip().splitlines()[-1])
+
+    first = resolve(runtimes[0], "install")
+    assert first["runtime"].startswith("3.13.")
+    assert first["found"] and "python3.13/site-packages" in first["pythonpath"]
+    assert resolve(runtimes[0], "load") == first
+    foreign = resolve(runtimes[1], "load")
+    assert foreign["runtime"].startswith("3.14.")
+    assert foreign["found"] is False, foreign
+    second = resolve(runtimes[1], "install")
+    assert second["found"] and "python3.14/site-packages" in second["pythonpath"]
+    assert "python3.13/site-packages" not in second["pythonpath"]
+    assert resolve(runtimes[1], "load") == second
 
 
 @pytest.mark.parametrize("absolute", [False, True])

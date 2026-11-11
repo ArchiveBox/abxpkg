@@ -173,6 +173,13 @@ def binary_request_cache_key(
     payload["dry_run"] = bool(payload["dry_run"])
     payload["no_cache"] = bool(payload["no_cache"])
     payload["binproviders"] = provider_names
+    # Dependency projections carry caller-compatible Python library paths even
+    # when the requested executable is not Python (e.g. forum-dl). A launcher
+    # fingerprint alone cannot make those paths safe in another interpreter.
+    payload["runtime_python"] = {
+        "executable": os.path.abspath(sys.executable),
+        "cache_tag": sys.implementation.cache_tag,
+    }
     if payload["name"] in {"python", "python3"} and "env" in provider_names:
         payload["runtime_prefix"] = os.path.abspath(sys.prefix)
     payload["abxpkg_env"] = abxpkg_cache_env(

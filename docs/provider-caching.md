@@ -26,6 +26,12 @@ options, versions, roots, effective UID and other resolution inputs still matter
 A different temporary `uv --with-editable` environment is a legitimate cache
 miss; compare warm runs in the same environment.
 
+Request projections also include the calling Python executable and ABI tag.
+Even a console tool such as `forum-dl` can export Python dependency paths to
+hooks; a cached launcher fingerprint does not make those libraries compatible
+with another Python minor version. Keep this boundary for non-Python binary
+names as well as requests for `python3` itself.
+
 ## Ownership is distinct from projection and execution
 
 * Each provider owns its installation, bootstrap dependencies and runtime
