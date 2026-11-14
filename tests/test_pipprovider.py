@@ -49,7 +49,7 @@ class TestPipProvider:
             assert cached_fingerprint is not None
 
             current_stat = installed.loaded_abspath.stat()
-            refreshed_ns = current_stat.st_mtime_ns + 5_000_000
+            refreshed_ns = current_stat.st_mtime_ns + 1_000_000_000
             os.utime(
                 installed.loaded_abspath,
                 ns=(current_stat.st_atime_ns, refreshed_ns),

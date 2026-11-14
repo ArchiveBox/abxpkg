@@ -15,7 +15,10 @@ def test_fingerprints_survive_subsecond_timestamp_loss(tmp_path):
     before = provider._fingerprint_paths([path])
     rounded = timestamp // 1_000_000_000 * 1_000_000_000
     os.utime(path, ns=(rounded, rounded))
-    assert provider._fingerprint_paths([path]) == before
+    after = provider._fingerprint_paths([path])
+    assert before[0]["mtime_ns"] == timestamp
+    assert after[0]["mtime_ns"] == rounded
+    assert _fingerprints_match(before, after)
     assert _fingerprints_match(before)
 
 
