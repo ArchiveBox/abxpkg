@@ -1578,6 +1578,12 @@ class BinProvider(BaseModel):
         fingerprints = self._fingerprint_paths(unique_paths)
         if fingerprints is None:
             return None
+        # Plans carry validation only, so rebuilding one after OCI export must
+        # not rewrite its cache solely because subsecond precision disappeared.
+        for fingerprint in fingerprints:
+            fingerprint["mtime_ns"] = (
+                fingerprint["mtime_ns"] // 1_000_000_000 * 1_000_000_000
+            )
         return {
             "version": 7,
             "script": plan_key is not None,
