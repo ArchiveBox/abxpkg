@@ -603,9 +603,7 @@ def _fingerprints_match(raw_fingerprints: object) -> bool:
         if fingerprint != {
             "path": os.path.realpath(os.path.expanduser(raw_path)),
             "size": stat_result.st_size,
-            "mtime_ns": (
-                stat_result.st_mtime_ns // 1_000_000_000 * 1_000_000_000
-            ),
+            "mtime_ns": (stat_result.st_mtime_ns // 1_000_000_000 * 1_000_000_000),
             "mode": stat.S_IMODE(stat_result.st_mode),
             "euid": stat_result.st_uid,
         }:
