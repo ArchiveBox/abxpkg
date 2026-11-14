@@ -401,8 +401,8 @@ class TestPnpmProvider:
         managed = Binary(
             name="node",
             binproviders=[NodeProvider(install_root=lib_dir / "node")],
-            min_version=SemVer("24.22.1"),
-            max_version=SemVer("24.22.1"),
+            min_version=SemVer("24.22.2"),
+            max_version=SemVer("24.22.2"),
         ).install()
         assert managed.loaded_abspath is not None
         assert managed.loaded_abspath.resolve() != host_node.resolve()

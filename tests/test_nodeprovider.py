@@ -54,7 +54,7 @@ class TestNodeProvider:
             assert (install_root / "bin" / "npm").exists()
             assert (
                 provider.exec("node", cmd=("--version",), quiet=True).stdout.strip()
-                == "v24.22.1"
+                == "v24.22.2"
             )
             assert provider.exec("npm", cmd=("--version",), quiet=True).returncode == 0
 

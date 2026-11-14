@@ -32,7 +32,7 @@ from .binprovider import BinProvider, log_method_call, remap_kwargs
 from .semver import SemVer
 
 
-NODE_VERSION = "24.22.1"
+NODE_VERSION = "24.22.2"
 NODE_BINARIES = frozenset({"node", "npm", "npx", "corepack"})
 
 
@@ -45,19 +45,19 @@ class NodeArtifact(NamedTuple):
 NODE_ARTIFACTS: dict[tuple[str, str], tuple[str, str]] = {
     ("linux", "x86_64"): (
         f"node-v{NODE_VERSION}-linux-x64.tar.xz",
-        "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6",
+        "48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75",
     ),
     ("linux", "arm64"): (
         f"node-v{NODE_VERSION}-linux-arm64.tar.xz",
-        "dbabf7a1cbf947e6059ffad2c27b80041db97dea1e553b62afdee7f13fca336e",
+        "eb187837a2230d4047161ac0be008584e16b46f726e9c9490ee35dc6b17d9ba8",
     ),
     ("darwin", "x86_64"): (
         f"node-v{NODE_VERSION}-darwin-x64.tar.gz",
-        "d132557e7ee2b85af08b0c8c34338e65c6430f2238d01f727728ef42dc83b035",
+        "d5e336d588c45be0c37dbd52cc29895593009ca4997a77a1fd02815131ed0e52",
     ),
     ("darwin", "arm64"): (
         f"node-v{NODE_VERSION}-darwin-arm64.tar.gz",
-        "89c682593d76cd44233fa53b1563264e7de9cbb189cad169135c5b4fadfbc0a7",
+        "aa9549349e47dffaa42dcf95d6e06ade8c4bdafc980979883b88767670df385a",
     ),
 }
 
