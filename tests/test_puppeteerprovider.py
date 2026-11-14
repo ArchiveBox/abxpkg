@@ -12,7 +12,9 @@ PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 class TestPuppeteerProvider:
     def test_pinned_build_survives_newer_browser_in_shared_cache(
-        self, tmp_path, test_machine
+        self,
+        tmp_path,
+        test_machine,
     ):
         test_machine.require_tool("node")
         test_machine.require_tool("npm")
@@ -25,7 +27,7 @@ class TestPuppeteerProvider:
                 min_release_age=0,
             ).get_provider_with_overrides(
                 overrides={
-                    "chromedriver": {"install_args": [f"chromedriver@{version}"]}
+                    "chromedriver": {"install_args": [f"chromedriver@{version}"]},
                 },
             )
 

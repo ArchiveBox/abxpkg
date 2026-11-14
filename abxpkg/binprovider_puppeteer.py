@@ -549,7 +549,7 @@ class PuppeteerProvider(BinProvider):
         # another application has installed a newer browser in the same cache.
         pinned_build = bool(
             re.fullmatch(r"\d+\.\d+\.\d+\.\d+", requested_build)
-            or (browser_name == "chromium" and requested_build.isdigit())
+            or (browser_name == "chromium" and requested_build.isdigit()),
         )
         candidates = [
             (version, path)
