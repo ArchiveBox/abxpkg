@@ -1040,7 +1040,11 @@ class PuppeteerProvider(BinProvider):
             # apt_lock above because that file lock must not be nested.
             apt.default_install_handler(
                 "fonts-wqy-zenhei",
-                install_args=["fonts-wqy-zenhei", "fonts-dejavu-core", "fonts-noto-color-emoji"],
+                install_args=[
+                    "fonts-wqy-zenhei",
+                    "fonts-dejavu-core",
+                    "fonts-noto-color-emoji",
+                ],
                 timeout=timeout if timeout is not None else self.install_timeout,
             )
 
