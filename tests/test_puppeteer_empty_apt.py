@@ -100,6 +100,10 @@ for language in ('ja', 'zh', 'ko'):
     fonts = subprocess.run(['fc-list', f':lang={language}', 'family'],
                            capture_output=True, text=True, check=True)
     assert fonts.stdout.strip(), f'No installed fonts cover {language}'
+for character in ('21a9', '2302', '2b07', '1f4c4', '1f4e6', '1f512'):
+    fonts = subprocess.run(['fc-list', f':charset={character}', 'family'],
+                           capture_output=True, text=True, check=True)
+    assert fonts.stdout.strip(), f'No installed font covers U+{character.upper()}'
 indexes = {p.name: p.stat().st_mtime_ns for p in lists.iterdir() if p.is_file() and p.name != 'lock'}
 assert indexes
 again = browser.install()
