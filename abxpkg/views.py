@@ -13,12 +13,12 @@ from .binary import Binary
 
 
 def get_all_binaries() -> list[Binary]:
-    """Override this function implement getting the list of binaries to render"""
+    """Override this function to implement getting the list of binaries to render"""
     return []
 
 
 def get_binary(name: str) -> Binary | None:
-    """Override this function implement getting the list of binaries to render"""
+    """Override this function to implement getting the list of binaries to render"""
 
     from . import settings
 
