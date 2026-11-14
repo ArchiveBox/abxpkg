@@ -587,7 +587,8 @@ def load_derived_cache(dotenv_path: Path) -> dict[str, dict[str, object]]:
 
 
 def _fingerprints_match(
-    raw_fingerprints: object, current_fingerprints: object = None
+    raw_fingerprints: object,
+    current_fingerprints: object = None,
 ) -> bool:
     if not isinstance(raw_fingerprints, list) or not raw_fingerprints:
         return False
@@ -618,15 +619,16 @@ def _fingerprints_match(
                 "mode": stat.S_IMODE(stat_result.st_mode),
                 "euid": stat_result.st_uid,
             }
-        if not isinstance(current, dict) or not isinstance(
-            current.get("mtime_ns"), int
-        ):
+        if not isinstance(current, dict):
+            return False
+        current_mtime_ns = current.get("mtime_ns")
+        if not isinstance(current_mtime_ns, int):
             return False
         # OCI/tar exports discard subseconds. Keep exact public metadata, but
         # compare cache timestamps at the precision those filesystems preserve.
         if {**fingerprint, "mtime_ns": mtime_ns // 1_000_000_000} != {
             **current,
-            "mtime_ns": current["mtime_ns"] // 1_000_000_000,
+            "mtime_ns": current_mtime_ns // 1_000_000_000,
         }:
             return False
     return True

@@ -1361,7 +1361,8 @@ class BinProvider(BaseModel):
                 and typed_record.get("resolved_provider_name") == exec_provider.name
                 and len(fingerprint_paths) == len(raw_fingerprints)
                 and _fingerprints_match(
-                    raw_fingerprints, self._fingerprint_paths(fingerprint_paths)
+                    raw_fingerprints,
+                    self._fingerprint_paths(fingerprint_paths),
                 )
             )
 
@@ -1425,7 +1426,8 @@ class BinProvider(BaseModel):
                     break
                 fingerprint_paths.append(Path(raw_fingerprint["path"]))
             if not fingerprint_paths or not _fingerprints_match(
-                raw_fingerprints, self._fingerprint_paths(fingerprint_paths)
+                raw_fingerprints,
+                self._fingerprint_paths(fingerprint_paths),
             ):
                 projections.pop(existing_key)
                 projections_changed = True
@@ -1653,7 +1655,8 @@ class BinProvider(BaseModel):
                 and typed_record.get("resolved_provider_name") == exec_provider.name
                 and len(fingerprint_paths) == len(raw_fingerprints)
                 and _fingerprints_match(
-                    raw_fingerprints, self._fingerprint_paths(fingerprint_paths)
+                    raw_fingerprints,
+                    self._fingerprint_paths(fingerprint_paths),
                 )
             )
 
