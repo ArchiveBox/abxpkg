@@ -615,10 +615,13 @@ class BinaryService:
             extra_context=dict(event.extra_context),
         )
 
+    # Providers already serialize installs across processes with kernel flock.
+    # This gate only bounds local worker threads. Persisting a second PID-based
+    # lock in a download cache survives aborted Docker builds and PID reuse.
     @retry(
         max_attempts=1,
         semaphore_limit=1,
-        semaphore_scope="multiprocess",
+        semaphore_scope="global",
         semaphore_name=lambda self, event: self._install_semaphore_name(event),
         semaphore_timeout=300,
         semaphore_lax=False,
