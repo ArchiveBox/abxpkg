@@ -32,11 +32,13 @@ class TestPuppeteerProvider:
         for version in ("156.0.8078.47", "157.0.8103.38"):
             installed = provider(version).install("chromedriver", no_cache=True)
             test_machine.assert_shallow_binary_loaded(installed)
+            assert installed is not None
             assert str(installed.version) == ".".join(version.split(".")[:3])
 
         for version in ("156.0.8078.47", "157.0.8103.38", "156.0.8078.47"):
             loaded = provider(version).load("chromedriver", no_cache=True)
             test_machine.assert_shallow_binary_loaded(loaded)
+            assert loaded is not None
             assert str(loaded.version) == ".".join(version.split(".")[:3])
             result = loaded.exec(cmd=["--version"])
             assert result.returncode == 0
