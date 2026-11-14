@@ -905,7 +905,10 @@ class BinProvider(BaseModel):
                 {
                     "path": str(resolved_path),
                     "size": stat_result.st_size,
-                    "mtime_ns": stat_result.st_mtime_ns,
+                    # OCI/tar exports preserve whole seconds, not nanoseconds.
+                    "mtime_ns": (
+                        stat_result.st_mtime_ns // 1_000_000_000 * 1_000_000_000
+                    ),
                     "mode": stat.S_IMODE(stat_result.st_mode),
                     "euid": stat_result.st_uid,
                 },

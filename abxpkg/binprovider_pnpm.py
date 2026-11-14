@@ -819,11 +819,14 @@ class PnpmProvider(BinProvider):
             return None
         return None
 
-    def _exec_env(self, no_cache: bool = False) -> dict[str, str] | None:
-        if not no_cache:
-            return None
+    def _exec_env(self, no_cache: bool = False) -> dict[str, str]:
         env = os.environ.copy()
-        env["XDG_CACHE_HOME"] = str(abxpkg_ephemeral_cache_home_default())
+        # Lifecycle scripts can invoke npm, whose cache ignores XDG_CACHE_HOME.
+        # Keep their downloads with the selected provider cache, including
+        # no-cache installs, rather than leaking them into the target user's HOME.
+        env.setdefault("npm_config_cache", str(self._store_dir(no_cache) / "npm"))
+        if no_cache:
+            env["XDG_CACHE_HOME"] = str(abxpkg_ephemeral_cache_home_default())
         return env
 
     def _linked_bin_path(self, bin_name: BinName | HostBinPath) -> Path | None:
