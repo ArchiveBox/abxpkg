@@ -994,6 +994,7 @@ install_root = None                  # None = global install, Path(...) = prefix
 - Shells out to `pnpm` directly. Honors `PNPM_BINARY=/abs/path/to/pnpm`. Use `NpmProvider` for `npm`.
 - `dry_run`: shared behavior.
 - Security: supports both `min_release_age` and `postinstall_scripts=False`, and hydrates their provider defaults from `ABXPKG_MIN_RELEASE_AGE` and `ABXPKG_POSTINSTALL_SCRIPTS`. `min_release_age` requires pnpm 10.16+, and `supports_min_release_age()` returns `False` on older hosts (then it logs a warning and continues).
+- Native dependencies: managed projects default `pnpm.supportedArchitectures.libc` to `["current"]`, so fresh installs and newly resolved versions exclude incompatible glibc/musl optional packages. Existing architecture settings and explicit `--libc` overrides remain supported; workspace and global configuration are not changed.
 - Overrides: `install_args` is passed as pnpm package specs; unpinned specs get rewritten to `pkg@>=<min_version>` when `min_version` is supplied.
 - Notes: pnpm has no `--min-release-age` CLI flag; this provider passes `--config.minimumReleaseAge=<minutes>` (the camelCase / kebab-case form pnpm exposes via its `--config.<key>=<value>` override). Installs always include `--loglevel=error`, and `PNPM_HOME` is auto-populated so `pnpm add -g` works without polluting the user's shell config. `puppeteer` is special-cased to install both `puppeteer` and `@puppeteer/browsers`, and `puppeteer-browsers` resolves to `@puppeteer/browsers`.
 

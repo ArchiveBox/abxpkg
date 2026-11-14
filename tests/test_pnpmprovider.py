@@ -281,6 +281,78 @@ class TestPnpmProvider:
 
         assert result.returncode == 0, result.stderr
 
+    @pytest.mark.docker_required
+    def test_native_optional_dependencies_match_libc(self, test_machine):
+        docker = test_machine.require_tool("docker")
+        repo_root = Path(__file__).resolve().parents[1]
+        script = r"""
+import json
+from pathlib import Path
+from abxpkg import PnpmProvider
+
+package = "@llamaindex/liteparse@2.18.0"
+for requested in (None, "musl", "musl-cli"):
+    root = Path("/tmp") / (requested or "current")
+    if requested == "musl":
+        root.mkdir()
+        (root / "package.json").write_text(json.dumps({
+            "name": "preserve-user-config", "private": True,
+            "pnpm": {"supportedArchitectures": {"os": ["linux"], "libc": ["musl"]}},
+        }))
+    args = [package] + (["--libc=musl"] if requested == "musl-cli" else [])
+    provider = PnpmProvider(install_root=root, min_release_age=0, postinstall_scripts=False).get_provider_with_overrides(
+        overrides={"liteparse": {"install_args": args}},
+    )
+    binary = provider.install("liteparse")
+    assert binary.loaded_abspath is not None
+    for action in (("install",) if requested == "musl-cli" else ("install", "update")):
+        if action == "update":
+            binary = provider.update("liteparse")
+        manifests = list((root / "node_modules/.pnpm").glob(
+            "*/node_modules/@llamaindex/liteparse-linux-x64-*/package.json"))
+        assert manifests, (requested, action)
+        installed = {tuple(json.loads(path.read_text())["libc"]) for path in manifests}
+        assert installed == {("musl" if requested else "glibc",)}, (requested, action, installed)
+        if requested == "musl":
+            config = json.loads((root / "package.json").read_text())
+            assert config["name"] == "preserve-user-config"
+            assert config["private"] is True
+            assert config["pnpm"]["supportedArchitectures"] == {"os": ["linux"], "libc": ["musl"]}
+        if requested is None:
+            result = binary.exec(cmd=["--version"])
+            assert result.returncode == 0, result.stderr
+            assert "2.18.0" in result.stdout
+"""
+        result = subprocess.run(
+            [
+                docker,
+                "run",
+                "--rm",
+                "--platform",
+                "linux/amd64",
+                "--volume",
+                f"{repo_root}:/src:ro",
+                "--workdir",
+                "/tmp",
+                "--env",
+                "UV_PROJECT_ENVIRONMENT=/tmp/venv",
+                "ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+                "uv",
+                "run",
+                "--no-dev",
+                "--project",
+                "/src",
+                "--",
+                "python",
+                "-c",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
     def test_self_bootstrap_projects_host_dependencies_into_managed_env_bin(
         self,
         test_machine,

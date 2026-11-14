@@ -763,6 +763,28 @@ class PnpmProvider(BinProvider):
             return uid
         return None
 
+    def _configure_project_libc(self) -> None:
+        if self.install_root is None:
+            return
+        package_json = self.install_root / "package.json"
+        try:
+            project = json.loads(package_json.read_text())
+        except FileNotFoundError:
+            project = {}
+        architectures = project.setdefault("pnpm", {}).setdefault(
+            "supportedArchitectures",
+            {},
+        )
+        if "libc" in architectures:
+            return
+        # pnpm's abbreviated registry metadata omits libc. This native project
+        # setting makes its install resolver fetch full platform metadata and
+        # preserves any explicit architecture configuration from the caller.
+        architectures["libc"] = ["current"]
+        package_json.write_text(json.dumps(project, indent=2) + "\n")
+        if os.geteuid() == 0 and self.EUID != 0:
+            os.chown(package_json, self.EUID, self.get_pw_record(self.EUID).pw_gid)
+
     def _store_dir(self, no_cache: bool = False) -> Path:
         existing_store_dir = self._existing_store_dir()
         if existing_store_dir is not None:
@@ -1158,6 +1180,7 @@ class PnpmProvider(BinProvider):
         ):
             postinstall_scripts = False
 
+        self._configure_project_libc()
         store_dir = self._store_dir(no_cache)
         self._ensure_writable_cache_dir(store_dir)
         cmd: list[str] = [
@@ -1239,6 +1262,7 @@ class PnpmProvider(BinProvider):
         ):
             postinstall_scripts = False
 
+        self._configure_project_libc()
         store_dir = self._store_dir(no_cache)
         self._ensure_writable_cache_dir(store_dir)
         cmd: list[str] = [
@@ -1246,6 +1270,16 @@ class PnpmProvider(BinProvider):
             "--loglevel=error",
             f"--store-dir={store_dir}",
         ]
+        # Unlike add/install, pnpm 10's update command does not request full
+        # metadata from supportedArchitectures; abbreviated records omit libc.
+        if not any(
+            arg in ("--config.fetchFullMetadata", "--config.fetch-full-metadata")
+            or arg.startswith(
+                ("--config.fetchFullMetadata=", "--config.fetch-full-metadata="),
+            )
+            for arg in install_args
+        ):
+            cmd.append("--config.fetchFullMetadata=true")
         if not postinstall_scripts:
             cmd.append("--ignore-scripts")
         else:
