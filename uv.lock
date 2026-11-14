@@ -18,7 +18,7 @@ wheels = [
 
 [[package]]
 name = "abxpkg"
-version = "1.13.86"
+version = "1.13.87"
 source = { editable = "." }
 dependencies = [
     { name = "packaging" },
