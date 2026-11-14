@@ -260,6 +260,7 @@ async function main() {
             const noCache = options.includes('--no-cache');
             const urlOption = options.find(option => option.startsWith('--url='));
             const sha256Option = options.find(option => option.startsWith('--sha256='));
+            const crxPathOption = options.find(option => option.startsWith('--crx-path='));
             const crxUrl = urlOption?.slice('--url='.length);
             const crxSha256 = sha256Option?.slice('--sha256='.length);
             if (crxSha256 && !/^[0-9a-f]{64}$/i.test(crxSha256)) {
@@ -267,7 +268,7 @@ async function main() {
                 process.exit(1);
             }
             const ext = await installExtensionWithCache(
-                { webstore_id: webstoreId, name, crx_url: crxUrl, crx_sha256: crxSha256 },
+                { webstore_id: webstoreId, name, crx_url: crxUrl, crx_sha256: crxSha256, crx_path: crxPathOption?.slice('--crx-path='.length) },
                 { extensionsDir, unzipPath, noCache },
             );
             if (ext) {

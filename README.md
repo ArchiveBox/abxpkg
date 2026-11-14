@@ -1215,6 +1215,7 @@ bin_dir = install_root / "extensions"
 ```
 
 - Install root: set `install_root` for the extension cache root, and `bin_dir` for the unpacked extension output dir.
+- Download cache: CRX archives live in `install_root.parent/cache/chromewebstore`, or `ABXPKG_CHROMEWEBSTORE_CACHE_DIR` when set. Clearing downloaded archives leaves installed extensions usable offline. Explicit no-cache installs use `ABXPKG_TMP_CACHE_DIR` outside the installed library.
 - Auto-switching: none.
 - `dry_run`: shared behavior.
 - Security: `min_release_age` is unsupported and is ignored with a warning if explicitly requested. `postinstall_scripts=False` is supported as a standard kwarg and `ABXPKG_POSTINSTALL_SCRIPTS` hydrates the provider default here, but there is no extra install-time toggle beyond the packaged JS helper this provider already uses.

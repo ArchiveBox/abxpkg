@@ -3,6 +3,7 @@
 __package__ = "abxpkg"
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -17,6 +18,7 @@ from .base_types import (
     BinName,
     BinProviderName,
     PATHStr,
+    abxpkg_ephemeral_cache_dir_default,
     abxpkg_install_root_default,
     bin_abspath,
 )
@@ -101,6 +103,15 @@ class ChromeWebstoreProvider(BinProvider):
 
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return True
+
+    @property
+    def cache_dir(self) -> Path:
+        """Keep downloaded CRX archives separate from installed extensions."""
+        configured = os.environ.get("ABXPKG_CHROMEWEBSTORE_CACHE_DIR", "").strip()
+        if configured:
+            return Path(configured).expanduser().resolve()
+        assert self.install_root is not None
+        return self.install_root.parent / "cache" / "chromewebstore"
 
     @log_method_call()
     def setup(
@@ -375,6 +386,19 @@ class ChromeWebstoreProvider(BinProvider):
         assert install_root is not None
         assert bin_dir is not None
 
+        download_cache = (
+            abxpkg_ephemeral_cache_dir_default("chromewebstore")
+            if no_cache
+            else self.cache_dir
+        )
+        # Store URLs can change bytes at the same filename. Independent
+        # installations must not overwrite an archive another is unpacking.
+        download_cache /= hashlib.sha256(str(bin_dir).encode()).hexdigest()[:16]
+        if not self._ensure_writable_cache_dir(download_cache):
+            raise PermissionError(
+                f"Chrome extension download cache is not writable: {download_cache}",
+            )
+
         proc = self.exec(
             bin_name=installer_bin,
             cmd=[
@@ -384,6 +408,7 @@ class ChromeWebstoreProvider(BinProvider):
                 extension_name,
                 str(bin_dir),
                 str(unzip.loaded_abspath),
+                f"--crx-path={download_cache / f'{webstore_id}__{extension_name}.crx'}",
                 *source_options,
                 *(["--no-cache"] if no_cache else []),
             ],

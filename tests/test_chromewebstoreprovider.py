@@ -71,6 +71,27 @@ class TestChromeWebstoreProvider:
                 assert str(installed.loaded_version) == "1.2.3"
                 metadata = json.loads(installed.loaded_abspath.read_text())
                 assert metadata["crx_sha256"] == sha256
+                downloaded = Path(metadata["crx_path"])
+                assert downloaded.is_relative_to(
+                    (root / "cache" / "chromewebstore").resolve(),
+                )
+                assert downloaded.read_bytes() == archive_path.read_bytes()
+                unpacked = Path(metadata["unpacked_path"])
+                manifest_before = (unpacked / "manifest.json").read_bytes()
+                metadata_before = installed.loaded_abspath.read_bytes()
+                downloaded.unlink()
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+                # Installed extensions must remain discoverable with their
+                # download cache gone and the original source offline.
+                reloaded = provider.install("local-extension")
+                assert_extension_binary_loaded(reloaded)
+                assert str(reloaded.loaded_version) == "1.2.3"
+                assert reloaded.loaded_abspath.read_bytes() == metadata_before
+                assert (unpacked / "manifest.json").read_bytes() == manifest_before
+                assert not downloaded.exists()
             finally:
                 server.shutdown()
                 thread.join()
@@ -312,8 +333,8 @@ class TestChromeWebstoreProvider:
             assert_extension_binary_loaded(installed)
             assert installed is not None
             assert installed.loaded_abspath is not None
-            crx_path = provider.bin_dir / f"{UBLOCK_WEBSTORE_ID}__ublock.crx"
             metadata = json.loads(installed.loaded_abspath.read_text(encoding="utf-8"))
+            crx_path = Path(metadata["crx_path"])
             restore_signed_store_metadata_from_real_crx(
                 unzip,
                 crx_path,
