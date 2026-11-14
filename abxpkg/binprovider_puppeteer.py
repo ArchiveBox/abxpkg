@@ -535,9 +535,21 @@ class PuppeteerProvider(BinProvider):
         # back to ``[bin_name]`` which would look for the alias name.
         if install_args is None:
             install_args = self.get_install_args(bin_name, quiet=True) or [bin_name]
+        install_args = self._normalize_install_args(install_args)
         browser_name = self._browser_name(
             bin_name,
-            self._normalize_install_args(install_args),
+            install_args,
+        )
+        requested_build = next(
+            (arg.partition("@")[2] for arg in install_args if not arg.startswith("-")),
+            "",
+        )
+        # Channels and milestones choose among installed builds. A full Chrome
+        # version or Chromium revision must select that exact build, even when
+        # another application has installed a newer browser in the same cache.
+        pinned_build = bool(
+            re.fullmatch(r"\d+\.\d+\.\d+\.\d+", requested_build)
+            or (browser_name == "chromium" and requested_build.isdigit())
         )
         candidates = [
             (version, path)
@@ -545,8 +557,9 @@ class PuppeteerProvider(BinProvider):
                 no_cache=no_cache,
             )
             if candidate_browser == browser_name
+            and (not pinned_build or version == requested_build)
         ]
-        if not candidates and str(bin_name) == "chrome":
+        if not candidates and not pinned_build and str(bin_name) == "chrome":
             candidates = [
                 (version, path)
                 for candidate_browser, version, path in self._list_installed_browsers(

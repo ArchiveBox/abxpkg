@@ -11,6 +11,33 @@ PUPPETEER_CHROMEDRIVER_ARGS = ["chromedriver@stable"]
 
 
 class TestPuppeteerProvider:
+    def test_pinned_build_survives_newer_browser_in_shared_cache(self, tmp_path, test_machine):
+        test_machine.require_tool("node")
+        test_machine.require_tool("npm")
+        root = tmp_path / "puppeteer-root"
+
+        def provider(version):
+            return PuppeteerProvider(
+                install_root=root,
+                postinstall_scripts=True,
+                min_release_age=0,
+            ).get_provider_with_overrides(
+                overrides={"chromedriver": {"install_args": [f"chromedriver@{version}"]}},
+            )
+
+        for version in ("156.0.8078.47", "157.0.8103.38"):
+            installed = provider(version).install("chromedriver", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(installed)
+            assert str(installed.version) == ".".join(version.split(".")[:3])
+
+        for version in ("156.0.8078.47", "157.0.8103.38", "156.0.8078.47"):
+            loaded = provider(version).load("chromedriver", no_cache=True)
+            test_machine.assert_shallow_binary_loaded(loaded)
+            assert str(loaded.version) == ".".join(version.split(".")[:3])
+            result = loaded.exec(cmd=["--version"])
+            assert result.returncode == 0
+            assert version in result.stdout
+
     def test_browser_install_uses_native_unzip_providers(self):
         unzip = PuppeteerProvider().unzip_binary()
 
