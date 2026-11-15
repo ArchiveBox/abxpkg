@@ -58,7 +58,8 @@ abxbus = [
     "abxbus>=2.5.9",
 ]
 pyinfra = [
-    'pyinfra>=3.6.1',
+    'pyinfra>=3.11.0',
+    'paramiko>=5.0.0',  # Older versions allow SHA-1 (CVE-2026-44405).
 ]
 ansible = [
     'ansible>=12.3.0',
