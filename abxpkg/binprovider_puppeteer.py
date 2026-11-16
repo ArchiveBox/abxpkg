@@ -991,6 +991,7 @@ class PuppeteerProvider(BinProvider):
             )
 
             install_output = f"{proc.stdout}\n{proc.stderr}"
+            used_sudo = False
             if (
                 proc.returncode != 0
                 and "--install-deps" in normalized_install_args
@@ -1004,6 +1005,7 @@ class PuppeteerProvider(BinProvider):
                 )
                 if sudo_proc is not None:
                     proc = sudo_proc
+                    used_sudo = True
                     install_output = f"{proc.stdout}\n{proc.stderr}"
 
             if proc.returncode != 0 and self._should_repair_cli_install(install_output):
@@ -1019,24 +1021,46 @@ class PuppeteerProvider(BinProvider):
                     installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
                 installer_bin = installer_binary.loaded_abspath
                 assert installer_bin
-                proc = self.exec(
-                    bin_name=installer_bin,
-                    cmd=["install", *normalized_install_args],
-                    cwd=self.install_root or ".",
-                    timeout=timeout if timeout is not None else self.install_timeout,
-                )
+                if used_sudo:
+                    repaired_proc = self._run_install_with_sudo(
+                        normalized_install_args,
+                        no_cache=no_cache,
+                    )
+                    if repaired_proc is not None:
+                        proc = repaired_proc
+                else:
+                    proc = self.exec(
+                        bin_name=installer_bin,
+                        cmd=["install", *normalized_install_args],
+                        cwd=self.install_root or ".",
+                        timeout=timeout
+                        if timeout is not None
+                        else self.install_timeout,
+                    )
                 install_output = f"{proc.stdout}\n{proc.stderr}"
 
             if proc.returncode != 0 and self._cleanup_partial_browser_cache(
                 install_output,
                 browser_name,
             ):
-                proc = self.exec(
-                    bin_name=installer_bin,
-                    cmd=["install", *normalized_install_args],
-                    cwd=self.install_root or ".",
-                    timeout=timeout if timeout is not None else self.install_timeout,
-                )
+                if used_sudo:
+                    # Cache repair must retain the privilege path selected for
+                    # system dependencies, not repeat the rejected user install.
+                    repaired_proc = self._run_install_with_sudo(
+                        normalized_install_args,
+                        no_cache=no_cache,
+                    )
+                    if repaired_proc is not None:
+                        proc = repaired_proc
+                else:
+                    proc = self.exec(
+                        bin_name=installer_bin,
+                        cmd=["install", *normalized_install_args],
+                        cwd=self.install_root or ".",
+                        timeout=timeout
+                        if timeout is not None
+                        else self.install_timeout,
+                    )
                 install_output = f"{proc.stdout}\n{proc.stderr}"
 
             if proc.returncode != 0:
