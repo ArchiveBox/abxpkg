@@ -504,6 +504,20 @@ def parse_dotenv_values(contents: str) -> dict[str, str]:
     return values
 
 
+def path_is_on_read_only_filesystem(path: Path) -> bool:
+    """Return whether path, or its nearest existing parent, is mounted read-only."""
+    path_str = os.path.abspath(path)
+    while not os.path.lexists(path_str):
+        parent = os.path.dirname(path_str)
+        if parent == path_str:
+            return False
+        path_str = parent
+    try:
+        return bool(os.statvfs(path_str).f_flag & os.ST_RDONLY)
+    except OSError:
+        return False
+
+
 def _read_regular_file(path: Path) -> str | None:
     try:
         fd = os.open(
@@ -1004,6 +1018,11 @@ def save_derived_cache(
     dotenv_path: Path,
     cache: Mapping[str, object],
 ) -> None:
+    # Records are re-validated on every read, so a lib dir on a read-only
+    # mount (e.g. a container image) keeps its existing ones and misses
+    # cost a fresh resolution instead of failing the load.
+    if path_is_on_read_only_filesystem(dotenv_path.parent):
+        return
     values = load_dotenv_values(dotenv_path)
     if cache:
         values[DERIVED_CACHE_KEY] = json.dumps(

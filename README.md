@@ -750,6 +750,8 @@ All abxpkg env vars are read once at import time and only apply when set. Explic
 
 Install-root precedence (most specific wins): explicit `install_root=` / provider alias kwarg > `ABXPKG_<NAME>_ROOT` > `ABXPKG_LIB_DIR/<name>` > provider-specific built-in default / native global mode.
 
+`ABXPKG_LIB_DIR` may be on a read-only mount, such as a container image's preinstalled library under a read-only root filesystem. Already-installed binaries still load: `env` uses host binaries directly instead of adding new `env/bin` links, `derived.env` records are only read, and package-manager caches that would live in `$ABXPKG_LIB_DIR/cache/<provider>` use `$ABXPKG_TMP_CACHE_DIR/<provider>` (default `$TMPDIR/abxpkg-cache-<uid>/<provider>`) unless `ABXPKG_<PROVIDER>_CACHE_DIR` is set. Installing new packages into it fails.
+
 **Provider-specific binary overrides:**
 
 Each provider also honors a `<NAME>_BINARY=/abs/path/to/<name>` env var to pin the exact executable it shells out to — `PIP_BINARY`, `UV_BINARY`, `NPM_BINARY`, `PNPM_BINARY`, `YARN_BINARY`, `BUN_BINARY`, `DENO_BINARY`, etc.
