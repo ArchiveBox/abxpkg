@@ -11,7 +11,11 @@ from collections.abc import Callable
 
 from pydantic import TypeAdapter, AfterValidator, BeforeValidator, ValidationError
 
-from .config import default_abxpkg_lib_dir, is_forbidden_convenience_lib_bin
+from .config import (
+    default_abxpkg_lib_dir,
+    is_forbidden_convenience_lib_bin,
+    path_is_on_read_only_filesystem,
+)
 
 
 # Read once at import time. When set, providers that opt into
@@ -53,7 +57,12 @@ def abxpkg_cache_dir_default(provider_name: str) -> Path | None:
         return Path(specific).expanduser().resolve()
     lib_dir = os.environ.get("ABXPKG_LIB_DIR", "").strip()
     if lib_dir:
-        return Path(lib_dir).expanduser().resolve() / "cache" / provider_name
+        cache_dir = Path(lib_dir).expanduser().resolve() / "cache" / provider_name
+        # Package managers lock their cache even for read-only queries such as
+        # ``uv pip show``, so a read-only lib dir needs a writable cache elsewhere.
+        if path_is_on_read_only_filesystem(cache_dir):
+            return abxpkg_ephemeral_cache_dir_default(provider_name)
+        return cache_dir
     return None
 
 
