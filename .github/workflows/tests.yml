@@ -128,10 +128,11 @@ jobs:
     - name: Use the standard Ubuntu archive on hosted Linux
       if: runner.os == 'Linux' && runner.environment == 'github-hosted'
       run: |
-        # The Azure mirror can trickle bytes indefinitely without triggering
+        # Cloud mirrors can trickle bytes indefinitely without triggering
         # APT's stall timeout: https://github.com/actions/runner-images/issues/14823
         if [[ -f /etc/apt/apt-mirrors.txt ]]; then
-          sudo sed -Ei '\|^http://azure\.archive\.ubuntu\.com/ubuntu/[[:space:]]+priority:1$|d' /etc/apt/apt-mirrors.txt
+          sudo sed -Ei '\#^http://(azure|us-east-2\.ec2)\.archive\.ubuntu\.com/ubuntu/[[:space:]]+priority:1$#d' /etc/apt/apt-mirrors.txt
+          cat /etc/apt/apt-mirrors.txt
         fi
 
     - name: Setup Python
