@@ -4975,13 +4975,23 @@ class EnvProvider(BinProvider):
         if self.bin_dir is not None:
             managed_abspath = bin_abspath(bin_name_str, PATH=str(self.bin_dir))
         if managed_abspath:
-            if self._is_managed_by_other_provider(managed_abspath):
-                managed_path = Path(managed_abspath)
-                if managed_path.is_symlink() and managed_path.parent == self.bin_dir:
-                    managed_path.unlink(missing_ok=True)
-                return None
             managed_path = Path(managed_abspath)
             with self.mutation_lock():
+                # project_binary publishes the link before its owner record
+                # under this same lock. Discovery may have seen that link
+                # before publication finished; recheck ownership before cleanup.
+                if (
+                    self._projection_cache_record(managed_path, bin_name_str)
+                    is not None
+                ):
+                    return managed_abspath
+                if self._is_managed_by_other_provider(managed_abspath):
+                    if (
+                        managed_path.is_symlink()
+                        and managed_path.parent == self.bin_dir
+                    ):
+                        managed_path.unlink(missing_ok=True)
+                    return None
                 managed_target = (
                     managed_path.readlink() if managed_path.is_symlink() else None
                 )
