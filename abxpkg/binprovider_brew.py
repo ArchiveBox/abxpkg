@@ -122,45 +122,14 @@ class BrewProvider(BinProvider):
         if brew_candidate is None:
             return None
 
-        brew_repository = Path(brew_candidate).resolve().parent.parent
-        git_dir = brew_repository / ".git"
+        brew_script, describe_cache, _ = self._installer_version_files(brew_candidate)
         try:
-            if git_dir.is_file():
-                git_dir_entry = git_dir.read_text(encoding="utf-8").strip()
-                if git_dir_entry.startswith("gitdir:"):
-                    git_dir = Path(git_dir_entry.removeprefix("gitdir:").strip())
-                    if not git_dir.is_absolute():
-                        git_dir = (brew_repository / git_dir).resolve()
-            if git_dir.is_dir():
-                head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
-                revision = head
-                if head.startswith("ref:"):
-                    head_ref = head.removeprefix("ref:").strip()
-                    loose_ref = git_dir / head_ref
-                    if loose_ref.is_file():
-                        revision = loose_ref.read_text(encoding="utf-8").strip()
-                    else:
-                        packed_refs = git_dir / "packed-refs"
-                        if packed_refs.is_file():
-                            revision = next(
-                                (
-                                    line.split(" ", 1)[0]
-                                    for line in packed_refs.read_text(
-                                        encoding="utf-8",
-                                    ).splitlines()
-                                    if line.endswith(f" {head_ref}")
-                                ),
-                                "",
-                            )
-                describe_cache = git_dir / "describe-cache" / revision
-                if describe_cache.is_file():
-                    cached_version = describe_cache.read_text(
-                        encoding="utf-8",
-                    ).strip()
-                    if not cached_version.endswith("-dirty") and SemVer.parse(
-                        cached_version,
-                    ):
-                        return cached_version
+            if describe_cache is not None:
+                cached_version = describe_cache.read_text(encoding="utf-8").strip()
+                if not cached_version.endswith("-dirty") and SemVer.parse(
+                    cached_version
+                ):
+                    return cached_version
         except OSError:
             pass
 
@@ -168,17 +137,67 @@ class BrewProvider(BinProvider):
         # cannot produce a describe result. Read it from the installed script
         # so fallback semantics remain owned by Homebrew, not guessed here.
         try:
-            for line in (
-                (brew_repository / "Library" / "Homebrew" / "brew.sh")
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ):
+            for line in brew_script.read_text(encoding="utf-8").splitlines():
                 if 'HOMEBREW_VERSION=">=' not in line:
                     continue
                 return SemVer.parse(line.partition(">=")[2])
         except OSError:
             pass
         return None
+
+    @staticmethod
+    def _installer_version_files(
+        abspath: HostBinPath,
+    ) -> tuple[Path, Path | None, list[Path]]:
+        repository = Path(abspath).resolve().parent.parent
+        brew_script = repository / "Library" / "Homebrew" / "brew.sh"
+        git_dir = repository / ".git"
+        inputs = [brew_script]
+        try:
+            if git_dir.is_file():
+                inputs.append(git_dir)
+                entry = git_dir.read_text(encoding="utf-8").strip()
+                if entry.startswith("gitdir:"):
+                    git_dir = (
+                        repository / entry.removeprefix("gitdir:").strip()
+                    ).resolve()
+            if git_dir.is_dir():
+                head = git_dir / "HEAD"
+                inputs.append(head)
+                revision = head.read_text(encoding="utf-8").strip()
+                if revision.startswith("ref:"):
+                    head_ref = revision.removeprefix("ref:").strip()
+                    loose_ref = git_dir / head_ref
+                    if loose_ref.is_file():
+                        inputs.append(loose_ref)
+                        revision = loose_ref.read_text(encoding="utf-8").strip()
+                    else:
+                        packed_refs = git_dir / "packed-refs"
+                        if packed_refs.is_file():
+                            inputs.append(packed_refs)
+                            revision = next(
+                                (
+                                    line.split(" ", 1)[0]
+                                    for line in packed_refs.read_text(
+                                        encoding="utf-8"
+                                    ).splitlines()
+                                    if line.endswith(f" {head_ref}")
+                                ),
+                                "",
+                            )
+                describe_cache = git_dir / "describe-cache" / revision
+                if describe_cache.is_file():
+                    inputs.append(describe_cache)
+                    return brew_script, describe_cache, inputs
+        except OSError:
+            pass
+        return brew_script, None, inputs
+
+    @classmethod
+    def installer_version_fingerprint_paths(cls, abspath: HostBinPath) -> list[Path]:
+        return [
+            path for path in cls._installer_version_files(abspath)[2] if path.is_file()
+        ]
 
     def supports_min_release_age(self, action, no_cache: bool = False) -> bool:
         return False

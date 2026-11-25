@@ -1967,6 +1967,13 @@ class BinProvider(BaseModel):
             self.INSTALLER_BIN,
         )
 
+    @classmethod
+    def installer_version_fingerprint_paths(
+        cls,
+        abspath: HostBinPath,
+    ) -> list[Path]:
+        return []
+
     def installer_version_handler(
         self,
         bin_name: BinName,
@@ -4571,6 +4578,16 @@ class EnvProvider(BinProvider):
         # metadata. The ordered host candidates invalidate resolution when a
         # PATH entry appears, disappears, moves, or changes without probes.
         cache_info["fingerprint_paths"].extend(self._host_candidates(bin_name))
+
+        # An installer can update its version metadata without changing the
+        # launcher itself (for example Homebrew's repository update).
+        from . import PROVIDER_CLASS_BY_INSTALLER_BIN
+
+        owner = PROVIDER_CLASS_BY_INSTALLER_BIN.get(str(bin_name))
+        if owner is not None:
+            cache_info["fingerprint_paths"].extend(
+                owner.installer_version_fingerprint_paths(abspath),
+            )
         return cache_info
 
     def _exec_bin_abspath(self, bin_abspath: Path) -> Path:

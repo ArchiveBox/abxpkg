@@ -2,6 +2,7 @@ from .conftest import (
     _brew_formula_is_installed,
 )
 import logging
+import os
 import shutil
 import tempfile
 
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from abxpkg import Binary, BrewProvider, SemVer
+from abxpkg import Binary, BrewProvider, EnvProvider, SemVer
 from abxpkg.exceptions import BinaryInstallError
 
 
@@ -66,6 +67,56 @@ assert not (Path(provider.install_root).parent / 'bash' / 'bin' / 'brew').exists
         )
 
         assert version == SemVer("4.3.0")
+
+    @pytest.mark.parametrize("use_git_version", [False, True])
+    def test_host_brew_version_cache_tracks_repository_updates(
+        self,
+        tmp_path,
+        use_git_version,
+    ):
+        host_repo = tmp_path / "host"
+        launcher = host_repo / "bin" / "brew"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("#!/bin/sh\nexit 0\n")
+        launcher.chmod(0o755)
+
+        brew_script = host_repo / "Library" / "Homebrew" / "brew.sh"
+        brew_script.parent.mkdir(parents=True)
+        brew_script.write_text('HOMEBREW_VERSION=">=7.0.14"\n')
+
+        old_revision, new_revision = "a" * 40, "b" * 40
+        if use_git_version:
+            git_dir = host_repo / ".git"
+            git_head_ref = git_dir / "refs" / "heads" / "main"
+            git_head_ref.parent.mkdir(parents=True)
+            (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+            git_head_ref.write_text(old_revision + "\n")
+            git_describe_cache = git_dir / "describe-cache"
+            git_describe_cache.mkdir()
+            (git_describe_cache / old_revision).write_text("7.0.14\n")
+            (git_describe_cache / new_revision).write_text("7.0.16\n")
+
+        def load():
+            projected = EnvProvider(
+                install_root=tmp_path / "lib" / "env",
+                PATH=str(launcher.parent),
+            )
+            projected.set_projection_providers([BrewProvider()])
+            result = projected.load("brew")
+            assert result is not None
+            return result
+
+        assert load().loaded_version == SemVer("7.0.14")
+        updated = git_head_ref if use_git_version else brew_script
+        previous = updated.stat()
+        updated.write_text(
+            new_revision + "\n" if use_git_version else 'HOMEBREW_VERSION=">=7.0.16"\n',
+        )
+        os.utime(
+            updated, ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000_000)
+        )
+
+        assert load().loaded_version == SemVer("7.0.16")
 
     def test_install_root_alias_symlinks_formula_into_requested_bin_dir(
         self,
