@@ -85,9 +85,9 @@ assert not (Path(provider.install_root).parent / 'bash' / 'bin' / 'brew').exists
         brew_script.write_text('HOMEBREW_VERSION=">=7.0.14"\n')
 
         old_revision, new_revision = "a" * 40, "b" * 40
+        git_dir = host_repo / ".git"
+        git_head_ref = git_dir / "refs" / "heads" / "main"
         if use_git_version:
-            git_dir = host_repo / ".git"
-            git_head_ref = git_dir / "refs" / "heads" / "main"
             git_head_ref.parent.mkdir(parents=True)
             (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
             git_head_ref.write_text(old_revision + "\n")
@@ -113,7 +113,8 @@ assert not (Path(provider.install_root).parent / 'bash' / 'bin' / 'brew').exists
             new_revision + "\n" if use_git_version else 'HOMEBREW_VERSION=">=7.0.16"\n',
         )
         os.utime(
-            updated, ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000_000)
+            updated,
+            ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000_000),
         )
 
         assert load().loaded_version == SemVer("7.0.16")

@@ -127,7 +127,7 @@ class BrewProvider(BinProvider):
             if describe_cache is not None:
                 cached_version = describe_cache.read_text(encoding="utf-8").strip()
                 if not cached_version.endswith("-dirty") and SemVer.parse(
-                    cached_version
+                    cached_version,
                 ):
                     return cached_version
         except OSError:
@@ -179,7 +179,7 @@ class BrewProvider(BinProvider):
                                 (
                                     line.split(" ", 1)[0]
                                     for line in packed_refs.read_text(
-                                        encoding="utf-8"
+                                        encoding="utf-8",
                                     ).splitlines()
                                     if line.endswith(f" {head_ref}")
                                 ),

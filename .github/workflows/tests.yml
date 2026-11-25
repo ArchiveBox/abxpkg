@@ -179,6 +179,12 @@ jobs:
         TEST_PATH: ${{ matrix.test.path }}
         TEST_WORKERS: ${{ matrix.test.name == 'cli' && !matrix.test.ugnas && matrix.test.os_name == 'linux' && 4 || 0 }}
       run: |
+        if [[ -r "${CURL_CA_BUNDLE:-}" && -z "${HOMEBREW_CURLRC:-}" ]]; then
+          # Portable Ruby is downloaded by Homebrew's own curl invocation.
+          # Keep that subprocess on the same system + CI proxy trust bundle.
+          export HOMEBREW_CURLRC="$RUNNER_TEMP/abxpkg-homebrew.curlrc"
+          printf 'cacert = "%s"\n' "$CURL_CA_BUNDLE" > "$HOMEBREW_CURLRC"
+        fi
         if [[ "$TEST_WORKERS" != 0 ]]; then
           # These CLI tests measure sub-100ms wall-clock startup. Concurrent
           # package installs from other xdist workers measure CPU contention
