@@ -60,6 +60,17 @@ class TestBinProvider:
             "no_proxy": "localhost,127.0.0.1",
             "NO_PROXY": "localhost,127.0.0.1",
             "APT_CONFIG": str(apt_config),
+            "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+            "SSL_CERT_DIR": "/etc/ssl/certs",
+            "CURL_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+            "REQUESTS_CA_BUNDLE": "/etc/ssl/certs/ca-certificates.crt",
+            "NODE_EXTRA_CA_CERTS": "/etc/ssl/certs/ca-certificates.crt",
+            "NODE_USE_ENV_PROXY": "1",
+            "GIT_SSL_CAINFO": "/etc/ssl/certs/ca-certificates.crt",
+            "CARGO_HTTP_CAINFO": "/etc/ssl/certs/ca-certificates.crt",
+            "PIP_CERT": "/etc/ssl/certs/ca-certificates.crt",
+            "HOMEBREW_CURLRC": str(tmp_path / "brew.curlrc"),
+            "WGETRC": str(tmp_path / "wgetrc"),
         }
         result = provider.exec(
             "/usr/bin/env",

@@ -3125,6 +3125,17 @@ class BinProvider(BaseModel):
                         "ALL_PROXY",
                         "NO_PROXY",
                         "APT_CONFIG",
+                        "SSL_CERT_FILE",
+                        "SSL_CERT_DIR",
+                        "CURL_CA_BUNDLE",
+                        "REQUESTS_CA_BUNDLE",
+                        "NODE_EXTRA_CA_CERTS",
+                        "NODE_USE_ENV_PROXY",
+                        "GIT_SSL_CAINFO",
+                        "CARGO_HTTP_CAINFO",
+                        "PIP_CERT",
+                        "HOMEBREW_CURLRC",
+                        "WGETRC",
                     )
                     if name in sudo_env
                 ]
