@@ -3110,6 +3110,26 @@ class BinProvider(BaseModel):
             )
             if sudo_abspath:
                 sudo_cmd = [sudo_abspath, "-n"]
+                # sudo otherwise drops the caller's transport configuration,
+                # bypassing its package cache or losing apt's custom CA bundle.
+                # Preserve only these settings, not unrelated caller credentials.
+                transport_env = [
+                    name
+                    for name in (
+                        "http_proxy",
+                        "https_proxy",
+                        "all_proxy",
+                        "no_proxy",
+                        "HTTP_PROXY",
+                        "HTTPS_PROXY",
+                        "ALL_PROXY",
+                        "NO_PROXY",
+                        "APT_CONFIG",
+                    )
+                    if name in sudo_env
+                ]
+                if transport_env:
+                    sudo_cmd.append("--preserve-env=" + ",".join(transport_env))
                 if run_as_uid != 0:
                     sudo_cmd.extend(["-u", target_pw_record.pw_name])
                 sudo_cmd.extend(["--", *cmd])

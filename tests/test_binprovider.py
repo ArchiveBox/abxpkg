@@ -34,6 +34,46 @@ from abxpkg.logging import format_subprocess_output
 
 
 class TestBinProvider:
+    def test_exec_preserves_package_transport_environment(self, tmp_path):
+        can_sudo = (
+            os.geteuid() != 0
+            and shutil.which("sudo") is not None
+            and subprocess.run(
+                ["sudo", "-n", "true"],
+                capture_output=True,
+                check=False,
+            ).returncode
+            == 0
+        )
+        provider = EnvProvider(euid=0 if can_sudo else os.geteuid())
+        apt_config = tmp_path / "apt.conf"
+        apt_config.write_text(
+            'Acquire::https::CAInfo "/etc/ssl/certs/ca-certificates.crt";\n',
+        )
+        transport_env = {
+            "http_proxy": "http://127.0.0.1:3128",
+            "https_proxy": "http://127.0.0.1:3128",
+            "HTTP_PROXY": "http://127.0.0.1:3128",
+            "HTTPS_PROXY": "http://127.0.0.1:3128",
+            "all_proxy": "http://127.0.0.1:3128",
+            "ALL_PROXY": "http://127.0.0.1:3128",
+            "no_proxy": "localhost,127.0.0.1",
+            "NO_PROXY": "localhost,127.0.0.1",
+            "APT_CONFIG": str(apt_config),
+        }
+        result = provider.exec(
+            "/usr/bin/env",
+            env={**os.environ, **transport_env},
+            quiet=True,
+        )
+        assert result.returncode == 0, result.stderr
+        actual = dict(
+            line.split("=", 1) for line in result.stdout.splitlines() if "=" in line
+        )
+        assert {name: actual.get(name) for name in transport_env} == transport_env
+        uid = provider.exec("/usr/bin/id", cmd=["-u"], quiet=True)
+        assert uid.returncode == 0 and int(uid.stdout.strip()) == provider.EUID
+
     @pytest.mark.parametrize(
         ("provider_class", "artifact_name", "install_arg", "package_name"),
         (
