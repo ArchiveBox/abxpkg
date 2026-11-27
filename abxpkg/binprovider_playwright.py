@@ -136,7 +136,7 @@ class PlaywrightProvider(BinProvider):
     def supports_postinstall_disable(self, action, no_cache: bool = False) -> bool:
         return False
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         from .binary import Binary
 
         lib_dir = os.environ.get("ABXPKG_LIB_DIR")
@@ -423,7 +423,7 @@ class PlaywrightProvider(BinProvider):
             else None
         )
         try:
-            cached = self.INSTALLER_BINARY(no_cache=no_cache)
+            cached = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             cached = None
         if (
@@ -785,7 +785,10 @@ class PlaywrightProvider(BinProvider):
             return f"DRY_RUN would run: playwright install {' '.join(merged_args)}"
 
         effective_timeout = timeout if timeout is not None else self.install_timeout
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         install_cmd = ["install", *merged_args]
         from .binprovider_apt import AptProvider

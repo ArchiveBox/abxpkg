@@ -136,7 +136,7 @@ class YarnProvider(BinProvider):
         # npmMinimalAgeGate landed in Yarn 4.10
         threshold = SemVer.parse("4.10.0")
         try:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
@@ -148,7 +148,7 @@ class YarnProvider(BinProvider):
         # Yarn 2+ supports the enableScripts setting and --mode skip-build
         threshold = SemVer.parse("2.0.0")
         try:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
@@ -200,7 +200,7 @@ class YarnProvider(BinProvider):
             )
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         from . import PROVIDER_CLASS_BY_NAME
 
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
@@ -340,7 +340,7 @@ class YarnProvider(BinProvider):
             )
         # Yarn 2+ uses .yarnrc.yml; pin nodeLinker so binaries end up in
         # node_modules/.bin instead of the PnP store.
-        installer = self.INSTALLER_BINARY(no_cache=no_cache)
+        installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         if version and berry_threshold and version >= berry_threshold:
@@ -440,7 +440,10 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -458,7 +461,7 @@ class YarnProvider(BinProvider):
                 for arg in install_args
             ]
 
-        installer = self.INSTALLER_BINARY(no_cache=no_cache)
+        installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         is_berry = (
@@ -538,7 +541,10 @@ class YarnProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -556,7 +562,7 @@ class YarnProvider(BinProvider):
                 for arg in install_args
             ]
 
-        installer = self.INSTALLER_BINARY(no_cache=no_cache)
+        installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         version = installer.loaded_version if installer else None
         berry_threshold = SemVer.parse("2.0.0")
         is_berry = (

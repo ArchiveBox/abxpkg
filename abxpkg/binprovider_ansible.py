@@ -307,7 +307,12 @@ class AnsibleProvider(BinProvider):
     INSTALLER_BINPROVIDERS: ClassVar[tuple[BinProviderName, ...] | None] = ("env",)
     PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Ansible has no bin_dir field of its own and never mutates PATH in setup().
 
-    def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
+    def INSTALLER_BINARY(
+        self,
+        no_cache: bool = False,
+        *,
+        install: bool = False,
+    ) -> ShallowBinary:
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
 
@@ -421,7 +426,10 @@ class AnsibleProvider(BinProvider):
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        ansible_playbook = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert ansible_playbook
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()
@@ -449,7 +457,10 @@ class AnsibleProvider(BinProvider):
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
 
-        ansible_playbook = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        ansible_playbook = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert ansible_playbook
 
         module_extra_kwargs = self.get_ansible_module_extra_kwargs()

@@ -266,7 +266,7 @@ class UvProvider(BinProvider):
             self._INSTALLER_BINARY = loaded
         return loaded
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         cached = self._cached_installer_binary(no_cache=no_cache)
         if cached is not None:
             return cached
@@ -300,6 +300,13 @@ class UvProvider(BinProvider):
             if loaded is not None:
                 return loaded
 
+        if not install:
+            from .exceptions import BinProviderUnavailableError
+
+            raise BinProviderUnavailableError(
+                self.__class__.__name__,
+                self.INSTALLER_BIN,
+            )
         return self._install_installer_binary(no_cache=no_cache)
 
     @computed_field
@@ -555,7 +562,10 @@ class UvProvider(BinProvider):
             shutil.rmtree(venv_root)
         target_root.mkdir(parents=True, exist_ok=True)
         self._ensure_managed_root_access(target_root)
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -955,7 +965,10 @@ class UvProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -1055,7 +1068,10 @@ class UvProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts

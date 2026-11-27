@@ -270,10 +270,10 @@ class PyinfraProvider(BinProvider):
     )
     PATH: PATHStr = DEFAULT_ENV_PATH  # Always ambient system PATH plus standard package manager bin dirs. Pyinfra has no bin_dir field of its own and never mutates PATH in setup().
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache, install=install)
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]
@@ -366,7 +366,10 @@ class PyinfraProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        pyinfra_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert pyinfra_abspath
 
         return pyinfra_package_install(
@@ -389,7 +392,10 @@ class PyinfraProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        pyinfra_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        pyinfra_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert pyinfra_abspath
 
         return pyinfra_package_install(

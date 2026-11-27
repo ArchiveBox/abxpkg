@@ -374,6 +374,8 @@ class TestBinProvider:
     ):
         provider = provider_cls(postinstall_scripts=True, min_release_age=3)
 
+        # Provision explicitly before checking discovery without installation.
+        provider.INSTALLER_BINARY(install=True)
         abspath = provider.get_abspath(installer_bin, quiet=True, no_cache=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
@@ -399,7 +401,7 @@ class TestBinProvider:
                 installer = BlackInstallerProvider(
                     postinstall_scripts=True,
                     min_release_age=3,
-                ).INSTALLER_BINARY(no_cache=True)
+                ).INSTALLER_BINARY(no_cache=True, install=True)
             finally:
                 if old_providers is None:
                     os.environ.pop("ABXPKG_BINPROVIDERS", None)

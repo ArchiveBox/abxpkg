@@ -275,7 +275,10 @@ class DockerProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
 
         logs: list[str] = []

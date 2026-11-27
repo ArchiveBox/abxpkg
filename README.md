@@ -370,7 +370,7 @@ Pass `no_cache=True` to `load()` / `install()` / `update()` / `uninstall()` when
 
 For maintainers: [provider caching design and history](docs/provider-caching.md) explains why ownership, absolute paths, runtime environments and cache validation must remain distinct.
 
-Provider installer binaries also resolve lazily through the active provider chain. If a provider needs `pip`, `npm`, `cargo`, or another installer tool and it is missing, abxpkg will auto-install that dependency using the currently selected providers and the same `ABXPKG_LIB_DIR` / `--lib` / `--global` settings.
+Provider installer binaries resolve lazily through the active provider chain. `INSTALLER_BINARY()` only resolves an existing installer; pass `install=True` to allow bootstrapping a missing installer. Package install/update operations explicitly enable bootstrap when needed, using the provider's installer dependencies and the same `ABXPKG_LIB_DIR` / `--lib` / `--global` settings. `no_cache=True` requests fresh discovery and does not enable installation.
 
 #### Advanced Usage
 
@@ -517,7 +517,7 @@ class CargoProvider(BinProvider):
         timeout: int | None = None,
     ) -> str:
         install_args = install_args or self.get_install_args(bin_name)
-        installer = self.INSTALLER_BINARY()
+        installer = self.INSTALLER_BINARY(install=True)
         assert installer and installer.loaded_abspath
         proc = self.exec(bin_name=installer.loaded_abspath, cmd=['install', *install_args], timeout=timeout)
         if proc.returncode != 0:

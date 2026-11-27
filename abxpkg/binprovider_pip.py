@@ -98,7 +98,7 @@ class PipProvider(BinProvider):
         if self.install_root:
             return True
         try:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             return False
         version = installer.loaded_version
@@ -172,7 +172,7 @@ class PipProvider(BinProvider):
             self.PATH = self._merge_PATH(*sorted(pip_bin_dirs), PATH=PATH)
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         if self.install_root:
             venv_pip = self.install_root / "venv" / "bin" / "pip"
             if venv_pip.is_file() and os.access(venv_pip, os.X_OK):
@@ -241,7 +241,7 @@ class PipProvider(BinProvider):
                         )
                     self._INSTALLER_BINARY = loaded
                     return self._INSTALLER_BINARY
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache, install=install)
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
@@ -367,7 +367,10 @@ class PipProvider(BinProvider):
         # Bootstrap pip + setuptools into the newly created venv. We skip
         # security flags here because the venv was just created by Python's
         # own ``venv`` module and we're upgrading its baseline tooling.
-        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        pip_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert pip_abspath
         cache_arg = (
             "--no-cache-dir"
@@ -543,7 +546,10 @@ class PipProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        pip_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert pip_abspath
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:
@@ -599,7 +605,10 @@ class PipProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        pip_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        pip_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert pip_abspath
         install_args = install_args or self.get_install_args(bin_name)
         if min_version:

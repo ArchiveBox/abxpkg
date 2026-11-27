@@ -85,7 +85,7 @@ class CargoProvider(BinProvider):
         self.PATH = self._merge_PATH(*cargo_bin_dirs, PATH=self.PATH, prepend=True)
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         from . import Binary, DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
         cached_installer = self._INSTALLER_BINARY
@@ -100,7 +100,7 @@ class CargoProvider(BinProvider):
 
         loaded = None
         try:
-            loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+            loaded = super().INSTALLER_BINARY(no_cache=no_cache, install=install)
         except Exception:
             loaded = None
 
@@ -117,6 +117,14 @@ class CargoProvider(BinProvider):
             # missing libllhttp.so on a stale CI image). Drop it so the
             # install path below kicks in instead of returning a broken bin.
             loaded = None
+
+        if not install:
+            from .exceptions import BinProviderUnavailableError
+
+            raise BinProviderUnavailableError(
+                self.__class__.__name__,
+                self.INSTALLER_BIN,
+            )
 
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
@@ -357,7 +365,10 @@ class CargoProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
 
         cargo_install_args = ["--locked"]
@@ -400,7 +411,10 @@ class CargoProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
 
         cargo_install_args = ["--locked"]

@@ -1837,15 +1837,21 @@ class BinProvider(BaseModel):
 
         return self.detect_euid()
 
-    def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
+    def INSTALLER_BINARY(
+        self,
+        no_cache: bool = False,
+        *,
+        install: bool = False,
+    ) -> ShallowBinary:
         """Resolve the provider's own installer binary (e.g. npm, pip, cargo).
 
         Cached after first resolution. Pass no_cache=True to force re-resolution.
+        Missing installers are bootstrapped only when install=True.
         Raises BinProviderUnavailableError if the installer cannot be found.
         Checks ``{INSTALLER_BIN}_BINARY`` env var (e.g. ``NPM_BINARY``) first.
         Subclasses override only if they need extra resolution logic.
         """
-        return self._resolve_installer_binary(no_cache=no_cache, install=True)
+        return self._resolve_installer_binary(no_cache=no_cache, install=install)
 
     def _resolve_installer_binary(
         self,
@@ -2234,7 +2240,7 @@ class BinProvider(BaseModel):
         if str(bin_name) == self.INSTALLER_BIN:
             # A lookup must not bootstrap a package manager while checking
             # whether an already-installed dependency exists.
-            installer = self._resolve_installer_binary(no_cache=no_cache, install=False)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache)
             return installer.loaded_abspath
 
         if not self.PATH:
@@ -2357,7 +2363,7 @@ class BinProvider(BaseModel):
             no_cache=no_cache,
         )
         install_args = install_args or self.get_install_args(bin_name)
-        self.INSTALLER_BINARY(no_cache=no_cache)
+        self.INSTALLER_BINARY(no_cache=no_cache, install=True)
 
         return f"🚫 {self.name} BinProvider does not implement any .install() method"
 
@@ -2372,7 +2378,7 @@ class BinProvider(BaseModel):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> "ActionFuncReturnValue":
-        self.INSTALLER_BINARY(no_cache=no_cache)
+        self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         return f"🚫 {self.name} BinProvider does not implement any .update() method"
 
     @remap_kwargs({"packages": "install_args"})
@@ -4436,7 +4442,12 @@ class EnvProvider(BinProvider):
             sort_keys=True,
         )
 
-    def INSTALLER_BINARY(self, no_cache: bool = False) -> ShallowBinary:
+    def INSTALLER_BINARY(
+        self,
+        no_cache: bool = False,
+        *,
+        install: bool = False,
+    ) -> ShallowBinary:
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
 
@@ -4500,7 +4511,7 @@ class EnvProvider(BinProvider):
             self._INSTALLER_BINARY = loaded
             return self._INSTALLER_BINARY
 
-        return super().INSTALLER_BINARY(no_cache=no_cache)
+        return super().INSTALLER_BINARY(no_cache=no_cache, install=install)
 
     def _link_loaded_binary(
         self,

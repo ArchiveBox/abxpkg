@@ -2380,6 +2380,70 @@ def test_parse_activate_shell_rejects_multiple_modes():
         cli_module.parse_activate_shell(bash=True, zsh=True, fish=False)
 
 
+@pytest.mark.docker_required
+def test_env_without_binary_names_does_not_bootstrap_providers(test_machine):
+    docker = test_machine.require_docker_daemon()
+    repo_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [
+            docker,
+            "run",
+            "--rm",
+            "--platform",
+            "linux/amd64",
+            "--volume",
+            f"{repo_root}:/src:ro",
+            "--env",
+            "UV_PROJECT_ENVIRONMENT=/tmp/venv",
+            "ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
+            "sh",
+            "-ec",
+            # Install the real CLI before blocking installer downloads. Failed
+            # downloads still leave Nix's bootstrap directory and Brew's shell
+            # command in the log, so missing network cannot hide this regression.
+            "uv sync --project /src --no-dev; "
+            "export HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=http://127.0.0.1:9 "
+            "http_proxy=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9 NO_PROXY='' no_proxy=''; "
+            "ABXPKG_LIB_DIR=/tmp/lib-direct /tmp/venv/bin/python - <<'PY'\n"
+            "from pathlib import Path\n"
+            "from abxpkg import BrewProvider, NixProvider, PnpmProvider, CargoProvider\n"
+            "from abxpkg.exceptions import BinProviderUnavailableError\n"
+            "for cls in (BrewProvider, NixProvider, PnpmProvider, CargoProvider):\n"
+            "    for kwargs in ({}, {'install': False}, {'no_cache': True}):\n"
+            "        try:\n"
+            "            cls(install_timeout=2).INSTALLER_BINARY(**kwargs)\n"
+            "        except BinProviderUnavailableError:\n"
+            "            pass\n"
+            "        else:\n"
+            "            raise AssertionError(f'{cls.__name__} unexpectedly installed its missing installer')\n"
+            "assert not Path('/tmp/lib-direct/nix-installer').exists()\n"
+            "assert not list(Path('/tmp/lib-direct').rglob('node_modules'))\n"
+            "assert not Path('/home/linuxbrew/.linuxbrew').exists()\n"
+            "assert not Path('/nix').exists()\n"
+            "PY\n"
+            "for command in env activate; do "
+            "/tmp/venv/bin/abxpkg --debug --lib=/tmp/lib-$command "
+            "--binproviders=brew,nix --install-timeout=2 $command "
+            ">/tmp/$command.out 2>/tmp/$command.log; "
+            "cat /tmp/$command.log; "
+            "test ! -e /tmp/lib-$command/nix-installer; "
+            "if grep -q 'Installing brew' /tmp/$command.log; then exit 1; fi; "
+            "test ! -e /home/linuxbrew/.linuxbrew; test ! -e /nix; "
+            "done; "
+            "/tmp/venv/bin/abxpkg --debug --lib=/tmp/lib-default --install-timeout=2 env "
+            ">/tmp/default.out 2>/tmp/default.log; "
+            "cat /tmp/default.log; "
+            "test ! -e /tmp/lib-default/nix-installer; "
+            "if grep -q 'Installing brew' /tmp/default.log; then exit 1; fi; "
+            "test ! -e /home/linuxbrew/.linuxbrew; test ! -e /nix",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_build_command_exec_env_without_names_includes_installers_and_cached_binaries(
     tmp_path,
     test_machine,

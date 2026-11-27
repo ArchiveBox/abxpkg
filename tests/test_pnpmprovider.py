@@ -191,7 +191,7 @@ class TestPnpmProvider:
         node_binary = test_machine.require_tool("node")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            install_root = Path(temp_dir) / "pnpm-root"
+            install_root = Path(temp_dir).resolve() / "pnpm-root"
             node_bin_dir = Path(node_binary).resolve().parent
             constrained_path = os.pathsep.join([str(node_bin_dir), "/usr/bin", "/bin"])
             old_path = os.environ.get("PATH", "")
@@ -206,7 +206,11 @@ class TestPnpmProvider:
                     min_release_age=3,
                 )
 
-                installer = provider.INSTALLER_BINARY(no_cache=True)
+                from abxpkg.exceptions import BinProviderUnavailableError
+
+                with pytest.raises(BinProviderUnavailableError):
+                    provider.INSTALLER_BINARY(no_cache=True)
+                installer = provider.INSTALLER_BINARY(no_cache=True, install=True)
                 installed = provider.install("zx")
             finally:
                 os.environ["PATH"] = old_path
@@ -377,7 +381,7 @@ for requested in (None, "musl", "musl-cli"):
             )
 
             try:
-                installer = provider.INSTALLER_BINARY(no_cache=True)
+                installer = provider.INSTALLER_BINARY(no_cache=True, install=True)
             finally:
                 os.environ["PATH"] = old_path
                 if old_npm_binary is None:
@@ -488,7 +492,7 @@ for requested in (None, "musl", "musl-cli"):
             postinstall_scripts=True,
             min_release_age=0,
         )
-        installer = provider.INSTALLER_BINARY()
+        installer = provider.INSTALLER_BINARY(install=True)
         assert installer.loaded_abspath is not None
         (provider.install_root / "package.json").write_text('{"private": true}\n')
         result = provider.exec(
@@ -591,7 +595,7 @@ for requested in (None, "musl", "musl-cli"):
                     min_release_age=3,
                 )
 
-                installer = provider.INSTALLER_BINARY(no_cache=True)
+                installer = provider.INSTALLER_BINARY(no_cache=True, install=True)
                 installed = provider.install("zx")
             finally:
                 os.environ["PATH"] = old_path

@@ -161,7 +161,10 @@ class NpmProvider(BinProvider):
             return False
 
         try:
-            npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+            npm_abspath = self.INSTALLER_BINARY(
+                no_cache=no_cache,
+                install=True,
+            ).loaded_abspath
             assert npm_abspath
         except Exception:
             return False
@@ -309,8 +312,8 @@ class NpmProvider(BinProvider):
         self.PATH = self._load_PATH(no_cache=no_cache)
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache, install=install)
 
         try:
             node_loaded = Binary(
@@ -518,7 +521,10 @@ class NpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        npm_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert npm_abspath
         assert postinstall_scripts is not None
         install_args = install_args or self.get_install_args(bin_name)
@@ -582,7 +588,10 @@ class NpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        npm_abspath = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        npm_abspath = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert npm_abspath
         assert postinstall_scripts is not None
         install_args = install_args or self.get_install_args(bin_name)

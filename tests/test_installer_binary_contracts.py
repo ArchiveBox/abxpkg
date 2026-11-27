@@ -127,6 +127,7 @@ class TestInstallerBinaryContracts:
         version_args: tuple[str, ...],
     ):
         provider = provider_cls(postinstall_scripts=True, min_release_age=3)
+        provider.INSTALLER_BINARY(install=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
         test_machine.assert_shallow_binary_loaded(
@@ -143,6 +144,8 @@ class TestInstallerBinaryContracts:
 
     def test_pnpm_provider_preserves_installer_source_ownership(self):
         provider = PnpmProvider(postinstall_scripts=True, min_release_age=3)
+        # Provision explicitly before checking discovery without installation.
+        provider.INSTALLER_BINARY(install=True)
         abspath = provider.get_abspath("pnpm", quiet=True, no_cache=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 

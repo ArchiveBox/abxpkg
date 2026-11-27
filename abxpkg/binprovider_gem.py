@@ -92,10 +92,10 @@ class GemProvider(BinProvider):
             self.PATH = self._merge_PATH(bin_dir, PATH=self.PATH)
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         from . import DEFAULT_PROVIDER_NAMES, PROVIDER_CLASS_BY_NAME
 
-        loaded = super().INSTALLER_BINARY(no_cache=no_cache)
+        loaded = super().INSTALLER_BINARY(no_cache=no_cache, install=install)
         raw_provider_names = os.environ.get("ABXPKG_BINPROVIDERS")
         selected_provider_names = (
             [provider_name.strip() for provider_name in raw_provider_names.split(",")]
@@ -326,7 +326,10 @@ class GemProvider(BinProvider):
         install_args = install_args or self.get_install_args(bin_name)
         if min_version and not any(arg.startswith("--version") for arg in install_args):
             install_args = ["--version", f">={min_version}", *install_args]
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
@@ -374,7 +377,10 @@ class GemProvider(BinProvider):
                 no_cache=no_cache,
                 timeout=timeout,
             )
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
 
         proc = self.exec(
