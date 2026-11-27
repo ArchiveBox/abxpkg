@@ -101,6 +101,7 @@ from .config import (
     apply_exec_env,
     build_exec_env,
     load_derived_cache,
+    path_is_on_read_only_filesystem,
     resolve_env_projection,
     save_derived_cache,
 )
@@ -1226,7 +1227,9 @@ class BinProvider(BaseModel):
         if derived_env_path is None:
             return None
         if not (
-            derived_env_path.parent.exists() or derived_env_path.parent.is_symlink()
+            derived_env_path.parent.exists()
+            or derived_env_path.parent.is_symlink()
+            or path_is_on_read_only_filesystem(derived_env_path.parent)
         ):
             derived_env_path.parent.mkdir(parents=True, exist_ok=True)
         cache = load_derived_cache(derived_env_path)
@@ -4516,7 +4519,9 @@ class EnvProvider(BinProvider):
             return TypeAdapter(HostBinPath).validate_python(source_path)
         if self.bin_dir is None:
             return TypeAdapter(HostBinPath).validate_python(source_path)
-        self.bin_dir.mkdir(parents=True, exist_ok=True)
+        bin_dir_is_read_only = path_is_on_read_only_filesystem(self.bin_dir)
+        if not bin_dir_is_read_only:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
         # A caller may create a fresh lib root while an earlier abxpkg
         # ``env/bin`` projection is first on PATH (notably the isolated CLI
         # tests in CI). Do not stack projections: EnvProvider executes one
@@ -4545,6 +4550,10 @@ class EnvProvider(BinProvider):
         if link_path.exists() or link_path.is_symlink():
             if link_path.is_symlink() and link_path.readlink() == target:
                 return TypeAdapter(HostBinPath).validate_python(link_path)
+        if bin_dir_is_read_only:
+            # A read-only lib dir cannot gain new projections. The binary is
+            # still valid at its own path, as when there is no bin_dir.
+            return TypeAdapter(HostBinPath).validate_python(target)
         # Hooks commonly launch in parallel and project the same host binary
         # into env/bin at the same time. Let one creator win, then reuse its
         # link. Unlinking the shared destination first lets another process
