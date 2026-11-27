@@ -21,6 +21,14 @@ from abxpkg.exceptions import (
 
 
 class TestBinary:
+    def test_install_loads_later_provider_before_installing(self, tmp_path):
+        uv = UvProvider(install_root=tmp_path / "uv")
+        binary = Binary(name="pytest", binproviders=[uv, EnvProvider()])
+        result = binary.install()
+        assert result.loaded_binprovider.name == "env"
+        assert result.exec(cmd=["--version"]).returncode == 0
+        assert not (tmp_path / "uv" / "venv").exists()
+
     def test_max_version_rejects_and_downgrades_real_installed_package(self, tmp_path):
         provider = UvProvider(install_root=tmp_path / "uv", postinstall_scripts=True)
         newer = Binary(

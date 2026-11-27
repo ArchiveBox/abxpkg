@@ -336,6 +336,13 @@ class Binary(ShallowBinary):
             self.min_release_age if min_release_age is None else min_release_age
         )
         selected_providers = self._binprovider_order(binproviders)
+        # Look through every permitted provider before installing anything: a
+        # later provider may already have a suitable version of this binary.
+        if not no_cache and not dry_run:
+            try:
+                return self.load(binproviders=binproviders, **extra_overrides)
+            except BinaryLoadError:
+                pass
         for binprovider in selected_providers:
             provider = binprovider
             try:

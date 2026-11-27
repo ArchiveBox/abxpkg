@@ -2232,7 +2232,9 @@ class BinProvider(BaseModel):
         # Installer dependencies are resolved by the provider's declared
         # abxpkg chain, including EnvProvider host projection.
         if str(bin_name) == self.INSTALLER_BIN:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            # A lookup must not bootstrap a package manager while checking
+            # whether an already-installed dependency exists.
+            installer = self._resolve_installer_binary(no_cache=no_cache, install=False)
             return installer.loaded_abspath
 
         if not self.PATH:

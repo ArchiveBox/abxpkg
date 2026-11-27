@@ -119,7 +119,12 @@ class AptProvider(BinProvider):
             dpkg_binary = EnvProvider().load("dpkg")
             apt_binary = None
             try:
-                apt_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                # PATH discovery is a read, so it must not install apt or
+                # any fallback provider merely to check for a binary.
+                apt_binary = self._resolve_installer_binary(
+                    no_cache=no_cache,
+                    install=False,
+                )
             except Exception:
                 apt_binary = None
             dpkg_abspath = (
