@@ -492,7 +492,7 @@ for requested in (None, "musl", "musl-cli"):
             postinstall_scripts=True,
             min_release_age=0,
         )
-        installer = provider.INSTALLER_BINARY()
+        installer = provider.INSTALLER_BINARY(install=True)
         assert installer.loaded_abspath is not None
         (provider.install_root / "package.json").write_text('{"private": true}\n')
         result = provider.exec(

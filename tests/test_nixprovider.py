@@ -103,6 +103,7 @@ class TestNixProvider:
 
     def test_installer_binary_is_projected_through_env_bin(self, test_machine):
         provider = NixProvider()
+        provider.INSTALLER_BINARY(install=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
         test_machine.assert_shallow_binary_loaded(
@@ -115,7 +116,9 @@ class TestNixProvider:
         assert installer.loaded_abspath.parent.parent.name == "env"
 
     def test_install_root_alias_installs_into_the_requested_profile(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             install_root = Path(temp_dir) / "nix-profile"
@@ -138,7 +141,9 @@ class TestNixProvider:
             assert installed.loaded_abspath.parent == provider.bin_dir
 
     def test_provider_direct_methods_exercise_real_lifecycle(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
@@ -149,7 +154,9 @@ class TestNixProvider:
             test_machine.exercise_provider_lifecycle(provider, bin_name="hello")
 
     def test_repeated_install_does_not_duplicate_profile_entries(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
@@ -188,7 +195,9 @@ class TestNixProvider:
         self,
         test_machine,
     ):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
@@ -211,7 +220,9 @@ class TestNixProvider:
         self,
         test_machine,
     ):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
@@ -243,7 +254,9 @@ class TestNixProvider:
             assert ambient_installed.loaded_abspath.parent == ambient_provider.bin_dir
 
     def test_uninstall_preserves_other_profile_entries(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
@@ -269,7 +282,9 @@ class TestNixProvider:
         test_machine,
         caplog,
     ):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with caplog.at_level(logging.WARNING, logger="abxpkg.binprovider"):
@@ -305,7 +320,9 @@ class TestNixProvider:
             assert "ignoring unsupported postinstall_scripts=False" in caplog.text
 
     def test_binary_direct_methods_exercise_real_lifecycle(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             binary = Binary(
@@ -326,7 +343,9 @@ class TestNixProvider:
             test_machine.exercise_binary_lifecycle(binary)
 
     def test_provider_dry_run_does_not_install_hello(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
@@ -337,7 +356,9 @@ class TestNixProvider:
             test_machine.exercise_provider_dry_run(provider, bin_name="hello")
 
     def test_search_finds_real_nixpkgs_attr_and_install_works(self, test_machine):
-        assert NixProvider().INSTALLER_BINARY(), "nix is required on this host"
+        assert NixProvider().INSTALLER_BINARY(install=True), (
+            "nix is required on this host"
+        )
         with tempfile.TemporaryDirectory() as temp_dir:
             provider = NixProvider(
                 install_root=Path(temp_dir) / "nix-profile",
