@@ -336,9 +336,18 @@ class Binary(ShallowBinary):
             self.min_release_age if min_release_age is None else min_release_age
         )
         selected_providers = self._binprovider_order(binproviders)
-        # Look through every permitted provider before installing anything: a
-        # later provider may already have a suitable version of this binary.
-        if not no_cache and not dry_run:
+        # A fallback chain can reuse an existing binary, but an explicit
+        # install must still resolve the selected provider's install cache key
+        # and honor its package and security controls, not just find a CLI.
+        if (
+            len(selected_providers) > 1
+            and not no_cache
+            and not dry_run
+            and not self.overrides
+            and not extra_overrides
+            and binary_postinstall_scripts is None
+            and binary_min_release_age is None
+        ):
             try:
                 return self.load(binproviders=binproviders, **extra_overrides)
             except BinaryLoadError:
