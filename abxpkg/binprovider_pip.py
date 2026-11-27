@@ -681,10 +681,20 @@ class PipProvider(BinProvider):
         no_cache: bool = False,
         **context,
     ) -> HostBinPath | None:
+        # Load an existing managed pip without bootstrapping or falling back to
+        # the ambient interpreter's pip when our venv already exists.
+        if str(bin_name) == self.INSTALLER_BIN and self.install_root is not None:
+            managed_pip = self.install_root / "venv" / "bin" / "pip"
+            if managed_pip.is_file() and os.access(managed_pip, os.X_OK):
+                return TypeAdapter(HostBinPath).validate_python(str(managed_pip))
 
         # try searching for the bin_name in BinProvider.PATH first (fastest)
         try:
-            abspath = super().default_abspath_handler(bin_name, **context)
+            abspath = super().default_abspath_handler(
+                bin_name,
+                no_cache=no_cache,
+                **context,
+            )
             if abspath:
                 return TypeAdapter(HostBinPath).validate_python(abspath)
         except ValueError:
