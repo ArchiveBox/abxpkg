@@ -2427,14 +2427,14 @@ def test_env_without_binary_names_does_not_bootstrap_providers(test_machine):
             ">/tmp/$command.out 2>/tmp/$command.log; "
             "cat /tmp/$command.log; "
             "test ! -e /tmp/lib-$command/nix-installer; "
-            "! grep -q 'Installing brew' /tmp/$command.log; "
+            "if grep -q 'Installing brew' /tmp/$command.log; then exit 1; fi; "
             "test ! -e /home/linuxbrew/.linuxbrew; test ! -e /nix; "
             "done; "
             "/tmp/venv/bin/abxpkg --debug --lib=/tmp/lib-default --install-timeout=2 env "
             ">/tmp/default.out 2>/tmp/default.log; "
             "cat /tmp/default.log; "
             "test ! -e /tmp/lib-default/nix-installer; "
-            "! grep -q 'Installing brew' /tmp/default.log; "
+            "if grep -q 'Installing brew' /tmp/default.log; then exit 1; fi; "
             "test ! -e /home/linuxbrew/.linuxbrew; test ! -e /nix",
         ],
         capture_output=True,
