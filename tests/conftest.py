@@ -879,7 +879,7 @@ def _concurrent_pnpm_bootstrap_worker(
     )
     try:
         barrier.wait()
-        installer = provider.INSTALLER_BINARY(no_cache=True)
+        installer = provider.INSTALLER_BINARY(no_cache=True, install=True)
         version = installer.exec(cmd=("--version",), quiet=True)
         results.put(
             (

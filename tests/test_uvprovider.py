@@ -216,7 +216,11 @@ class TestUvProvider:
                     min_release_age=3,
                 )
 
-                installer = provider.INSTALLER_BINARY(no_cache=True)
+                from abxpkg.exceptions import BinProviderUnavailableError
+
+                with pytest.raises(BinProviderUnavailableError):
+                    provider.INSTALLER_BINARY(no_cache=True)
+                installer = provider.INSTALLER_BINARY(no_cache=True, install=True)
                 installed = provider.install("cowsay")
             finally:
                 os.environ["PATH"] = old_path

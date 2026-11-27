@@ -202,7 +202,10 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,
@@ -247,7 +250,10 @@ class BashProvider(EnvProvider):
         assert install_root is not None
         assert bin_dir is not None
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         proc = self.exec(
             bin_name=installer_bin,

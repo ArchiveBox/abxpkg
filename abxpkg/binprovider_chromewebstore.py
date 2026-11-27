@@ -376,7 +376,10 @@ class ChromeWebstoreProvider(BinProvider):
             for arg in install_args[2:]
             if str(arg).startswith(("--url=", "--sha256="))
         ]
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         unzip = self.unzip_binary().install(no_cache=no_cache)
         if not unzip.loaded_abspath:

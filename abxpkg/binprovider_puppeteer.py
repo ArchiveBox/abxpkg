@@ -137,7 +137,7 @@ class PuppeteerProvider(BinProvider):
             )
         super().setup_PATH(no_cache=no_cache)
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         # Prefer the @puppeteer/browsers CLI bootstrapped by an earlier install
         # under ``<install_root>/pnpm/node_modules/.bin``. Without this, a
         # fresh provider copy (e.g. the one Binary.load() builds via
@@ -352,7 +352,7 @@ class PuppeteerProvider(BinProvider):
                 preserve_root=True,
             )
         try:
-            cached = self.INSTALLER_BINARY(no_cache=no_cache)
+            cached = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             cached = None
         if cached and cached.loaded_abspath:
@@ -802,7 +802,10 @@ class PuppeteerProvider(BinProvider):
         try:
             installer_binary = self._INSTALLER_BINARY
             if installer_binary is None or installer_binary.loaded_abspath is None:
-                installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                installer_binary = self.INSTALLER_BINARY(
+                    no_cache=no_cache,
+                    install=True,
+                )
             installer_bin = installer_binary.loaded_abspath
             assert installer_bin
         except Exception:
@@ -954,7 +957,7 @@ class PuppeteerProvider(BinProvider):
 
         installer_binary = self._INSTALLER_BINARY
         if installer_binary is None or installer_binary.loaded_abspath is None:
-            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer_binary = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         installer_bin = installer_binary.loaded_abspath
         assert installer_bin
         # Puppeteer runs apt-get satisfy directly. Share the APT lock for
@@ -1018,7 +1021,10 @@ class PuppeteerProvider(BinProvider):
                 )
                 installer_binary = self._INSTALLER_BINARY
                 if installer_binary is None or installer_binary.loaded_abspath is None:
-                    installer_binary = self.INSTALLER_BINARY(no_cache=no_cache)
+                    installer_binary = self.INSTALLER_BINARY(
+                        no_cache=no_cache,
+                        install=True,
+                    )
                 installer_bin = installer_binary.loaded_abspath
                 assert installer_bin
                 if used_sudo:

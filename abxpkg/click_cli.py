@@ -1715,22 +1715,13 @@ def build_command_exec_env(
 
         for provider in providers:
             append_provider(provider)
-            # Exporting an environment without binary requests must not
-            # bootstrap every default provider (including Homebrew and Nix).
-            # Discover host installers through env, as the version report does,
-            # and retain the runtime owners of already-cached dependencies.
             try:
-                installer_binary = providers[0].load(
-                    provider.INSTALLER_BIN,
-                    no_cache=options.no_cache,
-                )
+                installer_binary = provider.INSTALLER_BINARY(no_cache=options.no_cache)
             except Exception:
                 installer_binary = None
             append_provider(
                 installer_binary.loaded_binprovider if installer_binary else None,
             )
-            for dependency in provider.depends_on_binaries():
-                append_provider(dependency.loaded_binprovider)
             try:
                 installed_binaries = provider.installed_binaries()
             except Exception:

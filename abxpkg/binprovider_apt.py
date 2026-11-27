@@ -468,7 +468,10 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         dpkg_binary = EnvProvider().load("dpkg")
         dpkg_abspath = (
             dpkg_binary.loaded_abspath
@@ -548,7 +551,10 @@ class AptProvider(BinProvider):
 
         install_args = install_args or self.get_install_args(bin_name)
 
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         dpkg_binary = EnvProvider().load("dpkg")
         dpkg_abspath = (
             dpkg_binary.loaded_abspath

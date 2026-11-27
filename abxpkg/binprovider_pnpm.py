@@ -169,7 +169,7 @@ class PnpmProvider(BinProvider):
             return False
         threshold = SemVer.parse("10.16.0")
         try:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except (
             AssertionError,
             BinProviderInstallError,
@@ -341,6 +341,8 @@ class PnpmProvider(BinProvider):
         self,
         bin_name: BinName,
         no_cache: bool = False,
+        *,
+        install: bool = False,
     ):
         from . import PROVIDER_CLASS_BY_NAME
 
@@ -394,14 +396,20 @@ class PnpmProvider(BinProvider):
             else:
                 providers.append(PROVIDER_CLASS_BY_NAME[provider_name]())
         try:
-            loaded = Binary(
+            binary = Binary(
                 name=bin_name,
                 binproviders=providers,
                 overrides=overrides,
                 postinstall_scripts=True,
                 min_release_age=0,
                 min_version=min_version,
-            ).install(no_cache=no_cache)
+            )
+            # Runtime discovery must not install Node/npm while merely locating pnpm.
+            loaded = (
+                binary.install(no_cache=no_cache)
+                if install
+                else binary.load(no_cache=no_cache)
+            )
         except (
             AssertionError,
             BinaryLoadError,
@@ -440,10 +448,23 @@ class PnpmProvider(BinProvider):
             )
         return loaded
 
-    def _cache_lifecycle_dependencies(self, no_cache: bool = False):
+    def _cache_lifecycle_dependencies(
+        self,
+        no_cache: bool = False,
+        *,
+        install: bool = False,
+    ):
         return {
-            "node": self._cache_lifecycle_dependency("node", no_cache=no_cache),
-            "npm": self._cache_lifecycle_dependency("npm", no_cache=no_cache),
+            "node": self._cache_lifecycle_dependency(
+                "node",
+                no_cache=no_cache,
+                install=install,
+            ),
+            "npm": self._cache_lifecycle_dependency(
+                "npm",
+                no_cache=no_cache,
+                install=install,
+            ),
         }
 
     @staticmethod
@@ -494,7 +515,13 @@ class PnpmProvider(BinProvider):
             return self.install_root / "npm"
         return self.cache_dir / "npm"
 
-    def _load_installer_at(self, abspath: Path, no_cache: bool = False):
+    def _load_installer_at(
+        self,
+        abspath: Path,
+        no_cache: bool = False,
+        *,
+        install: bool = False,
+    ):
         env_provider = (
             self._managed_env_provider()
             if self._managed_lib_dir() is not None
@@ -521,7 +548,7 @@ class PnpmProvider(BinProvider):
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
-            self._cache_lifecycle_dependencies(no_cache=no_cache)
+            self._cache_lifecycle_dependencies(no_cache=no_cache, install=install)
             return loaded
         return None
 
@@ -534,8 +561,11 @@ class PnpmProvider(BinProvider):
             postinstall_scripts=True,
             min_release_age=0,
         )
-        npm_installer = npm_provider.INSTALLER_BINARY(no_cache=no_cache)
-        dependencies = self._cache_lifecycle_dependencies(no_cache=no_cache)
+        npm_installer = npm_provider.INSTALLER_BINARY(no_cache=no_cache, install=True)
+        dependencies = self._cache_lifecycle_dependencies(
+            no_cache=no_cache,
+            install=True,
+        )
         node_loaded = dependencies["node"]
         pnpm_package = self._pnpm_package_for_node(
             node_loaded.loaded_version if node_loaded is not None else None,
@@ -586,10 +616,10 @@ class PnpmProvider(BinProvider):
                     cache_kind="dependency",
                 )
             self._INSTALLER_BINARY = loaded
-            self._cache_lifecycle_dependencies(no_cache=no_cache)
+            self._cache_lifecycle_dependencies(no_cache=no_cache, install=True)
         return loaded
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         cached = self._cached_installer_binary(no_cache=no_cache)
         if cached is not None:
             return cached
@@ -597,7 +627,11 @@ class PnpmProvider(BinProvider):
         env_var = f"{self.INSTALLER_BIN.upper()}_BINARY"
         manual = os.environ.get(env_var)
         if manual and os.path.isabs(manual) and Path(manual).is_file():
-            loaded = self._load_installer_at(Path(manual), no_cache=no_cache)
+            loaded = self._load_installer_at(
+                Path(manual),
+                no_cache=no_cache,
+                install=install,
+            )
             if loaded is not None:
                 return loaded
 
@@ -606,14 +640,21 @@ class PnpmProvider(BinProvider):
             PATH=os.environ.get("PATH", ""),
         )
         if host_installer:
-            loaded = self._load_installer_at(host_installer, no_cache=no_cache)
+            loaded = self._load_installer_at(
+                host_installer,
+                no_cache=no_cache,
+                install=install,
+            )
             if loaded is not None:
                 return loaded
 
         from .binprovider_npm import NpmProvider
 
         installer_root = self._installer_provider_root()
-        dependencies = self._cache_lifecycle_dependencies(no_cache=no_cache)
+        dependencies = self._cache_lifecycle_dependencies(
+            no_cache=no_cache,
+            install=install,
+        )
         node_loaded = dependencies["node"]
         pnpm_package = self._pnpm_package_for_node(
             node_loaded.loaded_version if node_loaded is not None else None,
@@ -656,9 +697,19 @@ class PnpmProvider(BinProvider):
                             cache_kind="dependency",
                         )
                     self._INSTALLER_BINARY = loaded
-                    self._cache_lifecycle_dependencies(no_cache=no_cache)
+                    self._cache_lifecycle_dependencies(
+                        no_cache=no_cache,
+                        install=install,
+                    )
                     return loaded
 
+            if not install:
+                from .exceptions import BinProviderUnavailableError
+
+                raise BinProviderUnavailableError(
+                    self.__class__.__name__,
+                    self.INSTALLER_BIN,
+                )
             return self._install_installer_binary(no_cache=no_cache)
 
     @log_method_call(include_result=True)
@@ -1161,7 +1212,10 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts
@@ -1243,7 +1297,10 @@ class PnpmProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts

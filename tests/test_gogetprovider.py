@@ -20,7 +20,10 @@ class TestGoGetProvider:
                     postinstall_scripts=True,
                     min_release_age=3,
                 )
-                bootstrapped = bootstrap_provider.INSTALLER_BINARY(no_cache=True)
+                bootstrapped = bootstrap_provider.INSTALLER_BINARY(
+                    no_cache=True,
+                    install=True,
+                )
                 assert bootstrapped.loaded_abspath is not None
 
                 # Re-resolve after bootstrap so an installer supplied by Apt or

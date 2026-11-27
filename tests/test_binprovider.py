@@ -399,7 +399,7 @@ class TestBinProvider:
                 installer = BlackInstallerProvider(
                     postinstall_scripts=True,
                     min_release_age=3,
-                ).INSTALLER_BINARY(no_cache=True)
+                ).INSTALLER_BINARY(no_cache=True, install=True)
             finally:
                 if old_providers is None:
                     os.environ.pop("ABXPKG_BINPROVIDERS", None)

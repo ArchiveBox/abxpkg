@@ -127,6 +127,7 @@ class TestInstallerBinaryContracts:
         version_args: tuple[str, ...],
     ):
         provider = provider_cls(postinstall_scripts=True, min_release_age=3)
+        provider.INSTALLER_BINARY(install=True)
         installer = provider.INSTALLER_BINARY(no_cache=True)
 
         test_machine.assert_shallow_binary_loaded(

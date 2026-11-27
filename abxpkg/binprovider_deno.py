@@ -95,7 +95,7 @@ class DenoProvider(BinProvider):
             return False
         threshold = SemVer.parse("2.5.0")
         try:
-            installer = self.INSTALLER_BINARY(no_cache=no_cache)
+            installer = self.INSTALLER_BINARY(no_cache=no_cache, install=True)
         except Exception:
             return False
         version = installer.loaded_version if installer else None
@@ -317,7 +317,10 @@ class DenoProvider(BinProvider):
         no_cache: bool = False,
         timeout: int | None = None,
     ) -> str:
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         postinstall_scripts = (
             False if postinstall_scripts is None else postinstall_scripts

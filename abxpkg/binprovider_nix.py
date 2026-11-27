@@ -179,7 +179,7 @@ class NixProvider(BinProvider):
             return None
         return install_root.parent / f".{install_root.name}.derived.env"
 
-    def INSTALLER_BINARY(self, no_cache: bool = False):
+    def INSTALLER_BINARY(self, no_cache: bool = False, *, install: bool = False):
         if not no_cache and self._INSTALLER_BINARY and self._INSTALLER_BINARY.is_valid:
             return self._INSTALLER_BINARY
 
@@ -201,6 +201,15 @@ class NixProvider(BinProvider):
         if loaded and loaded.loaded_abspath:
             return self._cache_installer_binary(loaded)
 
+        # Discovery is also used for environment export and fallback probes.
+        # Only an explicit bootstrap request may download or run the installer.
+        if not install:
+            from .exceptions import BinProviderUnavailableError
+
+            raise BinProviderUnavailableError(
+                self.__class__.__name__,
+                self.INSTALLER_BIN,
+            )
         installer_path = self.download_nix_installer()
         proc = self.exec(
             bin_name=installer_path,
@@ -466,7 +475,10 @@ class NixProvider(BinProvider):
                 NIXPKGS_SOURCE,
                 *cmd_install_args,
             ]
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         env = {
             key: value
@@ -619,7 +631,10 @@ class NixProvider(BinProvider):
             bin_name,
             install_args=install_args,
         )
-        installer_bin = self.INSTALLER_BINARY(no_cache=no_cache).loaded_abspath
+        installer_bin = self.INSTALLER_BINARY(
+            no_cache=no_cache,
+            install=True,
+        ).loaded_abspath
         assert installer_bin
         env = {
             key: value
